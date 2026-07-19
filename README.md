@@ -1,9 +1,7 @@
+<!-- Relative path (same-repo) so GitHub does NOT rewrite via camo.githubusercontent.com,
+     which often fails in CN even when the original CDN URL opens fine. -->
 <p align="center">
-  <img
-    src="https://cdn.jsdelivr.net/gh/3xian/MarsBuild@main/docs/logo.png"
-    alt="MarsBuild"
-    width="128"
-  />
+  <img src="docs/logo.png" alt="MarsBuild" width="128" />
 </p>
 
 # MarsBuild

@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="src/assets/logo.png" alt="MarsBuild" width="128" />
+  <img
+    src="https://cdn.jsdelivr.net/gh/3xian/MarsBuild@main/docs/logo.png"
+    alt="MarsBuild"
+    width="128"
+  />
 </p>
 
 # MarsBuild

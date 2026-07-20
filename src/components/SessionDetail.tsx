@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type {
   LiveStreamItem,
   MainTab,
@@ -15,6 +16,7 @@ import {
   describeUpdate,
 } from "../utils/format";
 import { DiffPanel } from "./DiffPanel";
+import { Markdown } from "./Markdown";
 import { PermissionGate } from "./PermissionGate";
 import { PromptBar } from "./PromptBar";
 import { ShellPanel } from "./ShellPanel";
@@ -246,6 +248,35 @@ function LiveTimeline({
   items: LiveStreamItem[];
   managed: ManagedAgentInfo | null;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+
+  // Terminal-style: follow the tail unless the user scrolls up
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    let scrollParent: HTMLElement | null = root.parentElement;
+    while (scrollParent) {
+      const { overflowY } = getComputedStyle(scrollParent);
+      if (overflowY === "auto" || overflowY === "scroll") break;
+      scrollParent = scrollParent.parentElement;
+    }
+    if (!scrollParent) return;
+    const el = scrollParent;
+    const onScroll = () => {
+      const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+      stickToBottom.current = dist < 64;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [items.length > 0]);
+
+  useEffect(() => {
+    if (!stickToBottom.current) return;
+    endRef.current?.scrollIntoView({ block: "end" });
+  }, [items]);
+
   if (items.length === 0) {
     return (
       <div className="empty-hint">
@@ -256,19 +287,29 @@ function LiveTimeline({
     );
   }
 
-  // newest first for scan
-  const ordered = [...items].reverse();
+  // Chronological (oldest → newest), like a terminal tail
   return (
-    <div className="timeline live-timeline">
-      {ordered.map((item) => (
+    <div className="timeline live-timeline" ref={rootRef}>
+      {items.map((item) => (
         <div key={item.id} className={`tl-item kind-${item.kind}`}>
           <div className="tl-kind">{item.kind}</div>
           <div className="tl-body">
             <div className="tl-title">{item.title}</div>
-            {item.detail && <div className="tl-detail">{item.detail}</div>}
+            {item.detail && (
+              <div className="tl-detail">
+                {item.kind === "agent" ||
+                item.kind === "user" ||
+                item.kind === "thought" ? (
+                  <Markdown>{item.detail}</Markdown>
+                ) : (
+                  item.detail
+                )}
+              </div>
+            )}
           </div>
         </div>
       ))}
+      <div ref={endRef} className="live-timeline-end" aria-hidden />
     </div>
   );
 }

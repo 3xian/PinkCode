@@ -66,6 +66,25 @@ export interface DashboardStats {
   grokHome: string;
 }
 
+export interface ProductUsage {
+  product: string;
+  usagePercent: number;
+}
+
+/** Weekly (or current billing period) usage from Grok billing API. */
+export interface WeekUsage {
+  usedPercent: number;
+  remainingPercent: number;
+  buildUsedPercent?: number | null;
+  buildRemainingPercent?: number | null;
+  periodType: string;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  productUsage: ProductUsage[];
+  fetchedAt: string;
+  error?: string | null;
+}
+
 export type MainTab = "live" | "shell" | "timeline" | "diff" | "raw";
 
 export type PolicyPreset = "research" | "code" | "balanced" | "trusted";

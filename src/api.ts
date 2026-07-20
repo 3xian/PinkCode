@@ -13,6 +13,7 @@ import type {
   SessionCard,
   SessionDetail,
   SpawnRequest,
+  WeekUsage,
 } from "./types";
 
 export async function getGrokHome(): Promise<string> {
@@ -43,6 +44,10 @@ export async function listSessionHunks(
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   return invoke<DashboardStats>("get_dashboard_stats");
+}
+
+export async function getWeekUsage(): Promise<WeekUsage> {
+  return invoke<WeekUsage>("get_week_usage");
 }
 
 export async function resolveGrokBin(): Promise<string> {

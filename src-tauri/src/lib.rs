@@ -1,5 +1,6 @@
 mod acp;
 mod agent_manager;
+mod billing;
 mod models;
 mod policy;
 mod sessions;
@@ -9,6 +10,7 @@ use agent_manager::{
     AgentManager, AttachRequest, ManagedAgentInfo, PendingPermission, ResolvePermissionRequest,
     SpawnRequest,
 };
+use billing::WeekUsage;
 use models::{ActiveSession, DashboardStats, HunkRecord, SessionCard, SessionDetail};
 use policy::{PolicyConfig, PolicyPreset, PolicyStore, ProjectBinding, ResolvedPolicy};
 use serde_json::Value;
@@ -45,6 +47,25 @@ fn list_session_hunks(
 #[tauri::command]
 fn get_dashboard_stats() -> Result<DashboardStats, String> {
     sessions::dashboard_stats().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_week_usage() -> WeekUsage {
+    // Network I/O off the main thread so the UI stays responsive.
+    tauri::async_runtime::spawn_blocking(billing::fetch_week_usage)
+        .await
+        .unwrap_or_else(|e| billing::WeekUsage {
+            used_percent: 0.0,
+            remaining_percent: 100.0,
+            build_used_percent: None,
+            build_remaining_percent: None,
+            period_type: "unknown".into(),
+            period_start: None,
+            period_end: None,
+            product_usage: vec![],
+            fetched_at: String::new(),
+            error: Some(format!("Usage fetch task failed: {e}")),
+        })
 }
 
 #[tauri::command]
@@ -210,6 +231,7 @@ pub fn run() {
             get_session_detail,
             list_session_hunks,
             get_dashboard_stats,
+            get_week_usage,
             resolve_grok_bin,
             list_managed_agents,
             spawn_agent,

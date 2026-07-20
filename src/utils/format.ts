@@ -46,6 +46,28 @@ export function contextPct(used: number, total: number): number {
   return Math.min(100, Math.round((used / total) * 1000) / 10);
 }
 
+/** Human remaining time until ISO timestamp (or unix-seconds string). */
+export function formatTimeUntil(isoOrUnix?: string | null): string {
+  if (!isoOrUnix) return "—";
+  let t = Date.parse(isoOrUnix);
+  if (Number.isNaN(t)) {
+    const n = Number(isoOrUnix);
+    if (!Number.isFinite(n)) return "—";
+    // unix seconds vs ms
+    t = n < 1e12 ? n * 1000 : n;
+  }
+  const diff = t - Date.now();
+  if (diff <= 0) return "resetting…";
+  const sec = Math.floor(diff / 1000);
+  const day = Math.floor(sec / 86400);
+  const hr = Math.floor((sec % 86400) / 3600);
+  const min = Math.floor((sec % 3600) / 60);
+  if (day > 0) return `${day}d ${hr}h`;
+  if (hr > 0) return `${hr}h ${min}m`;
+  if (min > 0) return `${min}m`;
+  return `${sec}s`;
+}
+
 /** Stream kinds that arrive as many tiny chunks and should be coalesced. */
 export const COALESCE_LIVE_KINDS = new Set(["user", "agent", "thought"]);
 

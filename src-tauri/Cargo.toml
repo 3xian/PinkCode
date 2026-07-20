@@ -28,3 +28,4 @@ thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 parking_lot = "0.12"
 notify = "6"
+ureq = { version = "2", features = ["json"] }

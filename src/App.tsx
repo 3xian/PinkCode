@@ -5,6 +5,7 @@ import {
   bindProjectPolicy,
   getDashboardStats,
   getSessionDetail,
+  getWeekUsage,
   listManagedAgents,
   listPendingPermissions,
   listPolicyPresets,
@@ -35,6 +36,7 @@ import type {
   ResolvedPolicy,
   SessionCard,
   SessionDetail,
+  WeekUsage,
 } from "./types";
 import "./App.css";
 
@@ -42,10 +44,18 @@ import "./App.css";
 const FS_REFRESH_MIN_MS = 400;
 /** Slow safety net if FSEvents miss a write (rare). */
 const SAFETY_POLL_MS = 60_000;
+/** Idle poll for week usage (billing API). Faster while agents are live. */
+const WEEK_USAGE_IDLE_POLL_MS = 60_000;
+const WEEK_USAGE_ACTIVE_POLL_MS = 20_000;
+/** After a turn ends, wait a beat for billing to settle then refresh. */
+const WEEK_USAGE_AFTER_TURN_MS = 2_500;
+/** Min gap between billing fetches to avoid thrashing the API. */
+const WEEK_USAGE_MIN_GAP_MS = 8_000;
 
 function App() {
   const [sessions, setSessions] = useState<SessionCard[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [weekUsage, setWeekUsage] = useState<WeekUsage | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [filter, setFilter] = useState<"all" | "active" | "idle">("all");
@@ -173,6 +183,80 @@ function App() {
   useEffect(() => {
     void refreshList();
   }, [refreshList]);
+
+  const weekUsageInflight = useRef(false);
+  const weekUsageLastAt = useRef(0);
+  const weekUsageTimer = useRef<number | null>(null);
+
+  const refreshWeekUsage = useCallback(async (opts?: { force?: boolean }) => {
+    const force = opts?.force ?? false;
+    const now = Date.now();
+    if (!force && now - weekUsageLastAt.current < WEEK_USAGE_MIN_GAP_MS) {
+      return;
+    }
+    if (weekUsageInflight.current) return;
+    weekUsageInflight.current = true;
+    try {
+      const u = await getWeekUsage();
+      weekUsageLastAt.current = Date.now();
+      setWeekUsage(u);
+    } catch {
+      /* non-tauri preview or offline */
+    } finally {
+      weekUsageInflight.current = false;
+    }
+  }, []);
+
+  /** Schedule a debounced refresh (used after turns complete). */
+  const scheduleWeekUsageRefresh = useCallback(
+    (delayMs = WEEK_USAGE_AFTER_TURN_MS) => {
+      if (weekUsageTimer.current != null) {
+        window.clearTimeout(weekUsageTimer.current);
+      }
+      weekUsageTimer.current = window.setTimeout(() => {
+        weekUsageTimer.current = null;
+        void refreshWeekUsage({ force: true });
+      }, delayMs);
+    },
+    [refreshWeekUsage],
+  );
+
+  const liveManagedCount = useMemo(
+    () =>
+      managedList.filter(
+        (m) => m.status !== "stopped" && m.status !== "error",
+      ).length,
+    [managedList],
+  );
+
+  // Initial + adaptive poll: faster while agents are running
+  useEffect(() => {
+    void refreshWeekUsage({ force: true });
+    const interval =
+      liveManagedCount > 0 ? WEEK_USAGE_ACTIVE_POLL_MS : WEEK_USAGE_IDLE_POLL_MS;
+    const id = window.setInterval(() => void refreshWeekUsage(), interval);
+    return () => window.clearInterval(id);
+  }, [refreshWeekUsage, liveManagedCount]);
+
+  // Real-time trigger: refresh billing after each prompt turn completes
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void listen("agent-prompt-complete", () => {
+      if (!cancelled) scheduleWeekUsageRefresh();
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+      if (weekUsageTimer.current != null) {
+        window.clearTimeout(weekUsageTimer.current);
+        weekUsageTimer.current = null;
+      }
+    };
+  }, [scheduleWeekUsageRefresh]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -396,13 +480,11 @@ function App() {
     <div className="app-shell">
       <StatsBar
         stats={stats}
-        managedCount={
-          managedList.filter(
-            (m) => m.status !== "stopped" && m.status !== "error",
-          ).length
-        }
+        weekUsage={weekUsage}
+        managedCount={liveManagedCount}
         pendingPermissions={permissions.length}
         onNewTask={() => setModalOpen(true)}
+        onRefreshWeekUsage={() => void refreshWeekUsage({ force: true })}
       />
 
       {(error || lastError) && (

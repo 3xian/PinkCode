@@ -29,15 +29,20 @@ export function formatRelative(iso?: string | null): string {
   return `${day}d ago`;
 }
 
+/** Split on `/` or `\` so Windows and Unix paths display correctly. */
+function pathParts(path: string): string[] {
+  return path.split(/[/\\]+/).filter(Boolean);
+}
+
 export function shortPath(path: string, max = 48): string {
   if (path.length <= max) return path;
-  const parts = path.split("/");
+  const parts = pathParts(path);
   if (parts.length <= 2) return `…${path.slice(-max + 1)}`;
   return `…/${parts.slice(-2).join("/")}`;
 }
 
 export function projectName(cwd: string): string {
-  const parts = cwd.replace(/\/$/, "").split("/");
+  const parts = pathParts(cwd.replace(/[/\\]+$/, ""));
   return parts[parts.length - 1] || cwd;
 }
 

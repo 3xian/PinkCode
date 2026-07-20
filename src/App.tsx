@@ -3,8 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import {
   attachAgent,
   bindProjectPolicy,
-  getDashboardStats,
   getSessionDetail,
+  getTokenUsageSeries,
   getWeekUsage,
   listManagedAgents,
   listPendingPermissions,
@@ -27,7 +27,6 @@ import { SessionList } from "./components/SessionList";
 import { StatsBar } from "./components/StatsBar";
 import { useAgentEvents } from "./hooks/useAgentEvents";
 import type {
-  DashboardStats,
   MainTab,
   PendingPermission,
   PolicyConfig,
@@ -36,14 +35,15 @@ import type {
   ResolvedPolicy,
   SessionCard,
   SessionDetail,
+  TokenUsageSeries,
   WeekUsage,
 } from "./types";
 import "./App.css";
 
 /** Min gap between disk-driven refreshes (extra frontend coalesce). */
-const FS_REFRESH_MIN_MS = 400;
+const FS_REFRESH_MIN_MS = 750;
 /** Slow safety net if FSEvents miss a write (rare). */
-const SAFETY_POLL_MS = 60_000;
+const SAFETY_POLL_MS = 90_000;
 /** Idle poll for week usage (billing API). Faster while agents are live. */
 const WEEK_USAGE_IDLE_POLL_MS = 60_000;
 const WEEK_USAGE_ACTIVE_POLL_MS = 20_000;
@@ -51,10 +51,12 @@ const WEEK_USAGE_ACTIVE_POLL_MS = 20_000;
 const WEEK_USAGE_AFTER_TURN_MS = 2_500;
 /** Min gap between billing fetches to avoid thrashing the API. */
 const WEEK_USAGE_MIN_GAP_MS = 8_000;
+/** Token chart is expensive (scans updates.jsonl); keep off the FS hot path. */
+const TOKEN_SERIES_POLL_MS = 90_000;
 
 function App() {
   const [sessions, setSessions] = useState<SessionCard[]>([]);
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [tokenSeries, setTokenSeries] = useState<TokenUsageSeries | null>(null);
   const [weekUsage, setWeekUsage] = useState<WeekUsage | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
@@ -65,6 +67,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  /** Bumped after attach/spawn so Live timeline pins to bottom. */
+  const [pinLiveBottomSeq, setPinLiveBottomSeq] = useState(0);
   const [controlBusy, setControlBusy] = useState(false);
   const [permBusyKey, setPermBusyKey] = useState<string | null>(null);
   const [policyBusy, setPolicyBusy] = useState(false);
@@ -77,7 +81,6 @@ function App() {
     managedForSession,
     liveItems,
     shellEntries,
-    permissions,
     permissionsForSession,
     setPolicyState,
     setResolvedPolicy,
@@ -115,16 +118,18 @@ function App() {
   }, [projectCwd, refreshPolicyForCwd]);
 
   const refreshList = useCallback(async () => {
+    // Skip heavy list work while the window is hidden (drag/minimize storms).
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return;
+    }
     try {
-      const [list, dash, managed] = await Promise.all([
+      const [list, managed] = await Promise.all([
         listSessions(200),
-        getDashboardStats(),
         listManagedAgents().catch(() => [] as Awaited<
           ReturnType<typeof listManagedAgents>
         >),
       ]);
       setSessions(list);
-      setStats(dash);
       for (const m of managed) {
         upsertManaged(m);
       }
@@ -140,6 +145,18 @@ function App() {
       setError(e instanceof Error ? e.message : String(e));
     }
   }, [upsertManaged]);
+
+  const refreshTokenSeries = useCallback(async () => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return;
+    }
+    try {
+      const series = await getTokenUsageSeries(7);
+      setTokenSeries(series);
+    } catch {
+      /* non-tauri / offline */
+    }
+  }, []);
 
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
@@ -183,6 +200,13 @@ function App() {
   useEffect(() => {
     void refreshList();
   }, [refreshList]);
+
+  // Token chart: initial + slow poll (not tied to FS watcher).
+  useEffect(() => {
+    void refreshTokenSeries();
+    const id = window.setInterval(() => void refreshTokenSeries(), TOKEN_SERIES_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [refreshTokenSeries]);
 
   const weekUsageInflight = useRef(false);
   const weekUsageLastAt = useRef(0);
@@ -243,7 +267,11 @@ function App() {
     let unlisten: (() => void) | undefined;
     let cancelled = false;
     void listen("agent-prompt-complete", () => {
-      if (!cancelled) scheduleWeekUsageRefresh();
+      if (!cancelled) {
+        scheduleWeekUsageRefresh();
+        // Turn finished → refresh chart once (cheap cache on Rust side).
+        window.setTimeout(() => void refreshTokenSeries(), 1_500);
+      }
     }).then((fn) => {
       if (cancelled) fn();
       else unlisten = fn;
@@ -256,7 +284,7 @@ function App() {
         weekUsageTimer.current = null;
       }
     };
-  }, [scheduleWeekUsageRefresh]);
+  }, [scheduleWeekUsageRefresh, refreshTokenSeries]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -271,7 +299,9 @@ function App() {
     let unlisten: (() => void) | undefined;
     let cancelled = false;
     void listen<{ reason?: string; path?: string }>("sessions-changed", () => {
-      if (!cancelled) refreshFromDisk();
+      if (cancelled) return;
+      if (document.visibilityState === "hidden") return;
+      refreshFromDisk();
     }).then((fn) => {
       if (cancelled) fn();
       else unlisten = fn;
@@ -282,18 +312,26 @@ function App() {
     };
   }, [refreshFromDisk]);
 
-  // Focus / tab visible → catch anything the watcher missed
+  // Focus / tab visible → catch anything the watcher missed (debounced).
   useEffect(() => {
+    let t: number | null = null;
     const onVis = () => {
-      if (document.visibilityState === "visible") refreshFromDisk();
+      if (document.visibilityState !== "visible") return;
+      if (t != null) window.clearTimeout(t);
+      t = window.setTimeout(() => {
+        t = null;
+        refreshFromDisk();
+        void refreshTokenSeries();
+      }, 300);
     };
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("focus", onVis);
     return () => {
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("focus", onVis);
+      if (t != null) window.clearTimeout(t);
     };
-  }, [refreshFromDisk]);
+  }, [refreshFromDisk, refreshTokenSeries]);
 
   // Slow safety net only (not the main update path)
   useEffect(() => {
@@ -335,6 +373,7 @@ function App() {
         focusOnceSessionRef.current = info.sessionId;
         setSelectedId(info.sessionId);
         setTab("live");
+        setPinLiveBottomSeq((n) => n + 1);
       } else if (info.status === "error") {
         // Failed after process start — still surface in managed list until Stop.
         setError(info.lastError ?? "Agent failed to start");
@@ -361,6 +400,7 @@ function App() {
       });
       upsertManaged(info);
       setTab("live");
+      setPinLiveBottomSeq((n) => n + 1);
       // Hydrate any already-queued permissions (usually empty right after attach)
       const queued = await listPendingPermissions(info.handleId);
       hydratePermissions(queued);
@@ -478,15 +518,6 @@ function App() {
 
   return (
     <div className="app-shell">
-      <StatsBar
-        stats={stats}
-        weekUsage={weekUsage}
-        managedCount={liveManagedCount}
-        pendingPermissions={permissions.length}
-        onNewTask={() => setModalOpen(true)}
-        onRefreshWeekUsage={() => void refreshWeekUsage({ force: true })}
-      />
-
       {(error || lastError) && (
         <div className="banner error-banner">
           <span>{error || lastError}</span>
@@ -504,18 +535,26 @@ function App() {
       )}
 
       <div className="main-grid">
-        <SessionList
-          sessions={sessions}
-          selectedId={selectedId}
-          filter={filter}
-          query={query}
-          onFilter={setFilter}
-          onQuery={setQuery}
-          onSelect={(id) => {
-            setSelectedId(id);
-          }}
-          managedSessionIds={managedSessionIds}
-        />
+        <aside className="left-rail">
+          <StatsBar
+            tokenSeries={tokenSeries}
+            weekUsage={weekUsage}
+            onRefreshWeekUsage={() => void refreshWeekUsage({ force: true })}
+          />
+          <SessionList
+            sessions={sessions}
+            selectedId={selectedId}
+            filter={filter}
+            query={query}
+            onFilter={setFilter}
+            onQuery={setQuery}
+            onSelect={(id) => {
+              setSelectedId(id);
+            }}
+            managedSessionIds={managedSessionIds}
+            onNewTask={() => setModalOpen(true)}
+          />
+        </aside>
 
         <SessionDetailView
           detail={detail}
@@ -535,6 +574,7 @@ function App() {
           onResolvePermission={(item, opt) =>
             void handleResolvePermission(item, opt)
           }
+          pinLiveBottomSeq={pinLiveBottomSeq}
         />
 
         <aside className="side-panel">

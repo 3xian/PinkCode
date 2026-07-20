@@ -13,6 +13,7 @@ import type {
   SessionCard,
   SessionDetail,
   SpawnRequest,
+  TokenUsageSeries,
   WeekUsage,
 } from "./types";
 
@@ -44,6 +45,10 @@ export async function listSessionHunks(
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   return invoke<DashboardStats>("get_dashboard_stats");
+}
+
+export async function getTokenUsageSeries(days = 7): Promise<TokenUsageSeries> {
+  return invoke<TokenUsageSeries>("get_token_usage_series", { days });
 }
 
 export async function getWeekUsage(): Promise<WeekUsage> {

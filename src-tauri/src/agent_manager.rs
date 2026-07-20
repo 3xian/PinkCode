@@ -1534,13 +1534,10 @@ fn risk_for_path(path: &str) -> String {
     // Keep in sync with policy::path_looks_sensitive keywords.
     if policy::path_looks_sensitive(path) {
         "high".into()
+    } else if policy::path_looks_temp(path) {
+        "low".into()
     } else {
-        let p = path.to_lowercase();
-        if p.contains("/tmp/") || p.starts_with("/tmp") {
-            "low".into()
-        } else {
-            "medium".into()
-        }
+        "medium".into()
     }
 }
 
@@ -1581,26 +1578,52 @@ fn write_text_file(path: &str, content: &str) -> Result<(), String> {
     fs::write(path, content).map_err(|e| e.to_string())
 }
 
-fn find_grok_bin() -> Option<String> {
-    if let Ok(p) = std::env::var("GROK_BIN") {
-        if PathBuf::from(&p).is_file() {
-            return Some(p);
-        }
+/// Resolve an executable path, trying Windows extensions (`.exe`, …) when needed.
+fn first_existing_executable(base: PathBuf) -> Option<String> {
+    if base.is_file() {
+        return Some(base.display().to_string());
     }
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path) {
-            let candidate = dir.join("grok");
-            if candidate.is_file() {
-                return Some(candidate.display().to_string());
+    #[cfg(windows)]
+    {
+        // `Path::is_file` does not apply PATHEXT — try common extensions explicitly.
+        if base.extension().is_none() {
+            for ext in ["exe", "cmd", "bat", "com"] {
+                let candidate = base.with_extension(ext);
+                if candidate.is_file() {
+                    return Some(candidate.display().to_string());
+                }
             }
         }
     }
-    let home = dirs::home_dir()?;
-    let candidate = home.join(".grok/bin/grok");
-    if candidate.is_file() {
-        return Some(candidate.display().to_string());
-    }
     None
+}
+
+fn find_grok_bin() -> Option<String> {
+    if let Ok(p) = std::env::var("GROK_BIN") {
+        if let Some(found) = first_existing_executable(PathBuf::from(&p)) {
+            return Some(found);
+        }
+    }
+
+    // Prefer GROK_HOME/bin (custom installs; common on Windows).
+    if let Ok(home) = std::env::var("GROK_HOME") {
+        if let Some(found) =
+            first_existing_executable(PathBuf::from(home).join("bin").join("grok"))
+        {
+            return Some(found);
+        }
+    }
+
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path) {
+            if let Some(found) = first_existing_executable(dir.join("grok")) {
+                return Some(found);
+            }
+        }
+    }
+
+    let home = dirs::home_dir()?;
+    first_existing_executable(home.join(".grok").join("bin").join("grok"))
 }
 
 fn truncate(s: &str, max: usize) -> String {

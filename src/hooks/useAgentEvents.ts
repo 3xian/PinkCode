@@ -37,6 +37,9 @@ export function useAgentEvents(selectedSessionId: string | null) {
   );
   const [lastError, setLastError] = useState<string | null>(null);
   const seq = useRef(0);
+  /** Latest live map for rAF batching (avoids setState-to-read anti-pattern). */
+  const liveRef = useRef(liveBySession);
+  liveRef.current = liveBySession;
 
   const clearError = useCallback(() => setLastError(null), []);
 
@@ -105,12 +108,46 @@ export function useAgentEvents(selectedSessionId: string | null) {
   useEffect(() => {
     const unsubs: UnlistenFn[] = [];
     let cancelled = false;
+    // Batch live stream into one React commit per animation frame — critical for
+    // smooth window drag on Windows when agents stream many tiny chunks.
+    let liveBuf: Map<string, LiveStreamItem[]> | null = null;
+    let liveRaf = 0;
+    const flushLive = () => {
+      liveRaf = 0;
+      if (!liveBuf || cancelled) return;
+      const snapshot = liveBuf;
+      liveBuf = null;
+      liveRef.current = snapshot;
+      setLiveBySession(snapshot);
+    };
+    const scheduleLive = (
+      mutator: (prev: Map<string, LiveStreamItem[]>) => Map<string, LiveStreamItem[]>,
+    ) => {
+      const src = liveBuf ?? liveRef.current;
+      liveBuf = mutator(src);
+      if (!liveRaf) {
+        liveRaf = window.requestAnimationFrame(flushLive);
+      }
+    };
 
     async function setup() {
       const u1 = await listen<ManagedAgentInfo>("agent-status", (e) => {
         if (cancelled) return;
         const info = e.payload;
         setManaged((prev) => {
+          const existing = prev.get(info.handleId);
+          if (
+            existing &&
+            existing.status === info.status &&
+            existing.sessionId === info.sessionId &&
+            existing.pid === info.pid &&
+            existing.pendingPermissionCount === info.pendingPermissionCount &&
+            existing.policyPreset === info.policyPreset &&
+            existing.title === info.title &&
+            existing.lastError === info.lastError
+          ) {
+            return prev;
+          }
           const next = new Map(prev);
           next.set(info.handleId, info);
           return next;
@@ -118,6 +155,8 @@ export function useAgentEvents(selectedSessionId: string | null) {
       });
       const u2 = await listen<AgentUpdateEvent>("agent-update", (e) => {
         if (cancelled) return;
+        // Don't fight the compositor while the window is not visible.
+        if (document.visibilityState === "hidden") return;
         const { handleId, sessionId, params } = e.payload;
         const update = params?.update ?? params;
         const desc = describeUpdate({
@@ -141,7 +180,7 @@ export function useAgentEvents(selectedSessionId: string | null) {
         const key = sessionId || handleId;
         const now = Date.now();
 
-        setLiveBySession((prev) => {
+        scheduleLive((prev) => {
           const next = new Map(prev);
           const list = [...(next.get(key) ?? [])];
 
@@ -299,6 +338,9 @@ export function useAgentEvents(selectedSessionId: string | null) {
     void setup();
     return () => {
       cancelled = true;
+      if (liveRaf) window.cancelAnimationFrame(liveRaf);
+      liveRaf = 0;
+      liveBuf = null;
       unsubs.forEach((u) => u());
     };
   }, []);

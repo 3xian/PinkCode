@@ -118,12 +118,47 @@ pub fn fetch_week_usage() -> WeekUsage {
     }
 }
 
+/// Honor `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` (and lowercase variants).
+/// Without this, ureq dials the origin directly and fails on proxied networks.
+fn proxy_from_env() -> Option<ureq::Proxy> {
+    const KEYS: &[&str] = &[
+        "HTTPS_PROXY",
+        "https_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+    ];
+    for key in KEYS {
+        if let Ok(val) = std::env::var(key) {
+            let val = val.trim();
+            if val.is_empty() {
+                continue;
+            }
+            match ureq::Proxy::new(val) {
+                Ok(p) => return Some(p),
+                Err(e) => {
+                    eprintln!("[marsbuild] ignore invalid {key}={val:?}: {e}");
+                }
+            }
+        }
+    }
+    None
+}
+
+fn http_agent() -> ureq::Agent {
+    let mut builder = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(15))
+        .timeout_read(Duration::from_secs(20));
+    if let Some(proxy) = proxy_from_env() {
+        builder = builder.proxy(proxy);
+    }
+    builder.build()
+}
+
 fn fetch_week_usage_inner() -> Result<WeekUsage, String> {
     let token = read_session_token()?;
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(8))
-        .timeout_read(Duration::from_secs(12))
-        .build();
+    let agent = http_agent();
 
     let resp = agent
         .get(BILLING_URL)
@@ -215,5 +250,34 @@ mod tests {
         assert_eq!(remaining(85.0), 15.0);
         assert_eq!(remaining(120.0), 0.0);
         assert_eq!(remaining(-5.0), 100.0);
+    }
+
+    #[test]
+    fn proxy_from_env_parses_when_set() {
+        // Snapshot and restore so we don't leak proxy into other tests.
+        let keys = [
+            "HTTPS_PROXY",
+            "https_proxy",
+            "ALL_PROXY",
+            "all_proxy",
+            "HTTP_PROXY",
+            "http_proxy",
+        ];
+        let saved: Vec<_> = keys
+            .iter()
+            .map(|k| (*k, std::env::var(k).ok()))
+            .collect();
+        for k in keys {
+            std::env::remove_var(k);
+        }
+        assert!(proxy_from_env().is_none());
+        std::env::set_var("HTTPS_PROXY", "http://127.0.0.1:9");
+        assert!(proxy_from_env().is_some());
+        for (k, v) in saved {
+            match v {
+                Some(val) => std::env::set_var(k, val),
+                None => std::env::remove_var(k),
+            }
+        }
     }
 }

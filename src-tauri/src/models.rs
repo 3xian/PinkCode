@@ -87,3 +87,25 @@ pub struct DashboardStats {
     pub total_lines_removed: u64,
     pub grok_home: String,
 }
+
+/// One day in the trailing token-usage series (from session `updates.jsonl`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenDayPoint {
+    /// Calendar day `YYYY-MM-DD` (UTC).
+    pub date: String,
+    /// Approx. consumed tokens that day (fresh input + output; cache hits excluded).
+    pub tokens: u64,
+    /// Number of completed turns contributing to `tokens`.
+    pub turns: u64,
+}
+
+/// Last N days of token usage aggregated from Grok session turn completions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenUsageSeries {
+    pub days: Vec<TokenDayPoint>,
+    pub total_tokens: u64,
+    pub total_turns: u64,
+    pub window_days: u32,
+}

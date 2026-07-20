@@ -1,11 +1,29 @@
 use crate::models::{
     ActiveSession, DashboardStats, HunkRecord, SessionCard, SessionDetail, SessionStatus,
+    TokenDayPoint, TokenUsageSeries,
 };
+use parking_lot::Mutex;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+/// Cache expensive full-tree `updates.jsonl` scans (window drag / FS storms).
+const TOKEN_SERIES_CACHE_TTL: Duration = Duration::from_secs(45);
+
+struct TokenSeriesCache {
+    at: Instant,
+    window_days: u32,
+    value: TokenUsageSeries,
+}
+
+fn token_series_cache() -> &'static Mutex<Option<TokenSeriesCache>> {
+    static CACHE: OnceLock<Mutex<Option<TokenSeriesCache>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
@@ -381,9 +399,313 @@ pub fn dashboard_stats() -> Result<DashboardStats> {
     })
 }
 
+/// Aggregate turn-level token usage from session `updates.jsonl` for the last `window_days`.
+///
+/// Prefer **fresh input + output** (`input − cachedRead + output`) so re-sent context is not
+/// counted as new spend. Falls back to `totalTokens` when breakdown fields are missing.
+///
+/// Results are cached briefly — a full tree scan is too heavy to run on every FS tick.
+pub fn token_usage_series(window_days: u32) -> Result<TokenUsageSeries> {
+    let days_u32 = window_days.clamp(1, 31);
+    {
+        let cache = token_series_cache().lock();
+        if let Some(c) = cache.as_ref() {
+            if c.window_days == days_u32 && c.at.elapsed() < TOKEN_SERIES_CACHE_TTL {
+                return Ok(c.value.clone());
+            }
+        }
+    }
+    let value = token_usage_series_uncached(days_u32)?;
+    *token_series_cache().lock() = Some(TokenSeriesCache {
+        at: Instant::now(),
+        window_days: days_u32,
+        value: value.clone(),
+    });
+    Ok(value)
+}
+
+fn token_usage_series_uncached(window_days: u32) -> Result<TokenUsageSeries> {
+    let days = window_days as usize;
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let day_secs = 86_400u64;
+    let today_index = now_secs / day_secs;
+    // Inclusive window: today and previous (days-1) UTC days.
+    let start_index = today_index.saturating_sub((days as u64).saturating_sub(1));
+    let start_secs = start_index * day_secs;
+
+    let mut by_day: HashMap<u64, (u64, u64)> = HashMap::new(); // day_index -> (tokens, turns)
+
+    let root = sessions_root();
+    if root.exists() {
+        for group in fs::read_dir(&root)? {
+            let group = group?;
+            if !group.file_type()?.is_dir() {
+                continue;
+            }
+            let group_name = group.file_name().to_string_lossy().to_string();
+            if group_name.starts_with('.') {
+                continue;
+            }
+            for entry in fs::read_dir(group.path())? {
+                let entry = entry?;
+                if !entry.file_type()?.is_dir() {
+                    continue;
+                }
+                // Skip clearly stale sessions (summary last activity before window).
+                let summary_path = entry.path().join("summary.json");
+                if let Ok(Some(summary)) = load_json_value(&summary_path) {
+                    if let Some(ts) = summary_activity_unix(&summary) {
+                        if ts + day_secs < start_secs {
+                            continue;
+                        }
+                    }
+                }
+                let updates = entry.path().join("updates.jsonl");
+                if !updates.is_file() {
+                    continue;
+                }
+                accumulate_turn_usage_from_jsonl(&updates, start_secs, &mut by_day)?;
+            }
+        }
+    }
+
+    let mut points = Vec::with_capacity(days);
+    let mut total_tokens = 0u64;
+    let mut total_turns = 0u64;
+    for i in 0..days as u64 {
+        let day_index = start_index + i;
+        let (tokens, turns) = by_day.get(&day_index).copied().unwrap_or((0, 0));
+        total_tokens = total_tokens.saturating_add(tokens);
+        total_turns = total_turns.saturating_add(turns);
+        points.push(TokenDayPoint {
+            date: day_index_to_ymd(day_index),
+            tokens,
+            turns,
+        });
+    }
+
+    Ok(TokenUsageSeries {
+        days: points,
+        total_tokens,
+        total_turns,
+        window_days: days as u32,
+    })
+}
+
+fn day_index_to_ymd(day_index: u64) -> String {
+    let secs = day_index.saturating_mul(86_400);
+    let (y, mo, d, _, _, _) = unix_secs_to_utc(secs);
+    format!("{y:04}-{mo:02}-{d:02}")
+}
+
+/// Howard Hinnant civil-from-days (UTC), shared with agent_manager timestamps.
+fn unix_secs_to_utc(secs: u64) -> (i32, u32, u32, u32, u32, u32) {
+    let ss = (secs % 60) as u32;
+    let mins = secs / 60;
+    let mi = (mins % 60) as u32;
+    let hours = mins / 60;
+    let h = (hours % 24) as u32;
+    let days = (hours / 24) as i64;
+
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let mo = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
+    let y = (if mo <= 2 { y + 1 } else { y }) as i32;
+    (y, mo, d, h, mi, ss)
+}
+
+fn summary_activity_unix(summary: &Value) -> Option<u64> {
+    for key in ["last_active_at", "updated_at", "created_at"] {
+        if let Some(s) = summary.get(key).and_then(|v| v.as_str()) {
+            if let Some(secs) = parse_iso_ish_to_unix(s) {
+                return Some(secs);
+            }
+        }
+    }
+    None
+}
+
+/// Best-effort ISO-8601 → unix seconds (handles trailing Z and fractional seconds).
+fn parse_iso_ish_to_unix(s: &str) -> Option<u64> {
+    // Fast path: pure unix seconds / millis as string.
+    if let Ok(n) = s.parse::<u64>() {
+        return Some(if n > 10_000_000_000 { n / 1000 } else { n });
+    }
+    let s = s.trim();
+    let s = s.strip_suffix('Z').unwrap_or(s);
+    // Drop timezone offset +HH:MM / -HH:MM (use as UTC approx).
+    let s = if let Some(idx) = s.rfind('+') {
+        if idx > 10 {
+            &s[..idx]
+        } else {
+            s
+        }
+    } else if let Some(idx) = s.rfind('-') {
+        // Distinguish date separator from timezone: timezone appears after time 'T'
+        if let Some(tpos) = s.find('T') {
+            if idx > tpos {
+                &s[..idx]
+            } else {
+                s
+            }
+        } else {
+            s
+        }
+    } else {
+        s
+    };
+    let (date, time) = if let Some((d, t)) = s.split_once('T') {
+        (d, t)
+    } else {
+        return None;
+    };
+    let time = time.split('.').next().unwrap_or(time);
+    let mut dp = date.split('-');
+    let y: i32 = dp.next()?.parse().ok()?;
+    let mo: u32 = dp.next()?.parse().ok()?;
+    let d: u32 = dp.next()?.parse().ok()?;
+    let mut tp = time.split(':');
+    let h: u32 = tp.next()?.parse().ok()?;
+    let mi: u32 = tp.next()?.parse().ok()?;
+    let sec: u32 = tp.next().unwrap_or("0").parse().ok()?;
+    Some(utc_ymd_hms_to_unix(y, mo, d, h, mi, sec))
+}
+
+fn utc_ymd_hms_to_unix(y: i32, mo: u32, d: u32, h: u32, mi: u32, sec: u32) -> u64 {
+    // days_from_civil (Hinnant)
+    let y = if mo <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = (y - era * 400) as u64;
+    let mp = if mo > 2 { mo - 3 } else { mo + 9 };
+    let doy = (153 * mp as u64 + 2) / 5 + d as u64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era as i64 * 146_097 + doe as i64 - 719_468;
+    let secs = days * 86_400 + (h as i64) * 3600 + (mi as i64) * 60 + sec as i64;
+    secs.max(0) as u64
+}
+
+fn accumulate_turn_usage_from_jsonl(
+    path: &Path,
+    start_secs: u64,
+    by_day: &mut HashMap<u64, (u64, u64)>,
+) -> Result<()> {
+    let file = fs::File::open(path)?;
+    let reader = BufReader::new(file);
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        // Cheap filter before full JSON parse.
+        if !line.contains("turn_completed") || !line.contains("usage") {
+            continue;
+        }
+        let msg: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let update = msg
+            .pointer("/params/update")
+            .or_else(|| msg.get("update"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let session_update = update
+            .get("sessionUpdate")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if session_update != "turn_completed" {
+            continue;
+        }
+        let usage = match update.get("usage") {
+            Some(u) => u,
+            None => continue,
+        };
+        let tokens = turn_consumed_tokens(usage);
+        if tokens == 0 {
+            continue;
+        }
+        let ts = extract_update_unix_secs(&msg).unwrap_or(0);
+        if ts < start_secs {
+            continue;
+        }
+        let day_index = ts / 86_400;
+        let entry = by_day.entry(day_index).or_insert((0, 0));
+        entry.0 = entry.0.saturating_add(tokens);
+        entry.1 = entry.1.saturating_add(1);
+    }
+    Ok(())
+}
+
+fn turn_consumed_tokens(usage: &Value) -> u64 {
+    let input = u64_field(usage, &["inputTokens", "input_tokens"]);
+    let output = u64_field(usage, &["outputTokens", "output_tokens"]);
+    let cached = u64_field(usage, &["cachedReadTokens", "cached_read_tokens"]);
+    if input > 0 || output > 0 {
+        return input.saturating_sub(cached).saturating_add(output);
+    }
+    u64_field(usage, &["totalTokens", "total_tokens"])
+}
+
+fn extract_update_unix_secs(msg: &Value) -> Option<u64> {
+    // Prefer agent wall-clock ms when present.
+    if let Some(ms) = msg
+        .pointer("/params/update/_meta/agentTimestampMs")
+        .and_then(|v| v.as_u64())
+        .or_else(|| {
+            msg.pointer("/params/_meta/agentTimestampMs")
+                .and_then(|v| v.as_u64())
+        })
+    {
+        return Some(if ms > 10_000_000_000 { ms / 1000 } else { ms });
+    }
+    if let Some(n) = msg.get("timestamp").and_then(|v| v.as_u64()) {
+        return Some(if n > 10_000_000_000 { n / 1000 } else { n });
+    }
+    if let Some(s) = msg.get("timestamp").and_then(|v| v.as_str()) {
+        return parse_iso_ish_to_unix(s);
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn token_usage_series_returns_window() {
+        let s = token_usage_series(7).expect("series");
+        assert_eq!(s.days.len(), 7);
+        assert_eq!(s.window_days, 7);
+        // Dates should be contiguous YYYY-MM-DD
+        for p in &s.days {
+            assert_eq!(p.date.len(), 10);
+            assert!(p.date.chars().nth(4) == Some('-'));
+        }
+    }
+
+    #[test]
+    fn turn_consumed_excludes_cache() {
+        let usage = serde_json::json!({
+            "inputTokens": 1000,
+            "outputTokens": 50,
+            "cachedReadTokens": 800,
+            "totalTokens": 1050
+        });
+        assert_eq!(turn_consumed_tokens(&usage), 250);
+    }
 
     #[test]
     fn lists_local_sessions() {

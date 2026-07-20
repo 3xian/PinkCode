@@ -1,80 +1,181 @@
-import type { KeyboardEvent } from "react";
-import type { DashboardStats, WeekUsage } from "../types";
+import { useMemo, type KeyboardEvent } from "react";
+import type { TokenUsageSeries, WeekUsage } from "../types";
 import { formatTimeUntil, formatTokens } from "../utils/format";
-import logo from "../assets/logo.png";
 
 interface Props {
-  stats: DashboardStats | null;
+  tokenSeries: TokenUsageSeries | null;
   weekUsage: WeekUsage | null;
-  managedCount: number;
-  pendingPermissions: number;
-  onNewTask: () => void;
   onRefreshWeekUsage?: () => void;
 }
 
+/** Compact status card for the left rail (above the task list). */
 export function StatsBar({
-  stats,
+  tokenSeries,
   weekUsage,
-  managedCount,
-  pendingPermissions,
-  onNewTask,
   onRefreshWeekUsage,
 }: Props) {
   return (
-    <header className="stats-bar">
-      <div className="brand">
-        <img src={logo} alt="MarsBuild" className="brand-logo" />
-        <div>
-          <div className="brand-name">MarsBuild</div>
-          <div className="brand-sub">Desktop mission control</div>
-        </div>
+    <section className="status-card">
+      <div className="status-card-row">
+        <WeekUsageBar usage={weekUsage} onRefresh={onRefreshWeekUsage} />
+        <TokenUsageChart series={tokenSeries} />
       </div>
-
-      <WeekUsageBar usage={weekUsage} onRefresh={onRefreshWeekUsage} />
-
-      <div className="stat-chips">
-        <Chip
-          label="Managed"
-          value={String(managedCount)}
-          accent={managedCount > 0}
-        />
-        <Chip
-          label="Pending"
-          value={String(pendingPermissions)}
-          accent={pendingPermissions > 0}
-          danger={pendingPermissions > 0}
-        />
-        <Chip
-          label="Active"
-          value={stats ? String(stats.activeSessions) : "—"}
-          accent
-        />
-        <Chip label="Sessions" value={stats ? String(stats.totalSessions) : "—"} />
-        <Chip
-          label="Context"
-          value={stats ? formatTokens(stats.totalContextTokens) : "—"}
-        />
-        <Chip
-          label="Tools"
-          value={stats ? formatTokens(stats.totalToolCalls) : "—"}
-        />
-        <Chip
-          label="Δ Lines"
-          value={
-            stats
-              ? `+${formatTokens(stats.totalLinesAdded)} / −${formatTokens(stats.totalLinesRemoved)}`
-              : "—"
-          }
-        />
-      </div>
-
-      <div className="header-actions">
-        <button className="btn primary" type="button" onClick={onNewTask}>
-          + New task
-        </button>
-      </div>
-    </header>
+    </section>
   );
+}
+
+function TokenUsageChart({ series }: { series: TokenUsageSeries | null }) {
+  const chart = useMemo(() => {
+    if (!series || series.days.length === 0) return null;
+    return buildSmoothChart(series.days.map((d) => d.tokens));
+  }, [series]);
+
+  if (!series) {
+    return (
+      <div className="token-chart loading" title="Loading 7-day token usage…">
+        <div className="token-chart-top">
+          <span className="token-chart-label">7-day tokens</span>
+          <span className="token-chart-value">…</span>
+        </div>
+        <div className="token-chart-plot" />
+      </div>
+    );
+  }
+
+  const days = series.days;
+  const tip = days
+    .map(
+      (d) =>
+        `${d.date.slice(5)}: ${formatTokens(d.tokens)} tok · ${d.turns} turns`,
+    )
+    .join("\n");
+
+  // viewBox size — used to place HTML dots as % so they stay perfect circles
+  // (SVG preserveAspectRatio="none" would squash <circle> into ellipses).
+  const vbW = 280;
+  const vbH = 48;
+
+  return (
+    <div
+      className="token-chart"
+      title={`${tip}\n\nTotal ${formatTokens(series.totalTokens)} tok · ${series.totalTurns} turns\n(fresh input + output; cache hits excluded)`}
+    >
+      <div className="token-chart-top">
+        <span className="token-chart-label">7-day tokens</span>
+        <span className="token-chart-value">
+          {formatTokens(series.totalTokens)}
+        </span>
+      </div>
+      <div className="token-chart-plot">
+        <svg
+          className="token-chart-svg"
+          viewBox={`0 0 ${vbW} ${vbH}`}
+          preserveAspectRatio="none"
+          role="img"
+          aria-label="Token usage over the last 7 days"
+        >
+          <defs>
+            <linearGradient id="tokenStroke" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#7c3aed" />
+              <stop offset="100%" stopColor="#a78bfa" />
+            </linearGradient>
+          </defs>
+          {chart && (
+            <path
+              d={chart.line}
+              fill="none"
+              stroke="url(#tokenStroke)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+        </svg>
+        {chart && (
+          <div className="token-chart-dots" aria-hidden>
+            {chart.points.map((p, i) => (
+              <span
+                key={days[i]?.date ?? i}
+                className="token-chart-dot"
+                style={{
+                  left: `${(p.x / vbW) * 100}%`,
+                  top: `${(p.y / vbH) * 100}%`,
+                }}
+                title={
+                  days[i]
+                    ? `${days[i].date}: ${formatTokens(days[i].tokens)} tok`
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="token-chart-meta">
+        <span>{shortDay(days[0]?.date)}</span>
+        <span>{series.totalTurns} turns</span>
+        <span>{shortDay(days[days.length - 1]?.date)}</span>
+      </div>
+    </div>
+  );
+}
+
+/** Build smooth cubic path (Catmull-Rom → Bezier) for a 280×48 chart. */
+function buildSmoothChart(values: number[]): {
+  line: string;
+  area: string;
+  points: { x: number; y: number }[];
+} {
+  const w = 280;
+  const h = 48;
+  // Extra pad so larger dots / halos are not clipped at the edges.
+  const padX = 10;
+  const padY = 10;
+  const n = values.length;
+  const max = Math.max(1, ...values);
+  const span = Math.max(1, n - 1);
+
+  const points = values.map((v, i) => {
+    const x = padX + ((w - padX * 2) * i) / span;
+    const y = h - padY - ((h - padY * 2) * v) / max;
+    return { x, y };
+  });
+
+  if (points.length === 1) {
+    const p = points[0];
+    return {
+      line: `M ${p.x} ${p.y}`,
+      area: `M ${p.x} ${h - padY} L ${p.x} ${p.y} L ${p.x} ${h - padY} Z`,
+      points,
+    };
+  }
+
+  let line = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[Math.min(points.length - 1, i + 2)];
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    line += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+  }
+
+  const first = points[0];
+  const last = points[points.length - 1];
+  const area = `${line} L ${last.x.toFixed(2)} ${(h - padY).toFixed(2)} L ${first.x.toFixed(2)} ${(h - padY).toFixed(2)} Z`;
+
+  return { line, area, points };
+}
+
+function shortDay(iso?: string): string {
+  if (!iso) return "—";
+  const parts = iso.split("-");
+  if (parts.length >= 3) return `${parts[1]}/${parts[2]}`;
+  return iso;
 }
 
 function WeekUsageBar({
@@ -102,58 +203,61 @@ function WeekUsageBar({
   if (!usage) {
     return (
       <div
-        className={`week-usage loading ${clickable ? "clickable" : ""}`}
+        className={`week-battery loading ${clickable ? "clickable" : ""}`}
         title="Loading week usage… · click to refresh"
         role={clickable ? "button" : undefined}
         tabIndex={clickable ? 0 : undefined}
         onClick={onClick}
         onKeyDown={onKeyDown}
       >
-        <div className="week-usage-top">
-          <span className="week-usage-label">Week</span>
-          <span className="week-usage-value">…</span>
-        </div>
-        <div className="week-usage-track">
-          <div className="week-usage-fill" style={{ width: "0%" }} />
+        <div className="week-battery-body" aria-hidden>
+          <div className="week-battery-nub" />
+          <div className="week-battery-shell">
+            <div className="week-battery-glass">
+              <span className="week-battery-pct muted">…</span>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
   if (usage.error) {
+    const shortErr = summarizeUsageError(usage.error);
     return (
       <div
-        className={`week-usage error ${clickable ? "clickable" : ""}`}
+        className={`week-battery error ${clickable ? "clickable" : ""}`}
         title={`${usage.error} · click to retry`}
         role={clickable ? "button" : undefined}
         tabIndex={clickable ? 0 : undefined}
         onClick={onClick}
         onKeyDown={onKeyDown}
       >
-        <div className="week-usage-top">
-          <span className="week-usage-label">Week</span>
-          <span className="week-usage-value muted">n/a</span>
+        <div className="week-battery-body" aria-hidden>
+          <div className="week-battery-nub" />
+          <div className="week-battery-shell">
+            <div className="week-battery-glass">
+              <span className="week-battery-pct muted">n/a</span>
+            </div>
+          </div>
         </div>
-        <div className="week-usage-track">
-          <div className="week-usage-fill empty" style={{ width: "0%" }} />
-        </div>
+        <span className="week-battery-hint">{shortErr}</span>
       </div>
     );
   }
 
-  // Prefer Grok Build product remaining; fall back to overall credits.
-  const remaining =
-    usage.buildRemainingPercent ?? usage.remainingPercent;
-  const used = usage.buildUsedPercent ?? usage.usedPercent;
+  // Overall weekly credit remaining (matches Grok "weekly limit left").
+  // Do NOT prefer GrokBuild product % — that is only one slice of the budget
+  // (e.g. Build 12% left while overall can already be ~2–3%).
+  const remaining = Math.max(0, Math.min(100, usage.remainingPercent));
   const level =
     remaining <= 10 ? "critical" : remaining <= 25 ? "low" : remaining <= 50 ? "mid" : "ok";
   const periodLabel = periodTypeLabel(usage.periodType);
   const reset = formatTimeUntil(usage.periodEnd);
   const tip = [
     `${periodLabel} remaining: ${fmtPct(remaining)}`,
-    `used: ${fmtPct(used)}`,
-    usage.buildUsedPercent != null
-      ? `Grok Build ${fmtPct(usage.buildUsedPercent)} · overall ${fmtPct(usage.usedPercent)}`
+    usage.buildRemainingPercent != null
+      ? `Grok Build left: ${fmtPct(usage.buildRemainingPercent)}`
       : null,
     usage.periodEnd ? `resets in ${reset}` : null,
     "click to refresh",
@@ -163,33 +267,31 @@ function WeekUsageBar({
 
   return (
     <div
-      className={`week-usage level-${level} ${clickable ? "clickable" : ""}`}
+      className={`week-battery level-${level} ${clickable ? "clickable" : ""}`}
       title={tip}
       role={clickable ? "button" : undefined}
       tabIndex={clickable ? 0 : undefined}
       onClick={onClick}
       onKeyDown={onKeyDown}
     >
-      <div className="week-usage-top">
-        <span className="week-usage-label">{periodLabel}</span>
-        <span className="week-usage-value">{fmtPct(remaining)} left</span>
-      </div>
       <div
-        className="week-usage-track"
+        className="week-battery-body"
         role="meter"
         aria-valuenow={remaining}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label={`${periodLabel} remaining`}
+        aria-label={`${periodLabel} remaining ${fmtPct(remaining)}`}
       >
-        <div
-          className="week-usage-fill"
-          style={{ width: `${Math.max(0, Math.min(100, remaining))}%` }}
-        />
-      </div>
-      <div className="week-usage-meta">
-        <span>{fmtPct(used)} used</span>
-        {usage.periodEnd && <span>reset {reset}</span>}
+        <div className="week-battery-nub" aria-hidden />
+        <div className="week-battery-shell">
+          <div className="week-battery-glass">
+            <div
+              className="week-battery-liquid"
+              style={{ height: `${remaining}%` }}
+            />
+            <span className="week-battery-pct">{fmtPct(remaining)}</span>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -203,27 +305,27 @@ function periodTypeLabel(t: string): string {
   return "Period";
 }
 
+function summarizeUsageError(err: string): string {
+  const e = err.toLowerCase();
+  if (e.includes("timed out") || e.includes("timeout") || e.includes("connection failed")) {
+    return "network timeout";
+  }
+  if (e.includes("auth.json") || e.includes("session token") || e.includes("login")) {
+    return "auth missing";
+  }
+  if (e.includes("http 401") || e.includes("http 403")) {
+    return "auth failed";
+  }
+  if (e.includes("proxy")) {
+    return "proxy error";
+  }
+  return "fetch failed";
+}
+
 function fmtPct(n: number): string {
   if (!Number.isFinite(n)) return "—";
   const r = Math.round(n * 10) / 10;
   return Number.isInteger(r) ? `${r}%` : `${r.toFixed(1)}%`;
 }
 
-function Chip({
-  label,
-  value,
-  accent,
-  danger,
-}: {
-  label: string;
-  value: string;
-  accent?: boolean;
-  danger?: boolean;
-}) {
-  return (
-    <div className={`chip ${accent ? "accent" : ""} ${danger ? "danger" : ""}`}>
-      <span className="chip-label">{label}</span>
-      <span className="chip-value">{value}</span>
-    </div>
-  );
-}
+

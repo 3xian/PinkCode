@@ -66,6 +66,21 @@ export interface DashboardStats {
   grokHome: string;
 }
 
+/** One UTC day of aggregated turn token spend. */
+export interface TokenDayPoint {
+  date: string;
+  tokens: number;
+  turns: number;
+}
+
+/** Trailing window of token usage from session `updates.jsonl`. */
+export interface TokenUsageSeries {
+  days: TokenDayPoint[];
+  totalTokens: number;
+  totalTurns: number;
+  windowDays: number;
+}
+
 export interface ProductUsage {
   product: string;
   usagePercent: number;

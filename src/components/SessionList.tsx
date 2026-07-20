@@ -6,6 +6,7 @@ import {
   projectName,
   shortPath,
 } from "../utils/format";
+import logo from "../assets/logo.png";
 
 interface Props {
   sessions: SessionCard[];
@@ -16,6 +17,7 @@ interface Props {
   onQuery: (q: string) => void;
   onSelect: (id: string) => void;
   managedSessionIds?: Set<string>;
+  onNewTask?: () => void;
 }
 
 export function SessionList({
@@ -27,6 +29,7 @@ export function SessionList({
   onQuery,
   onSelect,
   managedSessionIds,
+  onNewTask,
 }: Props) {
   const filtered = sessions.filter((s) => {
     if (filter === "active" && !s.isActive) return false;
@@ -42,10 +45,24 @@ export function SessionList({
   });
 
   return (
-    <aside className="session-list">
+    <div className="session-list">
       <div className="panel-header">
-        <h2>Tasks</h2>
-        <span className="muted">{filtered.length}</span>
+        <div className="panel-header-left">
+          <img src={logo} alt="" className="tasks-logo" />
+          <h2>Tasks</h2>
+        </div>
+        <div className="panel-header-right">
+          <span className="muted">{filtered.length}</span>
+          {onNewTask && (
+            <button
+              className="btn primary tasks-new-btn"
+              type="button"
+              onClick={onNewTask}
+            >
+              + New
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="list-controls">
@@ -73,19 +90,40 @@ export function SessionList({
           <div className="empty-hint">No sessions match.</div>
         )}
         {filtered.map((s) => {
+          // managed = MarsBuild has ACP attached/spawned for this session.
+          // isActive = listed in Grok's active_sessions.json (process may exist,
+          // but we are not necessarily attached). Green border is ACP-only so
+          // users don't confuse disk-active with attached.
           const managed = managedSessionIds?.has(s.id) ?? false;
+          const cardClass = [
+            "session-card",
+            selectedId === s.id ? "selected" : "",
+            managed ? "live" : "",
+            s.isActive && !managed ? "disk-active" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
           return (
           <button
             key={s.id}
-            className={`session-card ${selectedId === s.id ? "selected" : ""} ${s.isActive || managed ? "live" : ""}`}
+            className={cardClass}
             onClick={() => onSelect(s.id)}
           >
             <div className="card-top">
-              <StatusDot status={s.status} active={s.isActive || managed} />
+              <StatusDot
+                status={s.status}
+                active={managed}
+                diskActive={s.isActive && !managed}
+              />
               <span className="card-title" title={s.title}>
                 {s.title}
               </span>
               {managed && <span className="managed-badge">ACP</span>}
+              {s.isActive && !managed && (
+                <span className="disk-active-badge" title="Listed in Grok active_sessions — Attach to stream">
+                  active
+                </span>
+              )}
             </div>
             <div className="card-meta">
               <span title={s.cwd}>{projectName(s.cwd)}</span>
@@ -111,24 +149,35 @@ export function SessionList({
           );
         })}
       </div>
-    </aside>
+    </div>
   );
 }
 
 function StatusDot({
   status,
   active,
+  diskActive,
 }: {
   status: SessionCard["status"];
+  /** MarsBuild ACP attached */
   active: boolean;
+  /** Grok marks session active on disk, not attached here */
+  diskActive?: boolean;
 }) {
   const cls =
     status === "error"
       ? "error"
       : active
         ? "active"
-        : status === "idle"
-          ? "idle"
-          : "unknown";
-  return <span className={`status-dot ${cls}`} title={status} />;
+        : diskActive
+          ? "disk-active"
+          : status === "idle"
+            ? "idle"
+            : "unknown";
+  const title = active
+    ? "Attached (ACP)"
+    : diskActive
+      ? "Active in Grok (not attached)"
+      : status;
+  return <span className={`status-dot ${cls}`} title={title} />;
 }

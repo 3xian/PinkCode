@@ -17,7 +17,7 @@
   --warn: #f0b429;
   --add: #3dd68c;
   --del: #ff6b7a;
-  --radius: 10px;
+  --radius: 0;
   --font: "IBM Plex Sans", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", "SF Mono", ui-monospace, Menlo, monospace;
 }
@@ -59,94 +59,65 @@ code,
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* Limit paint invalidation when the OS moves/resizes the window. */
+  contain: layout style;
 }
 
-/* ── Stats bar ── */
-.stats-bar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, #12161f 0%, var(--bg) 100%);
-  flex-shrink: 0;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 180px;
-}
-
-.brand-mark {
-  color: var(--accent);
-  font-size: 18px;
-}
-
-.brand-logo {
-  width: 36px;
-  height: 36px;
-  object-fit: contain;
-  flex-shrink: 0;
-  border-radius: 0;
-  display: block;
-  background: transparent;
-}
-
-.brand-name {
-  font-weight: 650;
-  letter-spacing: 0.02em;
-}
-
-.brand-sub {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.stat-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  flex: 1;
-}
-
-/* Week usage health bar (remaining budget) */
-.week-usage {
+/* ── Left-rail status card (above task list) ── */
+.status-card {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 160px;
-  max-width: 220px;
-  flex: 0 1 200px;
-  padding: 6px 10px 7px;
-  border-radius: 8px;
-  background: var(--bg-elevated);
-  box-shadow: inset 0 0 0 1px var(--border);
+  gap: 10px;
+  margin: 10px 10px 0;
+  padding: 10px;
+  border: none;
+  border-radius: 0;
+  background: linear-gradient(
+    145deg,
+    #1a2030 0%,
+    #121820 42%,
+    #0e121a 100%
+  );
+  box-shadow: none;
+  flex-shrink: 0;
   user-select: none;
 }
 
-.week-usage.clickable {
-  cursor: pointer;
+.status-card-row {
+  display: flex;
+  align-items: center; /* vertically center battery next to chart */
+  gap: 10px;
+  min-width: 0;
 }
 
-.week-usage.clickable:hover {
-  background: var(--bg-hover);
+.status-card-row .week-battery {
+  align-self: center;
+  flex-shrink: 0;
 }
 
-.week-usage.clickable:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 2px var(--accent-dim);
+/* 7-day token usage sparkline — no border / chrome */
+.token-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  user-select: none;
 }
 
-.week-usage-top {
+.token-chart-top {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
 }
 
-.week-usage-label {
+.token-chart-label {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -154,30 +125,51 @@ code,
   font-weight: 600;
 }
 
-.week-usage-value {
+.token-chart-value {
   font-size: 12px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
-  color: var(--live);
+  color: var(--accent);
 }
 
-.week-usage-track {
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  overflow: hidden;
+.token-chart-plot {
+  position: relative;
+  width: 100%;
+  height: 48px;
+  background: transparent;
 }
 
-.week-usage-fill {
+.token-chart-svg {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
   height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #2f9e6b 0%, var(--live) 100%);
-  box-shadow: 0 0 10px rgba(61, 214, 140, 0.35);
-  transition: width 0.45s ease, background 0.3s ease;
-  min-width: 0;
+  overflow: visible;
 }
 
-.week-usage-meta {
+/* Perfect circles — not SVG, so not squashed by preserveAspectRatio=none */
+.token-chart-dots {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.token-chart-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  /* Fully opaque fill so the line never shows through as a “hollow” ring */
+  background: #a78bfa;
+  border: 1.5px solid #1a1030;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.3);
+  opacity: 1;
+}
+
+.token-chart-meta {
   display: flex;
   justify-content: space-between;
   gap: 8px;
@@ -186,44 +178,215 @@ code,
   font-variant-numeric: tabular-nums;
 }
 
-.week-usage.level-mid .week-usage-value {
-  color: var(--warn);
-}
-
-.week-usage.level-mid .week-usage-fill {
-  background: linear-gradient(90deg, #c98a1a 0%, var(--warn) 100%);
-  box-shadow: 0 0 10px rgba(240, 180, 41, 0.3);
-}
-
-.week-usage.level-low .week-usage-value {
-  color: #ff8a5c;
-}
-
-.week-usage.level-low .week-usage-fill {
-  background: linear-gradient(90deg, #d96a3a 0%, #ff8a5c 100%);
-  box-shadow: 0 0 10px rgba(255, 138, 92, 0.3);
-}
-
-.week-usage.level-critical .week-usage-value {
-  color: var(--danger);
-}
-
-.week-usage.level-critical .week-usage-fill {
-  background: linear-gradient(90deg, #c43d4d 0%, var(--danger) 100%);
-  box-shadow: 0 0 10px rgba(255, 107, 122, 0.35);
-}
-
-.week-usage.level-critical .week-usage-track {
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-.week-usage.error .week-usage-value,
-.week-usage.loading .week-usage-value {
+.token-chart.loading .token-chart-value {
   color: var(--text-muted);
 }
 
-.week-usage .week-usage-fill.empty {
-  box-shadow: none;
+/* Week usage — transparent battery with purple liquid (remaining) */
+.week-battery {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 0;
+  user-select: none;
+  min-width: 0;
+}
+
+.week-battery.clickable {
+  cursor: pointer;
+}
+
+.week-battery.clickable:hover .week-battery-shell {
+  border-color: rgba(180, 150, 255, 0.55);
+}
+
+.week-battery.clickable:focus-visible {
+  outline: none;
+}
+
+.week-battery.clickable:focus-visible .week-battery-shell {
+  border-color: rgba(180, 150, 255, 0.75);
+  box-shadow: 0 0 0 2px rgba(155, 123, 255, 0.25);
+}
+
+.week-battery-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.week-battery-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.week-battery-shell {
+  width: 22px;
+  height: 52px;
+  border-radius: 0;
+  border: 1.25px solid rgba(200, 190, 255, 0.38);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.02) 50%,
+    rgba(0, 0, 0, 0.12) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  padding: 2px;
+  box-sizing: border-box;
+}
+
+.week-battery-glass {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  overflow: hidden;
+  background: rgba(8, 10, 16, 0.35);
+}
+
+.week-battery-liquid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0%;
+  width: 100%;
+  border-radius: 0;
+  background: linear-gradient(
+    180deg,
+    #c4b5fd 0%,
+    #a78bfa 30%,
+    #8b5cf6 70%,
+    #6b3fd4 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 0 10px rgba(139, 92, 246, 0.35);
+  transition: height 0.45s ease;
+  background-image:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      transparent 35%
+    ),
+    linear-gradient(180deg, #c4b5fd 0%, #a78bfa 30%, #8b5cf6 70%, #6b3fd4 100%);
+}
+
+.week-battery-pct {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  font-size: 8px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: #f3eefc;
+  text-shadow:
+    0 0 6px rgba(20, 10, 40, 0.85),
+    0 1px 1px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  writing-mode: horizontal-tb;
+  line-height: 1.05;
+  text-align: center;
+  padding: 0 1px;
+  /* Fit vertical battery: allow wrapping for 100% etc. */
+  word-break: break-all;
+}
+
+.week-battery-pct.muted {
+  color: var(--text-muted);
+  text-shadow: none;
+}
+
+.week-battery-nub {
+  width: 10px;
+  height: 3px;
+  margin: 0 0 1px;
+  border-radius: 0;
+  border: 1.25px solid rgba(200, 190, 255, 0.38);
+  border-bottom: none;
+  background: rgba(255, 255, 255, 0.04);
+  box-sizing: border-box;
+}
+
+.panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tasks-logo {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  flex-shrink: 0;
+  display: block;
+}
+
+.panel-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tasks-new-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  border-radius: 0;
+  min-height: 0;
+}
+
+.week-battery-hint {
+  font-size: 9px;
+  color: var(--text-muted);
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Low remaining: deepen purple → magenta so “emptying” is still readable */
+.week-battery.level-mid .week-battery-liquid {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, transparent 40%),
+    linear-gradient(180deg, #a855f7 0%, #7c3aed 50%, #5b2fc4 100%);
+}
+
+.week-battery.level-low .week-battery-liquid {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, transparent 40%),
+    linear-gradient(180deg, #c026d3 0%, #9333ea 50%, #6d28d9 100%);
+}
+
+.week-battery.level-critical .week-battery-liquid {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, transparent 40%),
+    linear-gradient(180deg, #e11d48 0%, #a21caf 45%, #7e22ce 100%);
+}
+
+.week-battery.level-critical .week-battery-shell {
+  border-color: rgba(232, 121, 249, 0.45);
+}
+
+.week-battery.error .week-battery-shell,
+.week-battery.loading .week-battery-shell {
+  border-color: rgba(139, 147, 167, 0.35);
 }
 
 .chip {
@@ -232,7 +395,7 @@ code,
   gap: 1px;
   padding: 6px 10px;
   border: none;
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--bg-elevated);
   min-width: 72px;
 }
@@ -264,7 +427,7 @@ code,
 .btn {
   border: none;
   background: var(--bg-elevated);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 8px 12px;
   cursor: pointer;
 }
@@ -312,7 +475,20 @@ code,
   color: var(--accent);
   background: var(--accent-dim);
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: 0;
+  flex-shrink: 0;
+}
+
+.disk-active-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  color: var(--warn);
+  background: rgba(240, 180, 41, 0.12);
+  padding: 1px 6px;
+  border-radius: 0;
+  flex-shrink: 0;
 }
 
 .banner {
@@ -335,8 +511,18 @@ code,
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr) 320px;
   gap: 0;
+  contain: layout;
 }
 
+.left-rail,
+.session-list,
+.detail-panel,
+.side-panel {
+  /* Isolate paints so OS window drag does not repaint the whole shell. */
+  contain: layout style;
+}
+
+.left-rail,
 .session-list,
 .detail-panel,
 .side-panel {
@@ -345,8 +531,16 @@ code,
   flex-direction: column;
 }
 
-.session-list {
+.left-rail {
   background: var(--bg);
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+
+.session-list {
+  background: transparent;
+  flex: 1;
+  min-height: 0;
 }
 
 .side-panel {
@@ -397,7 +591,7 @@ code,
 .search {
   width: 100%;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 0;
   border: none;
   background: var(--bg-elevated);
   outline: none;
@@ -413,14 +607,14 @@ code,
   gap: 4px;
   background: var(--bg-elevated);
   padding: 3px;
-  border-radius: 8px;
+  border-radius: 0;
   border: none;
 }
 
 .segmented button {
   border: 0;
   background: transparent;
-  border-radius: 6px;
+  border-radius: 0;
   padding: 6px;
   cursor: pointer;
   color: var(--text-muted);
@@ -446,7 +640,7 @@ code,
   text-align: left;
   border: none;
   background: transparent;
-  border-radius: var(--radius);
+  border-radius: 0;
   padding: 10px 11px;
   cursor: pointer;
   display: flex;
@@ -463,8 +657,44 @@ code,
   background: var(--accent-dim);
 }
 
-.session-card.live {
-  box-shadow: inset 2px 0 0 var(--live);
+/* Left accent: solid mid-band, fade transparent at both ends */
+.session-card.live,
+.session-card.disk-active {
+  position: relative;
+  box-shadow: none;
+}
+
+.session-card.live::before,
+.session-card.disk-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  pointer-events: none;
+}
+
+/* Green = MarsBuild ACP attached only */
+.session-card.live::before {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--live) 18%,
+    var(--live) 82%,
+    transparent 100%
+  );
+}
+
+/* Amber = Grok active on disk, not attached */
+.session-card.disk-active::before {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(240, 180, 41, 0.85) 18%,
+    rgba(240, 180, 41, 0.85) 82%,
+    transparent 100%
+  );
 }
 
 .card-top {
@@ -520,6 +750,12 @@ code,
 .status-dot.active {
   background: var(--live);
   box-shadow: 0 0 0 3px var(--live-dim);
+}
+
+/* Grok active_sessions entry without MarsBuild attach */
+.status-dot.disk-active {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px rgba(240, 180, 41, 0.2);
 }
 
 .status-dot.idle {
@@ -600,7 +836,7 @@ code,
 
 .metric {
   border: none;
-  border-radius: 8px;
+  border-radius: 0;
   padding: 8px 10px;
   background: var(--bg-elevated);
 }
@@ -643,7 +879,7 @@ code,
 .tag {
   font-size: 11px;
   padding: 2px 7px;
-  border-radius: 6px;
+  border-radius: 0;
   background: var(--bg-hover);
   color: var(--text-muted);
   font-family: var(--mono);
@@ -725,7 +961,7 @@ code,
   gap: 10px;
   padding: 8px 10px;
   border: none;
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--bg-elevated);
 }
 
@@ -832,14 +1068,14 @@ code,
   font-size: 11.5px;
   background: var(--bg);
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: 0;
   color: #c4d0e8;
 }
 
 .tl-detail .md .md-pre {
   margin: 0.45em 0;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--bg);
   overflow-x: auto;
   font-family: var(--mono);
@@ -922,7 +1158,7 @@ code,
   gap: 4px;
   padding: 8px 10px;
   border: none;
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--bg-elevated);
 }
 
@@ -964,7 +1200,7 @@ code,
 .raw-stream pre {
   margin: 0;
   padding: 12px;
-  border-radius: 8px;
+  border-radius: 0;
   background: #080a0e;
   border: none;
   overflow: auto;
@@ -994,7 +1230,7 @@ code,
   margin: 18px 14px 8px;
   padding: 12px;
   border: none;
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--bg-elevated);
 }
 
@@ -1054,7 +1290,7 @@ code,
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: 0;
   background: var(--bg-hover);
   color: var(--text-muted);
 }
@@ -1079,7 +1315,7 @@ code,
   text-align: left;
   border: none;
   background: var(--bg-elevated);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 8px 10px;
 }
 
@@ -1100,7 +1336,7 @@ code,
   color: var(--live);
   background: var(--live-dim);
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: 0;
 }
 
 .policy-desc {
@@ -1193,7 +1429,7 @@ code,
 
 .shell-card {
   border: none;
-  border-radius: 10px;
+  border-radius: 0;
   background: #0a0c11;
   overflow: hidden;
 }
@@ -1309,7 +1545,7 @@ code,
 
 .perm-card {
   border: none;
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--bg-elevated);
   padding: 10px 12px;
   display: flex;
@@ -1339,7 +1575,7 @@ code,
   letter-spacing: 0.06em;
   font-weight: 700;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 0;
   background: var(--bg-hover);
   color: var(--text-muted);
 }
@@ -1378,7 +1614,7 @@ code,
 .perm-preview {
   margin: 0;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 0;
   background: #080a0e;
   border: none;
   font-family: var(--mono);
@@ -1422,7 +1658,7 @@ code,
   min-height: 52px;
   max-height: 160px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 0;
   border: none;
   background: var(--bg);
   color: var(--text);
@@ -1481,7 +1717,7 @@ code,
   width: min(520px, 100%);
   background: var(--bg-elevated);
   border: none;
-  border-radius: 14px;
+  border-radius: 0;
   padding: 16px 18px 18px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
   display: flex;
@@ -1515,7 +1751,7 @@ code,
 .field textarea {
   width: 100%;
   padding: 9px 11px;
-  border-radius: 8px;
+  border-radius: 0;
   border: none;
   background: var(--bg);
   color: var(--text);

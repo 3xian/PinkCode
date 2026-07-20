@@ -37,6 +37,8 @@ interface Props {
   onAttach: () => void;
   onStop: () => void;
   onResolvePermission: (item: PendingPermission, optionId: string) => void;
+  /** Bump after attach/spawn to force Live stream to the bottom. */
+  pinLiveBottomSeq?: number;
 }
 
 export function SessionDetailView({
@@ -55,6 +57,7 @@ export function SessionDetailView({
   onAttach,
   onStop,
   onResolvePermission,
+  pinLiveBottomSeq = 0,
 }: Props) {
   if (loading && !detail) {
     return (
@@ -200,7 +203,13 @@ export function SessionDetailView({
       </div>
 
       <div className="tab-body">
-        {tab === "live" && <LiveTimeline items={liveItems} managed={managed} />}
+        {tab === "live" && (
+          <LiveTimeline
+            items={liveItems}
+            managed={managed}
+            pinToBottomSeq={pinLiveBottomSeq}
+          />
+        )}
         {tab === "shell" && <ShellPanel entries={shellEntries} />}
         {tab === "timeline" && <HistoryTimeline detail={detail} />}
         {tab === "diff" && <DiffPanel hunks={detail.hunks} />}
@@ -244,13 +253,28 @@ function Metric({
 function LiveTimeline({
   items,
   managed,
+  pinToBottomSeq = 0,
 }: {
   items: LiveStreamItem[];
   managed: ManagedAgentInfo | null;
+  pinToBottomSeq?: number;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  const scrollParentRef = useRef<HTMLElement | null>(null);
+
+  const scrollToEnd = (behavior: ScrollBehavior = "auto") => {
+    const end = endRef.current;
+    const parent = scrollParentRef.current;
+    if (end) {
+      end.scrollIntoView({ block: "end", behavior });
+      return;
+    }
+    if (parent) {
+      parent.scrollTop = parent.scrollHeight;
+    }
+  };
 
   // Terminal-style: follow the tail unless the user scrolls up
   useEffect(() => {
@@ -263,6 +287,7 @@ function LiveTimeline({
       scrollParent = scrollParent.parentElement;
     }
     if (!scrollParent) return;
+    scrollParentRef.current = scrollParent;
     const el = scrollParent;
     const onScroll = () => {
       const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -274,8 +299,23 @@ function LiveTimeline({
 
   useEffect(() => {
     if (!stickToBottom.current) return;
-    endRef.current?.scrollIntoView({ block: "end" });
+    scrollToEnd("auto");
   }, [items]);
+
+  // Attach / spawn: always jump to bottom (even if user had scrolled up earlier).
+  useEffect(() => {
+    if (!pinToBottomSeq) return;
+    stickToBottom.current = true;
+    // Wait for tab switch + first paint, then again after stream content may land.
+    const t0 = window.requestAnimationFrame(() => scrollToEnd("smooth"));
+    const t1 = window.setTimeout(() => scrollToEnd("smooth"), 80);
+    const t2 = window.setTimeout(() => scrollToEnd("auto"), 320);
+    return () => {
+      window.cancelAnimationFrame(t0);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [pinToBottomSeq]);
 
   if (items.length === 0) {
     return (

@@ -98,7 +98,10 @@ export function PromptBar({
               setText("");
             }}
           >
-            Send ⌘↵
+            {typeof navigator !== "undefined" &&
+            /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent)
+              ? "Send ⌘↵"
+              : "Send Ctrl+↵"}
           </button>
         </div>
       </div>

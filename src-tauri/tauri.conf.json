@@ -13,11 +13,13 @@
   "app": {
     "windows": [
       {
-        "title": "MarsBuild — Grok Control Plane",
+        "title": "MarsBuild",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,
-        "minHeight": 700
+        "minHeight": 700,
+        "dragDropEnabled": false,
+        "backgroundColor": [11, 13, 18, 255]
       }
     ],
     "security": {

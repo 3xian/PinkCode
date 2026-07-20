@@ -13,7 +13,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
-const DEBOUNCE: Duration = Duration::from_millis(500);
+// Longer debounce: session dir is chatty; 500ms still floods React during agent turns.
+const DEBOUNCE: Duration = Duration::from_millis(900);
 const EVENT_NAME: &str = "sessions-changed";
 
 /// Start a background thread that watches Grok home for session index changes.
@@ -120,12 +121,30 @@ fn is_noise_path(path: &Path) -> bool {
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_lowercase();
-    // Editor / OS temporaries
-    name.ends_with('~')
+    // Editor / OS temporaries (macOS + Windows)
+    if name.ends_with('~')
         || name.ends_with(".tmp")
         || name.ends_with(".swp")
+        || name.ends_with(".lock")
         || name.starts_with('.')
         || name == ".ds_store"
+        || name == "thumbs.db"
+        || name == "desktop.ini"
+    {
+        return true;
+    }
+    // High-churn session streams: live UI uses ACP; re-scanning these on every
+    // chunk tanks the main thread (especially window drag / resize on Windows).
+    matches!(
+        name.as_str(),
+        "updates.jsonl"
+            | "events.jsonl"
+            | "hunk_records.jsonl"
+            | "session_search.sqlite"
+            | "session_search.sqlite-journal"
+            | "session_search.sqlite-wal"
+            | "session_search.sqlite-shm"
+    )
 }
 
 fn now_ms() -> u64 {

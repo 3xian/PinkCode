@@ -59,7 +59,7 @@ export function NewTaskModal({
           <input
             value={cwd}
             onChange={(e) => setCwd(e.target.value)}
-            placeholder="/path/to/project"
+            placeholder="D:\\code\\project or /path/to/project"
             disabled={busy}
           />
         </label>

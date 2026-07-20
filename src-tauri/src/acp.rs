@@ -56,12 +56,21 @@ impl AcpClient {
         args.extend(extra_args.iter().cloned());
         args.push("stdio".into());
 
-        let mut child = Command::new(grok_bin)
-            .args(&args)
+        let mut cmd = Command::new(grok_bin);
+        cmd.args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            .stderr(Stdio::piped());
+
+        // GUI host on Windows: hide the console window that `grok.exe` would open.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        let mut child = cmd.spawn()?;
 
         let pid = child.id();
         let stdin = child
@@ -297,15 +306,45 @@ mod tests {
 
     #[test]
     fn handshake_session_new_and_kill() {
-        let grok = dirs::home_dir().unwrap().join(".grok/bin/grok");
-        if !grok.is_file() {
+        // Resolve like production: GROK_BIN / GROK_HOME / PATH / ~/.grok/bin
+        let grok = std::env::var("GROK_BIN")
+            .ok()
+            .filter(|p| std::path::Path::new(p).is_file())
+            .or_else(|| {
+                std::env::var("GROK_HOME").ok().and_then(|h| {
+                    let base = std::path::PathBuf::from(h).join("bin").join("grok");
+                    #[cfg(windows)]
+                    {
+                        let exe = base.with_extension("exe");
+                        if exe.is_file() {
+                            return Some(exe.display().to_string());
+                        }
+                    }
+                    base.is_file()
+                        .then(|| base.display().to_string())
+                })
+            })
+            .or_else(|| {
+                let home = dirs::home_dir()?;
+                let base = home.join(".grok").join("bin").join("grok");
+                #[cfg(windows)]
+                {
+                    let exe = base.with_extension("exe");
+                    if exe.is_file() {
+                        return Some(exe.display().to_string());
+                    }
+                }
+                base.is_file().then(|| base.display().to_string())
+            });
+        let Some(grok) = grok else {
             eprintln!("skip: grok not installed");
             return;
-        }
+        };
+        let cwd = std::env::temp_dir();
         let notifs = Arc::new(AtomicUsize::new(0));
         let c = Arc::clone(&notifs);
         let client = AcpClient::spawn_with_notify(
-            &grok.display().to_string(),
+            &grok,
             true,
             &[],
             Arc::new(move |_m| {
@@ -315,7 +354,7 @@ mod tests {
         .expect("spawn");
         client.initialize().expect("init");
         let res = client
-            .session_new("/Users/mac/code/MarsBuild")
+            .session_new(&cwd.display().to_string())
             .expect("session/new");
         let sid = res.get("sessionId").and_then(|s| s.as_str()).unwrap();
         assert!(!sid.is_empty());

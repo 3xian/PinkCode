@@ -74,15 +74,16 @@ impl PolicyConfig {
                     .into(),
             ),
             PolicyPreset::Code => (
-                vec!["/tmp/".into(), "/private/tmp/".into()],
+                default_tmp_write_prefixes(),
                 "Code work: review project edits; block force-push / destructive shell.".into(),
             ),
             PolicyPreset::Balanced => (
-                vec!["/tmp/".into(), "/private/tmp/".into()],
+                default_tmp_write_prefixes(),
                 "Balanced: auto-allow low-risk; ask on edits & shell; deny known dangerous ops."
                     .into(),
             ),
             PolicyPreset::Trusted => (
+                // Unused: Trusted short-circuits to Allow before prefix checks.
                 vec!["/".into()],
                 "Trusted: auto-approve all client-gated operations (yolo).".into(),
             ),
@@ -214,7 +215,7 @@ impl PolicyStore {
         // Longest parent prefix match (monorepo / subfolder)
         let mut best: Option<(String, PolicyPreset)> = None;
         for (bound, preset) in &self.projects {
-            if key == *bound || key.starts_with(&format!("{bound}/")) {
+            if path_is_equal_or_within(&key, bound) {
                 let better = best
                     .as_ref()
                     .map(|(b, _)| bound.len() > b.len())
@@ -295,46 +296,81 @@ pub fn store_path() -> PathBuf {
         .join("policies.json")
 }
 
-/// Normalize cwd for stable map keys.
-pub fn normalize_cwd(cwd: &str) -> String {
-    let trimmed = cwd.trim().trim_end_matches('/');
-    if trimmed.is_empty() || trimmed == "/" {
-        return if cwd.trim().starts_with('/') {
-            "/".into()
+/// Normalize path separators to `/` and strip Windows verbatim (`\\?\`) prefixes.
+pub fn normalize_separators(path: &str) -> String {
+    let mut s = path.replace('\\', "/");
+    // Windows extended-length path: //?/C:/... or //?/UNC/server/share
+    if let Some(rest) = s.strip_prefix("//?/") {
+        s = if let Some(unc) = rest.strip_prefix("UNC/") {
+            format!("//{unc}")
         } else {
-            String::new()
+            rest.to_string()
         };
     }
-    let path = PathBuf::from(trimmed);
-    // Prefer real canonical path when it exists.
-    if let Ok(canon) = path.canonicalize() {
-        let s = canon.to_string_lossy().to_string();
-        return if s.len() > 1 {
-            s.trim_end_matches('/').to_string()
-        } else {
-            s
-        };
+    s
+}
+
+/// True when `child` is the same as `parent` or a subdirectory of it.
+/// Both sides should already be `normalize_cwd` keys (forward slashes).
+fn path_is_equal_or_within(child: &str, parent: &str) -> bool {
+    if child == parent {
+        return true;
+    }
+    if parent.is_empty() {
+        return false;
+    }
+    let prefix = format!("{parent}/");
+    child.starts_with(&prefix)
+}
+
+/// Normalize cwd for stable map keys (cross-platform).
+///
+/// - Uses `/` separators
+/// - Strips trailing slashes (except Unix root `/`)
+/// - Preserves Windows drive letters / UNC prefixes
+/// - Lowercases on Windows for case-insensitive matching
+pub fn normalize_cwd(cwd: &str) -> String {
+    let raw = cwd.trim();
+    if raw.is_empty() {
+        return String::new();
     }
 
-    // Logical clean for non-existent paths (tests / not-yet-created dirs).
-    use std::path::Component;
-    let mut parts: Vec<String> = Vec::new();
-    let absolute = path.is_absolute();
-    for c in path.components() {
-        match c {
-            Component::RootDir | Component::Prefix(_) => {}
-            Component::CurDir => {}
-            Component::ParentDir => {
-                parts.pop();
-            }
-            Component::Normal(s) => parts.push(s.to_string_lossy().to_string()),
-        }
-    }
-    if absolute {
-        format!("/{}", parts.join("/"))
+    let path = PathBuf::from(raw);
+    let mut s = if let Ok(canon) = path.canonicalize() {
+        normalize_separators(&canon.to_string_lossy())
     } else {
-        parts.join("/")
+        // Logical clean for non-existent paths (tests / not-yet-created dirs).
+        use std::path::Component;
+        let mut out = PathBuf::new();
+        for c in path.components() {
+            match c {
+                Component::Prefix(p) => out.push(p.as_os_str()),
+                Component::RootDir => out.push(std::path::MAIN_SEPARATOR.to_string()),
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    out.pop();
+                }
+                Component::Normal(part) => out.push(part),
+            }
+        }
+        normalize_separators(&out.to_string_lossy())
+    };
+
+    // Trim trailing slashes, keep Unix root and bare drive roots stable.
+    while s.len() > 1 && s.ends_with('/') {
+        // Keep "C:/" style drive roots as "C:" after trim below.
+        s.pop();
     }
+    // "C:" form is fine as a key; empty after bad input stays empty.
+    if s == "/" {
+        return "/".into();
+    }
+
+    #[cfg(windows)]
+    {
+        s = s.to_lowercase();
+    }
+    s
 }
 
 fn project_name(cwd: &str) -> String {
@@ -384,7 +420,8 @@ fn evaluate_fs_write(policy: &PolicyConfig, input: &EvalInput<'_>) -> PolicyDeci
     if policy
         .auto_allow_write_prefixes
         .iter()
-        .any(|p| path.starts_with(p.as_str()))
+        .any(|p| path_has_prefix(path, p))
+        || path_looks_temp(path)
     {
         return match policy.preset {
             PolicyPreset::Research => PolicyDecision::Deny,
@@ -421,10 +458,16 @@ fn evaluate_tool(policy: &PolicyConfig, input: &EvalInput<'_>) -> PolicyDecision
         || blob.contains("terminal")
         || blob.contains("run_terminal")
         || blob.contains("run_command")
+        || blob.contains("powershell")
+        || blob.contains("pwsh")
+        || blob.contains("cmd.exe")
         || input.title.to_lowercase().contains("shell")
         // Avoid bare "execute" matching unrelated words; require shell-ish context.
         || (blob.contains("execute")
-            && (blob.contains("command") || blob.contains("shell") || blob.contains("bash")));
+            && (blob.contains("command")
+                || blob.contains("shell")
+                || blob.contains("bash")
+                || blob.contains("powershell")));
 
     // Avoid `"edit"` matching `"readonly"` / `"read-only"`.
     let is_edit = blob.contains("write")
@@ -457,18 +500,55 @@ fn evaluate_tool(policy: &PolicyConfig, input: &EvalInput<'_>) -> PolicyDecision
 }
 
 fn is_sensitive_path(policy: &PolicyConfig, path: &str) -> bool {
-    let p = path.to_lowercase();
+    let p = normalize_separators(path).to_lowercase();
     policy
         .sensitive_path_substrings
         .iter()
-        .any(|s| p.contains(&s.to_lowercase()))
+        .any(|s| p.contains(&normalize_separators(s).to_lowercase()))
         || path_looks_sensitive(path)
+}
+
+/// Prefix match with normalized separators; case-insensitive on Windows.
+fn path_has_prefix(path: &str, prefix: &str) -> bool {
+    if prefix.is_empty() {
+        return false;
+    }
+    let p = normalize_separators(path);
+    let pre = normalize_separators(prefix);
+    #[cfg(windows)]
+    {
+        p.to_lowercase().starts_with(&pre.to_lowercase())
+    }
+    #[cfg(not(windows))]
+    {
+        p.starts_with(&pre)
+    }
+}
+
+/// OS temp dir and common `/tmp` / `…/Temp/` locations (policy + risk scoring).
+pub fn path_looks_temp(path: &str) -> bool {
+    let p = normalize_separators(path).to_lowercase();
+    if p.contains("/tmp/")
+        || p.starts_with("/tmp")
+        || p.contains("/private/tmp/")
+        || p.contains("/temp/")
+        || p.contains("/tmpdir/")
+    {
+        return true;
+    }
+    let tmp = normalize_separators(&std::env::temp_dir().to_string_lossy()).to_lowercase();
+    let tmp = tmp.trim_end_matches('/').to_string();
+    if tmp.is_empty() {
+        return false;
+    }
+    p == tmp || p.starts_with(&format!("{tmp}/"))
 }
 
 /// Shared sensitive-path heuristics used by policy evaluation and risk scoring.
 /// Kept in one place so `risk_for_path` and policy stay consistent.
 pub fn path_looks_sensitive(path: &str) -> bool {
-    let p = path.to_lowercase();
+    // Normalize `\` → `/` so Windows paths match the same segment rules.
+    let p = normalize_separators(path).to_lowercase();
     // Path-segment / well-known location checks (avoid bare-word false positives
     // like `docs/credentials-guide.md` for the word "credentials").
     const SUBSTRINGS: &[&str] = &[
@@ -488,7 +568,7 @@ pub fn path_looks_sensitive(path: &str) -> bool {
     if SUBSTRINGS.iter().any(|s| p.contains(s)) {
         return true;
     }
-    if p.ends_with("/credentials") || p.ends_with("\\credentials") {
+    if p.ends_with("/credentials") {
         return true;
     }
     // `.env` / `.env.*` as path segment or filename
@@ -526,6 +606,27 @@ pub fn path_looks_sensitive(path: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Temp write prefixes for Code / Balanced presets (Unix + Windows `%TEMP%`).
+fn default_tmp_write_prefixes() -> Vec<String> {
+    let mut v = vec!["/tmp/".into(), "/private/tmp/".into()];
+    let tmp = normalize_separators(&std::env::temp_dir().to_string_lossy());
+    let mut tmp = tmp.trim_end_matches('/').to_string();
+    if !tmp.is_empty() {
+        tmp.push('/');
+        if !v.iter().any(|x| x == &tmp) {
+            v.push(tmp.clone());
+        }
+        #[cfg(windows)]
+        {
+            let lower = tmp.to_lowercase();
+            if lower != tmp {
+                v.push(lower);
+            }
+        }
+    }
+    v
+}
+
 fn default_dangerous_bash() -> Vec<String> {
     vec![
         "rm -rf /".into(),
@@ -546,12 +647,23 @@ fn default_dangerous_bash() -> Vec<String> {
         "drop database".into(),
         "shutdown".into(),
         "reboot".into(),
+        // Windows / PowerShell destructive patterns
+        "rmdir /s".into(),
+        "rd /s".into(),
+        "del /f /s".into(),
+        "del /s /q".into(),
+        "format c:".into(),
+        "format d:".into(),
+        "remove-item -recurse".into(),
+        "remove-item -force".into(),
+        "ri -recurse".into(),
     ]
 }
 
 fn default_sensitive_paths() -> Vec<String> {
     // Prefer path-segment markers over bare words (avoids matching
     // `credentials-guide.md` via a `/credentials` prefix).
+    // Stored with `/` — matching normalizes `\` first.
     vec![
         "/.ssh/".into(),
         "/.gnupg/".into(),
@@ -688,6 +800,9 @@ mod tests {
             "/Users/mac/code/docs/credentials-guide.md"
         ));
         assert!(!path_looks_sensitive("/Users/mac/code/app/src/secretary.ts"));
+        // Windows-style separators
+        assert!(path_looks_sensitive(r"C:\Users\mac\.aws\credentials"));
+        assert!(path_looks_sensitive(r"D:\app\secrets\credentials.json"));
     }
 
     #[test]
@@ -703,5 +818,64 @@ mod tests {
         };
         // Research denies shell/edit; pure readonly should Ask, not Deny.
         assert_eq!(evaluate(&p, &input), PolicyDecision::Ask);
+    }
+
+    #[test]
+    fn normalize_cwd_strips_trailing_slashes() {
+        let a = normalize_cwd("/Users/mac/code/app/");
+        let b = normalize_cwd("/Users/mac/code/app");
+        assert_eq!(a, b);
+        assert!(!a.ends_with('/') || a == "/");
+    }
+
+    #[test]
+    fn normalize_cwd_accepts_backslash_paths() {
+        let a = normalize_cwd(r"C:\Users\mac\code\app");
+        let b = normalize_cwd("C:/Users/mac/code/app");
+        // Same logical key (Windows lowercases; other OSes keep case).
+        assert_eq!(
+            normalize_separators(&a).to_lowercase(),
+            normalize_separators(&b).to_lowercase()
+        );
+        assert!(!a.contains('\\'));
+        assert!(!b.contains('\\'));
+    }
+
+    #[test]
+    fn path_looks_temp_detects_tmp_and_os_temp() {
+        assert!(path_looks_temp("/tmp/x.txt"));
+        assert!(path_looks_temp("/private/tmp/y.txt"));
+        let os_tmp = std::env::temp_dir().join("marsbuild-test.txt");
+        assert!(path_looks_temp(&os_tmp.to_string_lossy()));
+    }
+
+    #[test]
+    fn balanced_allows_os_temp_write() {
+        let p = PolicyConfig::from_preset(PolicyPreset::Balanced);
+        let path = std::env::temp_dir().join("marsbuild-policy.txt");
+        let path_s = path.to_string_lossy().to_string();
+        let input = EvalInput {
+            kind: EvalKind::FsWrite,
+            title: "Write",
+            detail: &path_s,
+            path: Some(&path_s),
+            command: None,
+            raw_blob: "",
+        };
+        assert_eq!(evaluate(&p, &input), PolicyDecision::Allow);
+    }
+
+    #[test]
+    fn denies_windows_destructive_shell() {
+        let p = PolicyConfig::from_preset(PolicyPreset::Code);
+        let input = EvalInput {
+            kind: EvalKind::ToolPermission,
+            title: "run_terminal_command",
+            detail: "Remove-Item -Recurse -Force C:\\proj",
+            path: None,
+            command: Some("Remove-Item -Recurse -Force C:\\proj"),
+            raw_blob: "Remove-Item -Recurse",
+        };
+        assert_eq!(evaluate(&p, &input), PolicyDecision::Deny);
     }
 }

@@ -29,7 +29,30 @@ Built with **Tauri 2 · React · TypeScript · Rust**.
 
 ## Quick start
 
-**Prerequisites:** Node 20+, Rust stable, Xcode CLT (macOS), [Grok Build](https://x.ai) installed (`~/.grok`).
+**Prerequisites**
+
+| | macOS | Windows 11 | Linux |
+|---|---|---|---|
+| Node | 20+ | 20+ | 20+ |
+| Rust | stable | stable (`x86_64-pc-windows-msvc`) | stable |
+| Platform tools | Xcode CLT | **MSVC Build Tools** + [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) (usually preinstalled on Win11) | webkit2gtk / similar (see Tauri docs) |
+| Grok Build | `~/.grok` | `%USERPROFILE%\.grok` or `GROK_HOME` (binary: `grok.exe`) | `~/.grok` |
+
+Windows 11 — install the C++ toolchain once (required for `cargo` / Tauri link):
+
+```powershell
+winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
+Optional: put Build Tools on another drive with `--installPath D:\path\to\BuildTools` in the override string.
+
+Then open a **new** terminal (so the MSVC tools are discoverable), or use *x64 Native Tools Command Prompt for VS 2022*.
+
+Quick environment check:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/windows-setup.ps1
+```
 
 ```bash
 npm install
@@ -42,6 +65,8 @@ Release build:
 npm run tauri:build
 ```
 
+On Windows this produces NSIS/MSI installers under `src-tauri/target/release/bundle/`.
+
 Rust tests (policy, sessions, ACP helpers):
 
 ```bash
@@ -52,8 +77,9 @@ cd src-tauri && cargo test
 
 | Variable | Meaning |
 |----------|---------|
-| `GROK_BIN` | Path to `grok` (else `PATH` / `~/.grok/bin/grok`) |
-| `GROK_HOME` | Grok data root (default `~/.grok`) |
+| `GROK_BIN` | Full path to `grok` / `grok.exe` (else `PATH`, `GROK_HOME/bin`, or `~/.grok/bin`) |
+| `GROK_HOME` | Grok data root (default `~/.grok` / `%USERPROFILE%\.grok`) |
+| `MARSBUILD_HOME` | MarsBuild config root for `policies.json` (default `~/.marsbuild`) |
 
 ## What you get
 

@@ -11,7 +11,9 @@ use agent_manager::{
     SpawnRequest,
 };
 use billing::WeekUsage;
-use models::{ActiveSession, DashboardStats, HunkRecord, SessionCard, SessionDetail};
+use models::{
+    ActiveSession, DashboardStats, HunkRecord, SessionCard, SessionDetail, TokenUsageSeries,
+};
 use policy::{PolicyConfig, PolicyPreset, PolicyStore, ProjectBinding, ResolvedPolicy};
 use serde_json::Value;
 use tauri::Manager;
@@ -47,6 +49,11 @@ fn list_session_hunks(
 #[tauri::command]
 fn get_dashboard_stats() -> Result<DashboardStats, String> {
     sessions::dashboard_stats().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_token_usage_series(days: Option<u32>) -> Result<TokenUsageSeries, String> {
+    sessions::token_usage_series(days.unwrap_or(7)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -231,6 +238,7 @@ pub fn run() {
             get_session_detail,
             list_session_hunks,
             get_dashboard_stats,
+            get_token_usage_series,
             get_week_usage,
             resolve_grok_bin,
             list_managed_agents,

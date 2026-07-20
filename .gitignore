@@ -37,3 +37,7 @@ src-tauri/WixTools
 .marsbuild/
 .mimocode/
 .vscode/
+
+# Local Windows probe artifacts
+_win_probe*
+

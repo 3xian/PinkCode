@@ -1,6 +1,10 @@
 import { useMemo, type KeyboardEvent } from "react";
 import type { TokenUsageSeries, WeekUsage } from "../types";
-import { formatTimeUntil, formatTokens } from "../utils/format";
+import {
+  formatResetCountdown,
+  formatTimeUntil,
+  formatTokens,
+} from "../utils/format";
 
 interface Props {
   tokenSeries: TokenUsageSeries | null;
@@ -18,24 +22,36 @@ export function StatsBar({
     <section className="status-card">
       <div className="status-card-row">
         <WeekUsageBar usage={weekUsage} onRefresh={onRefreshWeekUsage} />
-        <TokenUsageChart series={tokenSeries} />
+        <TokenUsageChart series={tokenSeries} weekUsage={weekUsage} />
       </div>
     </section>
   );
 }
 
-function TokenUsageChart({ series }: { series: TokenUsageSeries | null }) {
+function TokenUsageChart({
+  series,
+  weekUsage,
+}: {
+  series: TokenUsageSeries | null;
+  weekUsage: WeekUsage | null;
+}) {
   const chart = useMemo(() => {
     if (!series || series.days.length === 0) return null;
     return buildSmoothChart(series.days.map((d) => d.tokens));
   }, [series]);
 
+  const resetLabel = resetHeaderLabel(weekUsage);
+
   if (!series) {
     return (
       <div className="token-chart loading" title="Loading 7-day token usage…">
         <div className="token-chart-top">
-          <span className="token-chart-label">7-day tokens</span>
-          <span className="token-chart-value">…</span>
+          <span
+            className="token-chart-reset"
+            title={resetTooltip(weekUsage)}
+          >
+            {resetLabel}
+          </span>
         </div>
         <div className="token-chart-plot" />
       </div>
@@ -61,9 +77,8 @@ function TokenUsageChart({ series }: { series: TokenUsageSeries | null }) {
       title={`${tip}\n\nTotal ${formatTokens(series.totalTokens)} tok · ${series.totalTurns} turns\n(fresh input + output; cache hits excluded)`}
     >
       <div className="token-chart-top">
-        <span className="token-chart-label">7-day tokens</span>
-        <span className="token-chart-value">
-          {formatTokens(series.totalTokens)}
+        <span className="token-chart-reset" title={resetTooltip(weekUsage)}>
+          {resetLabel}
         </span>
       </div>
       <div className="token-chart-plot">
@@ -178,6 +193,23 @@ function shortDay(iso?: string): string {
   return iso;
 }
 
+/** Chart header: "Reset: 2d" / "Reset: 5h" / "Reset: 12m". */
+function resetHeaderLabel(usage: WeekUsage | null): string {
+  if (!usage) return "Reset: …";
+  if (usage.error || !usage.periodEnd) return "Reset: —";
+  const unit = formatResetCountdown(usage.periodEnd);
+  if (unit === "now") return "Reset: now";
+  if (unit === "—") return "Reset: —";
+  return `Reset: ${unit}`;
+}
+
+function resetTooltip(usage: WeekUsage | null): string {
+  if (!usage) return "Loading period reset…";
+  if (usage.error) return usage.error;
+  if (!usage.periodEnd) return "No period end from billing API";
+  return `Resets in ${formatTimeUntil(usage.periodEnd)}`;
+}
+
 function WeekUsageBar({
   usage,
   onRefresh,
@@ -199,25 +231,21 @@ function WeekUsageBar({
         }
       }
     : undefined;
+  const interactive = {
+    role: clickable ? ("button" as const) : undefined,
+    tabIndex: clickable ? 0 : undefined,
+    onClick,
+    onKeyDown,
+  };
 
   if (!usage) {
     return (
       <div
         className={`week-battery loading ${clickable ? "clickable" : ""}`}
         title="Loading week usage… · click to refresh"
-        role={clickable ? "button" : undefined}
-        tabIndex={clickable ? 0 : undefined}
-        onClick={onClick}
-        onKeyDown={onKeyDown}
+        {...interactive}
       >
-        <div className="week-battery-body" aria-hidden>
-          <div className="week-battery-nub" />
-          <div className="week-battery-shell">
-            <div className="week-battery-glass">
-              <span className="week-battery-pct muted">…</span>
-            </div>
-          </div>
-        </div>
+        <UsageBattery fill={0} label="…" muted />
       </div>
     );
   }
@@ -228,30 +256,25 @@ function WeekUsageBar({
       <div
         className={`week-battery error ${clickable ? "clickable" : ""}`}
         title={`${usage.error} · click to retry`}
-        role={clickable ? "button" : undefined}
-        tabIndex={clickable ? 0 : undefined}
-        onClick={onClick}
-        onKeyDown={onKeyDown}
+        {...interactive}
       >
-        <div className="week-battery-body" aria-hidden>
-          <div className="week-battery-nub" />
-          <div className="week-battery-shell">
-            <div className="week-battery-glass">
-              <span className="week-battery-pct muted">n/a</span>
-            </div>
-          </div>
-        </div>
+        <UsageBattery fill={0} label="n/a" muted />
         <span className="week-battery-hint">{shortErr}</span>
       </div>
     );
   }
 
   // Overall weekly credit remaining (matches Grok "weekly limit left").
-  // Do NOT prefer GrokBuild product % — that is only one slice of the budget
-  // (e.g. Build 12% left while overall can already be ~2–3%).
+  // Do NOT prefer GrokBuild product % — that is only one slice of the budget.
   const remaining = Math.max(0, Math.min(100, usage.remainingPercent));
   const level =
-    remaining <= 10 ? "critical" : remaining <= 25 ? "low" : remaining <= 50 ? "mid" : "ok";
+    remaining <= 10
+      ? "critical"
+      : remaining <= 25
+        ? "low"
+        : remaining <= 50
+          ? "mid"
+          : "ok";
   const periodLabel = periodTypeLabel(usage.periodType);
   const reset = formatTimeUntil(usage.periodEnd);
   const tip = [
@@ -269,30 +292,55 @@ function WeekUsageBar({
     <div
       className={`week-battery level-${level} ${clickable ? "clickable" : ""}`}
       title={tip}
-      role={clickable ? "button" : undefined}
-      tabIndex={clickable ? 0 : undefined}
-      onClick={onClick}
-      onKeyDown={onKeyDown}
+      {...interactive}
     >
-      <div
-        className="week-battery-body"
-        role="meter"
-        aria-valuenow={remaining}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-label={`${periodLabel} remaining ${fmtPct(remaining)}`}
-      >
-        <div className="week-battery-nub" aria-hidden />
-        <div className="week-battery-shell">
-          <div className="week-battery-glass">
+      <UsageBattery
+        fill={remaining}
+        label={fmtPct(remaining)}
+        meterLabel={`${periodLabel} remaining ${fmtPct(remaining)}`}
+      />
+    </div>
+  );
+}
+
+/** 3D transparent battery — purple fill = remaining charge. */
+function UsageBattery({
+  fill,
+  label,
+  muted,
+  meterLabel,
+}: {
+  fill: number;
+  label: string;
+  muted?: boolean;
+  meterLabel?: string;
+}) {
+  const pct = Math.max(0, Math.min(100, fill));
+  return (
+    <div
+      className="usage-battery"
+      role={meterLabel ? "meter" : undefined}
+      aria-valuenow={meterLabel ? pct : undefined}
+      aria-valuemin={meterLabel ? 0 : undefined}
+      aria-valuemax={meterLabel ? 100 : undefined}
+      aria-label={meterLabel}
+    >
+      <div className="usage-battery-nub" aria-hidden />
+      <div className="usage-battery-body" aria-hidden>
+        <div className="usage-battery-shell">
+          <div className="usage-battery-glass">
+            <div className="usage-battery-shine" />
+            <div className="usage-battery-edge" />
             <div
-              className="week-battery-liquid"
-              style={{ height: `${remaining}%` }}
-            />
-            <span className="week-battery-pct">{fmtPct(remaining)}</span>
+              className="usage-battery-fill"
+              style={{ height: `${pct}%` }}
+            >
+              <div className="usage-battery-fill-sheen" />
+            </div>
           </div>
         </div>
       </div>
+      <span className={`usage-battery-pct${muted ? " muted" : ""}`}>{label}</span>
     </div>
   );
 }

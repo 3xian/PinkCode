@@ -1,3 +1,4 @@
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 
 interface Props {
@@ -22,6 +23,7 @@ export function NewTaskModal({
   const [cwd, setCwd] = useState(defaultCwd);
   const [prompt, setPrompt] = useState("");
   const [alwaysApprove, setAlwaysApprove] = useState(false);
+  const [picking, setPicking] = useState(false);
 
   // Component stays mounted while closed (returns null); re-sync defaults on open.
   useEffect(() => {
@@ -29,8 +31,30 @@ export function NewTaskModal({
       setCwd(defaultCwd);
       setPrompt("");
       setAlwaysApprove(false);
+      setPicking(false);
     }
   }, [open, defaultCwd]);
+
+  async function pickDirectory() {
+    if (busy || picking) return;
+    setPicking(true);
+    try {
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        // Prefer current path as starting location when it looks absolute.
+        defaultPath: cwd.trim() || undefined,
+        title: "Choose working directory",
+      });
+      if (typeof selected === "string" && selected.length > 0) {
+        setCwd(selected);
+      }
+    } catch (e) {
+      console.error("Directory picker failed:", e);
+    } finally {
+      setPicking(false);
+    }
+  }
 
   if (!open) return null;
 
@@ -44,9 +68,6 @@ export function NewTaskModal({
       >
         <div className="modal-header">
           <h2>New agent task</h2>
-          <button className="btn ghost" onClick={onClose} type="button">
-            Close
-          </button>
         </div>
         <p className="muted small">
           Spawns <code>grok agent stdio</code>, creates an ACP session, and
@@ -56,21 +77,36 @@ export function NewTaskModal({
 
         <label className="field">
           <span>Working directory</span>
-          <input
-            value={cwd}
-            onChange={(e) => setCwd(e.target.value)}
-            placeholder="D:\\code\\project or /path/to/project"
-            disabled={busy}
-          />
+          <div className="field-row">
+            <input
+              value={cwd}
+              onChange={(e) => setCwd(e.target.value)}
+              placeholder="Click Browse or paste a path…"
+              disabled={busy || picking}
+            />
+            <button
+              className="btn"
+              type="button"
+              onClick={() => void pickDirectory()}
+              disabled={busy || picking}
+            >
+              {picking ? "…" : "Browse"}
+            </button>
+          </div>
         </label>
 
         <label className="field">
-          <span>Initial prompt</span>
+          <span>
+            Initial prompt{" "}
+            <span className="muted" style={{ fontWeight: 400 }}>
+              (optional)
+            </span>
+          </span>
           <textarea
             rows={5}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="What should the agent do?"
+            placeholder="What should the agent do? Leave empty to start without a prompt."
             disabled={busy}
           />
         </label>
@@ -97,7 +133,7 @@ export function NewTaskModal({
           <button
             className="btn primary"
             type="button"
-            disabled={busy || !cwd.trim() || !prompt.trim()}
+            disabled={busy || !cwd.trim()}
             onClick={() =>
               onSubmit({
                 cwd: cwd.trim(),

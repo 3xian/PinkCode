@@ -60,7 +60,6 @@ function App() {
   const [weekUsage, setWeekUsage] = useState<WeekUsage | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
-  const [filter, setFilter] = useState<"all" | "active" | "idle">("all");
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<MainTab>("live");
   const [detailLoading, setDetailLoading] = useState(false);
@@ -365,7 +364,8 @@ function App() {
     try {
       const info = await spawnAgent({
         cwd: opts.cwd,
-        prompt: opts.prompt,
+        // Empty string → omit; backend treats missing/blank as “no initial prompt”.
+        prompt: opts.prompt.trim() ? opts.prompt.trim() : null,
         alwaysApprove: opts.alwaysApprove,
       });
       upsertManaged(info);
@@ -544,9 +544,7 @@ function App() {
           <SessionList
             sessions={sessions}
             selectedId={selectedId}
-            filter={filter}
             query={query}
-            onFilter={setFilter}
             onQuery={setQuery}
             onSelect={(id) => {
               setSelectedId(id);

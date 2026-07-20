@@ -223,6 +223,7 @@ fn list_policy_presets(manager: tauri::State<'_, AgentManager>) -> Vec<PolicyCon
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(AgentManager::new())
         .setup(|app| {
             let manager = app.state::<AgentManager>();

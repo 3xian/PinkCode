@@ -51,16 +51,22 @@ export function contextPct(used: number, total: number): number {
   return Math.min(100, Math.round((used / total) * 1000) / 10);
 }
 
-/** Human remaining time until ISO timestamp (or unix-seconds string). */
-export function formatTimeUntil(isoOrUnix?: string | null): string {
-  if (!isoOrUnix) return "—";
+/** Parse ISO / unix-seconds / unix-ms into epoch ms, or null. */
+function parseDeadlineMs(isoOrUnix?: string | null): number | null {
+  if (!isoOrUnix) return null;
   let t = Date.parse(isoOrUnix);
   if (Number.isNaN(t)) {
     const n = Number(isoOrUnix);
-    if (!Number.isFinite(n)) return "—";
-    // unix seconds vs ms
+    if (!Number.isFinite(n)) return null;
     t = n < 1e12 ? n * 1000 : n;
   }
+  return t;
+}
+
+/** Human remaining time until ISO timestamp (or unix-seconds string). */
+export function formatTimeUntil(isoOrUnix?: string | null): string {
+  const t = parseDeadlineMs(isoOrUnix);
+  if (t == null) return "—";
   const diff = t - Date.now();
   if (diff <= 0) return "resetting…";
   const sec = Math.floor(diff / 1000);
@@ -71,6 +77,24 @@ export function formatTimeUntil(isoOrUnix?: string | null): string {
   if (hr > 0) return `${hr}h ${min}m`;
   if (min > 0) return `${min}m`;
   return `${sec}s`;
+}
+
+/**
+ * Compact countdown for the usage header:
+ * ≥1 day → "Nd"; &lt;1 day → "Nh"; &lt;1 hour → "Nm".
+ */
+export function formatResetCountdown(isoOrUnix?: string | null): string {
+  const t = parseDeadlineMs(isoOrUnix);
+  if (t == null) return "—";
+  const diff = t - Date.now();
+  if (diff <= 0) return "now";
+  const sec = Math.floor(diff / 1000);
+  const day = Math.floor(sec / 86400);
+  if (day >= 1) return `${day}d`;
+  const hr = Math.floor(sec / 3600);
+  if (hr >= 1) return `${hr}h`;
+  const min = Math.max(1, Math.floor(sec / 60));
+  return `${min}m`;
 }
 
 /** Stream kinds that arrive as many tiny chunks and should be coalesced. */

@@ -1055,6 +1055,77 @@ code,
   padding: 12px 18px 18px;
 }
 
+/* Live stream type filters (replaces standalone Shell tab) */
+.live-timeline-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.live-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 2px 0 8px;
+  background: linear-gradient(
+    180deg,
+    var(--bg-panel, var(--bg)) 70%,
+    transparent
+  );
+}
+
+.live-filter-chip {
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.2;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.live-filter-chip:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.live-filter-chip.active {
+  color: var(--text);
+  background: var(--accent-dim, rgba(120, 160, 255, 0.16));
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.live-filter-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  opacity: 0.75;
+  min-width: 1ch;
+}
+
+.live-filter-chip.active .live-filter-count {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.tl-item.kind-shell .tl-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.tl-item.kind-shell .shell-card {
+  margin-top: 0;
+}
+
 .empty-state {
   margin: auto;
   max-width: 420px;

@@ -1,11 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
+  LiveFilterKind,
   LiveStreamItem,
   MainTab,
   ManagedAgentInfo,
   PendingPermission,
   SessionDetail as Detail,
-  ShellEntry,
 } from "../types";
 import {
   contextPct,
@@ -19,7 +19,7 @@ import { DiffPanel } from "./DiffPanel";
 import { Markdown } from "./Markdown";
 import { PermissionGate } from "./PermissionGate";
 import { PromptBar } from "./PromptBar";
-import { ShellPanel } from "./ShellPanel";
+import { ShellCard } from "./ShellPanel";
 
 interface Props {
   detail: Detail | null;
@@ -28,7 +28,6 @@ interface Props {
   tab: MainTab;
   onTab: (t: MainTab) => void;
   liveItems: LiveStreamItem[];
-  shellEntries: ShellEntry[];
   managed: ManagedAgentInfo | null;
   permissions: PendingPermission[];
   permBusyKey: string | null;
@@ -41,6 +40,30 @@ interface Props {
   pinLiveBottomSeq?: number;
 }
 
+const LIVE_FILTER_LABELS: Record<string, string> = {
+  all: "All",
+  user: "User",
+  agent: "Agent",
+  thought: "Thought",
+  tool: "Tool",
+  shell: "Shell",
+  plan: "Plan",
+  event: "Event",
+  unknown: "Other",
+};
+
+const LIVE_FILTER_ORDER: LiveFilterKind[] = [
+  "all",
+  "user",
+  "agent",
+  "thought",
+  "tool",
+  "shell",
+  "plan",
+  "event",
+  "unknown",
+];
+
 export function SessionDetailView({
   detail,
   loading,
@@ -48,7 +71,6 @@ export function SessionDetailView({
   tab,
   onTab,
   liveItems,
-  shellEntries,
   managed,
   permissions,
   permBusyKey,
@@ -59,6 +81,18 @@ export function SessionDetailView({
   onResolvePermission,
   pinLiveBottomSeq = 0,
 }: Props) {
+  const tabBodyRef = useRef<HTMLDivElement>(null);
+
+  // Live pins to bottom; History / Diff / Raw expect top. Shared .tab-body
+  // scroll container otherwise keeps Live's scrollTop and hides content.
+  // useLayoutEffect: reset before paint so History is not blank for a frame.
+  useLayoutEffect(() => {
+    if (tab === "live") return;
+    const el = tabBodyRef.current;
+    if (!el) return;
+    el.scrollTop = 0;
+  }, [tab, detail?.card.id]);
+
   if (loading && !detail) {
     return (
       <section className="detail-panel">
@@ -177,7 +211,6 @@ export function SessionDetailView({
         {(
           [
             ["live", "Live"],
-            ["shell", "Shell"],
             ["timeline", "History"],
             ["diff", "File changes"],
             ["raw", "Raw stream"],
@@ -192,9 +225,6 @@ export function SessionDetailView({
             {id === "live" && liveItems.length > 0 && (
               <span className="tab-count">{liveItems.length}</span>
             )}
-            {id === "shell" && shellEntries.length > 0 && (
-              <span className="tab-count">{shellEntries.length}</span>
-            )}
             {id === "diff" && detail.hunks.length > 0 && (
               <span className="tab-count">{detail.hunks.length}</span>
             )}
@@ -202,7 +232,7 @@ export function SessionDetailView({
         ))}
       </div>
 
-      <div className="tab-body">
+      <div className="tab-body" ref={tabBodyRef}>
         {tab === "live" && (
           <LiveTimeline
             items={liveItems}
@@ -210,7 +240,6 @@ export function SessionDetailView({
             pinToBottomSeq={pinLiveBottomSeq}
           />
         )}
-        {tab === "shell" && <ShellPanel entries={shellEntries} />}
         {tab === "timeline" && <HistoryTimeline detail={detail} />}
         {tab === "diff" && <DiffPanel hunks={detail.hunks} />}
         {tab === "raw" && <RawStream detail={detail} />}
@@ -263,6 +292,40 @@ function LiveTimeline({
   const endRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const scrollParentRef = useRef<HTMLElement | null>(null);
+  const [filter, setFilter] = useState<LiveFilterKind>("all");
+
+  const kindCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      const k = item.kind || "unknown";
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    return counts;
+  }, [items]);
+
+  const filterChips = useMemo(() => {
+    const present = LIVE_FILTER_ORDER.filter(
+      (k) => k === "all" || (kindCounts.get(k) ?? 0) > 0,
+    );
+    // Any unexpected kinds (not in order list)
+    for (const k of kindCounts.keys()) {
+      if (!present.includes(k as LiveFilterKind)) {
+        present.push(k as LiveFilterKind);
+      }
+    }
+    return present;
+  }, [kindCounts]);
+
+  // If active filter has zero items, fall back to All
+  useEffect(() => {
+    if (filter === "all") return;
+    if ((kindCounts.get(filter) ?? 0) === 0) setFilter("all");
+  }, [filter, kindCounts]);
+
+  const filtered = useMemo(() => {
+    if (filter === "all") return items;
+    return items.filter((i) => (i.kind || "unknown") === filter);
+  }, [items, filter]);
 
   const scrollToEnd = (behavior: ScrollBehavior = "auto") => {
     const end = endRef.current;
@@ -295,12 +358,12 @@ function LiveTimeline({
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [items.length > 0]);
+  }, [filtered.length > 0]);
 
   useEffect(() => {
     if (!stickToBottom.current) return;
     scrollToEnd("auto");
-  }, [items]);
+  }, [filtered]);
 
   // Attach / spawn: always jump to bottom (even if user had scrolled up earlier).
   useEffect(() => {
@@ -322,34 +385,68 @@ function LiveTimeline({
       <div className="empty-hint">
         {managed
           ? "Waiting for ACP stream… send a prompt or wait for the agent."
-          : "Attach or spawn this session to see live thought / tool / message chunks."}
+          : "Attach or spawn this session to see live thought / tool / shell / message chunks."}
       </div>
     );
   }
 
   // Chronological (oldest → newest), like a terminal tail
   return (
-    <div className="timeline live-timeline" ref={rootRef}>
-      {items.map((item) => (
-        <div key={item.id} className={`tl-item kind-${item.kind}`}>
-          <div className="tl-kind">{item.kind}</div>
-          <div className="tl-body">
-            <div className="tl-title">{item.title}</div>
-            {item.detail && (
-              <div className="tl-detail">
-                {item.kind === "agent" ||
-                item.kind === "user" ||
-                item.kind === "thought" ? (
-                  <Markdown>{item.detail}</Markdown>
+    <div className="live-timeline-wrap">
+      <div className="live-filters" role="toolbar" aria-label="Live content filter">
+        {filterChips.map((k) => {
+          const count = k === "all" ? items.length : (kindCounts.get(k) ?? 0);
+          const label = LIVE_FILTER_LABELS[k] ?? k;
+          return (
+            <button
+              key={k}
+              type="button"
+              className={`live-filter-chip ${filter === k ? "active" : ""}`}
+              onClick={() => setFilter(k)}
+              aria-pressed={filter === k}
+            >
+              {label}
+              <span className="live-filter-count">{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="empty-hint">
+          No <strong>{LIVE_FILTER_LABELS[filter] ?? filter}</strong> items in
+          this stream.
+        </div>
+      ) : (
+        <div className="timeline live-timeline" ref={rootRef}>
+          {filtered.map((item) => (
+            <div key={item.id} className={`tl-item kind-${item.kind}`}>
+              <div className="tl-kind">{item.kind}</div>
+              <div className="tl-body">
+                {item.kind === "shell" && item.shell ? (
+                  <ShellCard shell={item.shell} />
                 ) : (
-                  item.detail
+                  <>
+                    <div className="tl-title">{item.title}</div>
+                    {item.detail && (
+                      <div className="tl-detail">
+                        {item.kind === "agent" ||
+                        item.kind === "user" ||
+                        item.kind === "thought" ? (
+                          <Markdown>{item.detail}</Markdown>
+                        ) : (
+                          item.detail
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          ))}
+          <div ref={endRef} className="live-timeline-end" aria-hidden />
         </div>
-      ))}
-      <div ref={endRef} className="live-timeline-end" aria-hidden />
+      )}
     </div>
   );
 }

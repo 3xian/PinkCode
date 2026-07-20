@@ -100,7 +100,19 @@ export interface WeekUsage {
   error?: string | null;
 }
 
-export type MainTab = "live" | "shell" | "timeline" | "diff" | "raw";
+export type MainTab = "live" | "timeline" | "diff" | "raw";
+
+/** Live stream filter chip (plus `"all"`). */
+export type LiveFilterKind =
+  | "all"
+  | "user"
+  | "agent"
+  | "thought"
+  | "tool"
+  | "shell"
+  | "plan"
+  | "event"
+  | "unknown";
 
 export type PolicyPreset = "research" | "code" | "balanced" | "trusted";
 
@@ -218,6 +230,16 @@ export interface AttachRequest {
   alwaysApprove?: boolean | null;
 }
 
+/** Rich payload when `kind === "shell"` (from agent-shell events). */
+export interface LiveShellPayload {
+  toolCallId: string;
+  command: string;
+  description?: string;
+  status: string;
+  output: string;
+  exitCode?: number | null;
+}
+
 export interface LiveStreamItem {
   id: string;
   handleId: string;
@@ -226,6 +248,8 @@ export interface LiveStreamItem {
   title: string;
   detail?: string;
   ts: number;
+  /** Present when kind is `"shell"`. */
+  shell?: LiveShellPayload;
 }
 
 export interface AgentUpdateEvent {

@@ -13,7 +13,6 @@ import type {
 import { COALESCE_LIVE_KINDS, describeUpdate } from "../utils/format";
 
 const MAX_LIVE = 400;
-const MAX_SHELL = 80;
 
 export function useAgentEvents(selectedSessionId: string | null) {
   const [managed, setManaged] = useState<Map<string, ManagedAgentInfo>>(
@@ -25,9 +24,6 @@ export function useAgentEvents(selectedSessionId: string | null) {
   const [permissions, setPermissions] = useState<Map<string, PendingPermission>>(
     () => new Map(),
   );
-  const [shellBySession, setShellBySession] = useState<
-    Map<string, ShellEntry[]>
-  >(() => new Map());
   const [policyActions, setPolicyActions] = useState<
     { action: string; title: string; ts: number }[]
   >([]);
@@ -262,43 +258,71 @@ export function useAgentEvents(selectedSessionId: string | null) {
           return next;
         });
       });
+      // Shell stdout/stderr → same Live stream (kind "shell"), filtered in UI
       const u6 = await listen<ShellEntry>("agent-shell", (e) => {
         if (cancelled) return;
+        if (document.visibilityState === "hidden") return;
         const raw = e.payload;
-        const entry: ShellEntry = {
-          id: `${raw.toolCallId}-${raw.ts}`,
-          handleId: raw.handleId,
-          sessionId: raw.sessionId,
-          toolCallId: raw.toolCallId,
-          command: raw.command || "",
-          description: raw.description,
-          status: raw.status || "in_progress",
-          output: raw.output || "",
-          exitCode: raw.exitCode,
-          ts: raw.ts || Date.now(),
-        };
-        const key = entry.sessionId || entry.handleId;
-        setShellBySession((prev) => {
+        const handleId = raw.handleId;
+        const sessionId = raw.sessionId ?? null;
+        const toolCallId = raw.toolCallId;
+        const command = raw.command || "";
+        const description = raw.description;
+        const status = raw.status || "in_progress";
+        const output = raw.output || "";
+        const exitCode = raw.exitCode;
+        const now = raw.ts || Date.now();
+        const key = sessionId || handleId;
+        const title =
+          status === "completed" || status === "failed"
+            ? `$ ${command || "shell"}${exitCode != null ? ` · exit ${exitCode}` : ""}`
+            : `$ ${command || "shell"} · ${status}`;
+
+        scheduleLive((prev) => {
           const next = new Map(prev);
           const list = [...(next.get(key) ?? [])];
-          const idx = list.findIndex((x) => x.toolCallId === entry.toolCallId);
+          const idx = list.findIndex(
+            (x) => x.kind === "shell" && x.shell?.toolCallId === toolCallId,
+          );
           if (idx >= 0) {
-            // merge: keep longest output / latest status
             const old = list[idx];
+            const prevOut = old.shell?.output ?? "";
+            const mergedOut =
+              output.length >= prevOut.length ? output : prevOut;
             list[idx] = {
               ...old,
-              ...entry,
-              command: entry.command || old.command,
-              output:
-                entry.output.length >= old.output.length
-                  ? entry.output
-                  : old.output,
-              id: old.id,
+              title,
+              detail: description || command || old.detail,
+              ts: now,
+              shell: {
+                toolCallId,
+                command: command || old.shell?.command || "",
+                description: description ?? old.shell?.description,
+                status,
+                output: mergedOut,
+                exitCode: exitCode ?? old.shell?.exitCode,
+              },
             };
           } else {
-            list.push(entry);
+            list.push({
+              id: `shell-${toolCallId}-${now}`,
+              handleId,
+              sessionId,
+              kind: "shell",
+              title,
+              detail: description || command || undefined,
+              ts: now,
+              shell: {
+                toolCallId,
+                command,
+                description,
+                status,
+                output,
+                exitCode,
+              },
+            });
           }
-          if (list.length > MAX_SHELL) list.splice(0, list.length - MAX_SHELL);
+          if (list.length > MAX_LIVE) list.splice(0, list.length - MAX_LIVE);
           next.set(key, list);
           return next;
         });
@@ -386,23 +410,11 @@ export function useAgentEvents(selectedSessionId: string | null) {
     );
   }, [allPermissions, managedForSession, selectedSessionId]);
 
-  const shellEntries = useMemo(() => {
-    if (!selectedSessionId) return [] as ShellEntry[];
-    const bySession = shellBySession.get(selectedSessionId) ?? [];
-    const handle = managedForSession?.handleId;
-    const byHandle = handle ? (shellBySession.get(handle) ?? []) : [];
-    if (!byHandle.length) return bySession;
-    const map = new Map<string, ShellEntry>();
-    [...byHandle, ...bySession].forEach((e) => map.set(e.toolCallId, e));
-    return Array.from(map.values()).sort((a, b) => a.ts - b.ts);
-  }, [selectedSessionId, shellBySession, managedForSession]);
-
   return {
     managed,
     managedList,
     managedForSession,
     liveItems,
-    shellEntries,
     permissions: allPermissions,
     permissionsForSession,
     policy,

@@ -79,7 +79,6 @@ function App() {
     managedList,
     managedForSession,
     liveItems,
-    shellEntries,
     permissionsForSession,
     setPolicyState,
     setResolvedPolicy,
@@ -561,7 +560,6 @@ function App() {
           tab={tab}
           onTab={setTab}
           liveItems={liveItems}
-          shellEntries={shellEntries}
           managed={managedForSession}
           permissions={permissionsForSession}
           permBusyKey={permBusyKey}

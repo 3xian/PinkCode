@@ -3,13 +3,12 @@ import type {
   ActiveSession,
   AttachRequest,
   DashboardStats,
+  DirEntry,
+  GitChange,
   HunkRecord,
   ManagedAgentInfo,
   PendingPermission,
-  PolicyConfig,
-  PolicyPreset,
-  ProjectBinding,
-  ResolvedPolicy,
+  PermissionMode,
   SessionCard,
   SessionDetail,
   SpawnRequest,
@@ -109,40 +108,60 @@ export async function resolvePermission(
   });
 }
 
-export async function getPolicy(): Promise<PolicyConfig> {
-  return invoke<PolicyConfig>("get_policy");
+export async function setPermissionMode(
+  handleId: string,
+  mode: PermissionMode,
+): Promise<ManagedAgentInfo> {
+  return invoke<ManagedAgentInfo>("set_permission_mode", {
+    handleId,
+    mode,
+  });
 }
 
-export async function resolvePolicy(cwd?: string | null): Promise<ResolvedPolicy> {
-  return invoke<ResolvedPolicy>("resolve_policy", { cwd: cwd ?? null });
+/** Persist mode for a session even when no agent is live. */
+export async function setTaskPermissionMode(
+  sessionId: string,
+  mode: PermissionMode,
+): Promise<void> {
+  return invoke("set_task_permission_mode", { sessionId, mode });
 }
 
-export async function setDefaultPolicyPreset(
-  preset: PolicyPreset,
-): Promise<ResolvedPolicy> {
-  return invoke<ResolvedPolicy>("set_default_policy_preset", { preset });
+export async function getTaskPermissionMode(
+  sessionId: string,
+): Promise<PermissionMode | null> {
+  return invoke<PermissionMode | null>("get_task_permission_mode", {
+    sessionId,
+  });
 }
 
-export async function bindProjectPolicy(
-  cwd: string,
-  preset: PolicyPreset,
-): Promise<ResolvedPolicy> {
-  return invoke<ResolvedPolicy>("bind_project_policy", { cwd, preset });
+export async function listTaskPermissionModes(): Promise<
+  Record<string, PermissionMode>
+> {
+  return invoke<Record<string, PermissionMode>>("list_task_permission_modes");
 }
 
-export async function unbindProjectPolicy(cwd: string): Promise<ResolvedPolicy> {
-  return invoke<ResolvedPolicy>("unbind_project_policy", { cwd });
+export async function getLastSpawnPermissionMode(): Promise<PermissionMode> {
+  return invoke<PermissionMode>("get_last_spawn_permission_mode");
 }
 
-export async function listProjectBindings(): Promise<ProjectBinding[]> {
-  return invoke<ProjectBinding[]>("list_project_bindings");
+export async function listProjectDir(
+  root: string,
+  path?: string | null,
+): Promise<DirEntry[]> {
+  return invoke<DirEntry[]>("list_project_dir", {
+    root,
+    path: path ?? null,
+  });
 }
 
-/** @deprecated prefer setDefaultPolicyPreset / bindProjectPolicy */
-export async function setPolicyPreset(preset: PolicyPreset): Promise<PolicyConfig> {
-  return invoke<PolicyConfig>("set_policy_preset", { preset });
+/** Open a project path with the OS default application (must stay under root). */
+export async function openProjectPath(
+  root: string,
+  path: string,
+): Promise<void> {
+  return invoke("open_project_path", { root, path });
 }
 
-export async function listPolicyPresets(): Promise<PolicyConfig[]> {
-  return invoke<PolicyConfig[]>("list_policy_presets");
+export async function gitStatus(cwd: string): Promise<GitChange[]> {
+  return invoke<GitChange[]>("git_status", { cwd });
 }

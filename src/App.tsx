@@ -1,27 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { listen } from "@tauri-apps/api/event";
 import {
   attachAgent,
-  bindProjectPolicy,
+  getLastSpawnPermissionMode,
   getSessionDetail,
   getTokenUsageSeries,
   getWeekUsage,
   listManagedAgents,
   listPendingPermissions,
-  listPolicyPresets,
-  listProjectBindings,
   listSessions,
+  listTaskPermissionModes,
   promptAgent,
   resolvePermission,
-  resolvePolicy,
-  setDefaultPolicyPreset,
+  setPermissionMode,
+  setTaskPermissionMode,
   spawnAgent,
   stopAgent,
-  unbindProjectPolicy,
 } from "./api";
-import { DiffPanel } from "./components/DiffPanel";
+import { FileTree } from "./components/FileTree";
+import { GitChanges } from "./components/GitChanges";
 import { NewTaskModal } from "./components/NewTaskModal";
-import { PolicyCenter } from "./components/PolicyCenter";
 import { SessionDetailView } from "./components/SessionDetail";
 import { SessionList } from "./components/SessionList";
 import { StatsBar } from "./components/StatsBar";
@@ -29,10 +28,7 @@ import { useAgentEvents } from "./hooks/useAgentEvents";
 import type {
   MainTab,
   PendingPermission,
-  PolicyConfig,
-  PolicyPreset,
-  ProjectBinding,
-  ResolvedPolicy,
+  PermissionMode,
   SessionCard,
   SessionDetail,
   TokenUsageSeries,
@@ -75,20 +71,26 @@ function App() {
   /** Bumped after attach/spawn so Live timeline pins to bottom. */
   const [pinLiveBottomSeq, setPinLiveBottomSeq] = useState(0);
   const [controlBusy, setControlBusy] = useState(false);
+  /** Session whose attach switch was flipped on; switch breathes until settle. */
+  const [attachingSessionId, setAttachingSessionId] = useState<string | null>(
+    null,
+  );
   const [permBusyKey, setPermBusyKey] = useState<string | null>(null);
-  const [policyBusy, setPolicyBusy] = useState(false);
-  const [presets, setPresets] = useState<PolicyConfig[]>([]);
-  const [bindings, setBindings] = useState<ProjectBinding[]>([]);
-  const [resolved, setResolved] = useState<ResolvedPolicy | null>(null);
+  /** Per-task permission modes loaded from disk (`~/.marsbuild/task_prefs.json`). */
+  const [taskPermissionModes, setTaskPermissionModes] = useState<
+    Record<string, PermissionMode>
+  >({});
+  /** Seed for New Task modal; last mode used when spawning. */
+  const [lastSpawnMode, setLastSpawnMode] =
+    useState<PermissionMode>("default");
+  /** Bump git changes panel after disk events. */
+  const [gitRefreshKey, setGitRefreshKey] = useState(0);
 
   const {
     managedList,
     managedForSession,
     liveItems,
     permissionsForSession,
-    setPolicyState,
-    setResolvedPolicy,
-    policyActions,
     lastError,
     clearError,
     upsertManaged,
@@ -98,28 +100,6 @@ function App() {
   } = useAgentEvents(selectedId);
 
   const projectCwd = detail?.card.cwd ?? null;
-
-  const refreshPolicyForCwd = useCallback(async (cwd: string | null) => {
-    try {
-      const [r, list, binds] = await Promise.all([
-        resolvePolicy(cwd),
-        listPolicyPresets(),
-        listProjectBindings(),
-      ]);
-      setResolved(r);
-      setResolvedPolicy(r);
-      setPolicyState(r.config);
-      setPresets(list);
-      setBindings(binds);
-    } catch {
-      /* non-tauri preview */
-    }
-  }, [setPolicyState, setResolvedPolicy]);
-
-  // Single effect: projectCwd starts null (global default), then tracks selection.
-  useEffect(() => {
-    void refreshPolicyForCwd(projectCwd);
-  }, [projectCwd, refreshPolicyForCwd]);
 
   const refreshList = useCallback(async () => {
     // Skip heavy list work while the window is hidden (drag/minimize storms).
@@ -149,6 +129,37 @@ function App() {
       setError(e instanceof Error ? e.message : String(e));
     }
   }, [upsertManaged]);
+
+  // Hydrate per-task permission modes + last spawn seed once on mount.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [modes, last] = await Promise.all([
+          listTaskPermissionModes(),
+          getLastSpawnPermissionMode(),
+        ]);
+        setTaskPermissionModes(modes);
+        setLastSpawnMode(last);
+      } catch {
+        /* non-tauri / first run */
+      }
+    })();
+  }, []);
+
+  /** Mode shown/edited for the selected task. Live agent wins when attached. */
+  const effectivePermissionMode: PermissionMode = useMemo(() => {
+    if (
+      managedForSession &&
+      managedForSession.status !== "stopped" &&
+      managedForSession.status !== "error"
+    ) {
+      return managedForSession.permissionMode;
+    }
+    if (selectedId && taskPermissionModes[selectedId]) {
+      return taskPermissionModes[selectedId];
+    }
+    return "default";
+  }, [managedForSession, selectedId, taskPermissionModes]);
 
   const refreshTokenSeries = useCallback(async () => {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") {
@@ -199,6 +210,7 @@ function App() {
     void refreshList();
     const id = selectedIdRef.current;
     if (id) void refreshDetail(id, true);
+    setGitRefreshKey((n) => n + 1);
   }, [refreshList, refreshDetail]);
 
   useEffect(() => {
@@ -275,6 +287,7 @@ function App() {
         scheduleWeekUsageRefresh();
         // Turn finished → refresh chart once (cheap cache on Rust side).
         window.setTimeout(() => void refreshTokenSeries(), 1_500);
+        setGitRefreshKey((n) => n + 1);
       }
     }).then((fn) => {
       if (cancelled) fn();
@@ -362,7 +375,7 @@ function App() {
   async function handleSpawn(opts: {
     cwd: string;
     prompt: string;
-    alwaysApprove: boolean;
+    permissionMode: PermissionMode;
   }) {
     setControlBusy(true);
     setError(null);
@@ -371,10 +384,15 @@ function App() {
         cwd: opts.cwd,
         // Empty string → omit; backend treats missing/blank as “no initial prompt”.
         prompt: opts.prompt.trim() ? opts.prompt.trim() : null,
-        alwaysApprove: opts.alwaysApprove,
+        permissionMode: opts.permissionMode,
       });
       upsertManaged(info);
+      setLastSpawnMode(opts.permissionMode);
       if (info.sessionId) {
+        setTaskPermissionModes((prev) => ({
+          ...prev,
+          [info.sessionId!]: opts.permissionMode,
+        }));
         focusOnceSessionRef.current = info.sessionId;
         setSelectedId(info.sessionId);
         setTab("live");
@@ -402,16 +420,33 @@ function App() {
     );
     if (already) return;
 
-    setSelectedId(sessionId);
-    setControlBusy(true);
-    setError(null);
+    // Paint switch pending state *before* the long attach IPC so the glow starts.
+    flushSync(() => {
+      setSelectedId(sessionId);
+      setAttachingSessionId(sessionId);
+      setControlBusy(true);
+      setError(null);
+    });
+    await new Promise<void>((r) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => r())),
+    );
+
     try {
+      // Backend restores this task's saved mode when permissionMode is omitted.
+      // If the UI already has a preference for this task, pass it explicitly.
+      const saved = taskPermissionModes[sessionId];
       const info = await attachAgent({
         sessionId: card.id,
         cwd: card.cwd,
-        alwaysApprove: false,
+        permissionMode: saved ?? null,
       });
       upsertManaged(info);
+      if (info.sessionId) {
+        setTaskPermissionModes((prev) => ({
+          ...prev,
+          [info.sessionId!]: info.permissionMode,
+        }));
+      }
       setTab("live");
       setPinLiveBottomSeq((n) => n + 1);
       // Hydrate any already-queued permissions (usually empty right after attach)
@@ -421,6 +456,7 @@ function App() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setControlBusy(false);
+      setAttachingSessionId(null);
     }
   }
 
@@ -440,48 +476,35 @@ function App() {
     }
   }
 
-  async function handleBindProject(preset: PolicyPreset) {
-    if (!projectCwd) return;
-    setPolicyBusy(true);
-    try {
-      const r = await bindProjectPolicy(projectCwd, preset);
-      setResolved(r);
-      setResolvedPolicy(r);
-      setPolicyState(r.config);
-      setBindings(await listProjectBindings());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setPolicyBusy(false);
+  async function handlePermissionModeChange(mode: PermissionMode) {
+    // Optimistic local map so the select updates immediately.
+    if (selectedId) {
+      setTaskPermissionModes((prev) => ({ ...prev, [selectedId]: mode }));
     }
-  }
 
-  async function handleSetDefault(preset: PolicyPreset) {
-    setPolicyBusy(true);
+    setControlBusy(true);
+    setError(null);
     try {
-      await setDefaultPolicyPreset(preset);
-      // Re-resolve for current project context
-      await refreshPolicyForCwd(projectCwd);
+      if (managedForSession && managedForSession.status !== "stopped") {
+        // Live agent path also persists to disk in Rust.
+        const info = await setPermissionMode(
+          managedForSession.handleId,
+          mode,
+        );
+        upsertManaged(info);
+        if (info.sessionId) {
+          setTaskPermissionModes((prev) => ({
+            ...prev,
+            [info.sessionId!]: mode,
+          }));
+        }
+      } else if (selectedId) {
+        await setTaskPermissionMode(selectedId, mode);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setPolicyBusy(false);
-    }
-  }
-
-  async function handleUnbindProject() {
-    if (!projectCwd) return;
-    setPolicyBusy(true);
-    try {
-      const r = await unbindProjectPolicy(projectCwd);
-      setResolved(r);
-      setResolvedPolicy(r);
-      setPolicyState(r.config);
-      setBindings(await listProjectBindings());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setPolicyBusy(false);
+      setControlBusy(false);
     }
   }
 
@@ -517,8 +540,8 @@ function App() {
     });
   }
 
-  async function confirmStop() {
-    if (!stopConfirm) return;
+  const confirmStop = useCallback(async () => {
+    if (!stopConfirm || controlBusy) return;
     setControlBusy(true);
     setError(null);
     try {
@@ -530,7 +553,24 @@ function App() {
     } finally {
       setControlBusy(false);
     }
-  }
+  }, [stopConfirm, controlBusy, removeManaged]);
+
+  // Stop dialog: Enter confirms, Escape cancels.
+  useEffect(() => {
+    if (!stopConfirm) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.isComposing) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void confirmStop();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        if (!controlBusy) setStopConfirm(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [stopConfirm, confirmStop, controlBusy]);
 
   const defaultCwd = detail?.card.cwd ?? sessions[0]?.cwd ?? "";
 
@@ -598,6 +638,7 @@ function App() {
             onAttach={(id) => void handleAttach(id)}
             onRequestStop={requestStop}
             toggleBusy={controlBusy}
+            attachingSessionId={attachingSessionId}
             onNewTask={() => setModalOpen(true)}
           />
         </aside>
@@ -613,6 +654,8 @@ function App() {
           permissions={permissionsForSession}
           permBusyKey={permBusyKey}
           controlBusy={controlBusy}
+          permissionMode={effectivePermissionMode}
+          onPermissionModeChange={(m) => void handlePermissionModeChange(m)}
           onSendPrompt={(t) => void handleSend(t)}
           onResolvePermission={(item, opt) =>
             void handleResolvePermission(item, opt)
@@ -620,50 +663,10 @@ function App() {
           pinLiveBottomSeq={pinLiveBottomSeq}
         />
 
-        <aside className="side-panel">
-          <PolicyCenter
-            resolved={resolved}
-            presets={presets}
-            bindings={bindings}
-            projectCwd={projectCwd}
-            busy={policyBusy}
-            recentActions={policyActions}
-            onBindProject={(preset) => void handleBindProject(preset)}
-            onSetDefault={(preset) => void handleSetDefault(preset)}
-            onUnbindProject={() => void handleUnbindProject()}
-          />
-
-          <div className="panel-header">
-            <h2>Change radar</h2>
-          </div>
-          {detail ? (
-            <>
-              <p className="muted small side-blurb">
-                File hunks for the selected session. Managed agents:{" "}
-                {
-                  managedList.filter(
-                    (m) => m.status !== "stopped" && m.status !== "error",
-                  ).length
-                }{" "}
-                live.
-              </p>
-              <DiffPanel hunks={detail.hunks} />
-            </>
-          ) : (
-            <div className="empty-hint">Select a session to inspect diffs.</div>
-          )}
-
-          <div className="roadmap">
-            <h3>Status</h3>
-            <ul>
-              <li className="done">Session board + token metrics</li>
-              <li className="done">Spawn / attach + live ACP stream</li>
-              <li className="done">Permission gate</li>
-              <li className="done">Risk policy center</li>
-              <li className="done">Per-project policy binding</li>
-              <li className="done">Live shell output panel</li>
-            </ul>
-          </div>
+        <aside className="side-panel workspace-panel">
+          <FileTree root={projectCwd} />
+          <div className="workspace-split" />
+          <GitChanges cwd={projectCwd} refreshKey={gitRefreshKey} />
         </aside>
       </div>
 
@@ -671,6 +674,7 @@ function App() {
         open={modalOpen}
         defaultCwd={defaultCwd}
         busy={controlBusy}
+        defaultPermissionMode={lastSpawnMode}
         onClose={() => setModalOpen(false)}
         onSubmit={(o) => void handleSpawn(o)}
       />
@@ -711,6 +715,7 @@ function App() {
                 className="btn danger-btn"
                 type="button"
                 disabled={controlBusy}
+                autoFocus
                 onClick={() => void confirmStop()}
               >
                 {controlBusy ? "Stopping…" : "Stop agent"}

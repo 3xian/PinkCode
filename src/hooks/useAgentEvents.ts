@@ -5,9 +5,6 @@ import type {
   LiveStreamItem,
   ManagedAgentInfo,
   PendingPermission,
-  PolicyActionEvent,
-  PolicyConfig,
-  ResolvedPolicy,
   ShellEntry,
 } from "../types";
 import { COALESCE_LIVE_KINDS, describeUpdate } from "../utils/format";
@@ -23,13 +20,6 @@ export function useAgentEvents(selectedSessionId: string | null) {
   >(() => new Map());
   const [permissions, setPermissions] = useState<Map<string, PendingPermission>>(
     () => new Map(),
-  );
-  const [policyActions, setPolicyActions] = useState<
-    { action: string; title: string; ts: number }[]
-  >([]);
-  const [policy, setPolicy] = useState<PolicyConfig | null>(null);
-  const [resolvedPolicy, setResolvedPolicy] = useState<ResolvedPolicy | null>(
-    null,
   );
   const [lastError, setLastError] = useState<string | null>(null);
   const seq = useRef(0);
@@ -49,7 +39,8 @@ export function useAgentEvents(selectedSessionId: string | null) {
         existing.sessionId === info.sessionId &&
         existing.pid === info.pid &&
         existing.pendingPermissionCount === info.pendingPermissionCount &&
-        existing.policyPreset === info.policyPreset &&
+        existing.alwaysApprove === info.alwaysApprove &&
+        existing.permissionMode === info.permissionMode &&
         existing.title === info.title
       ) {
         return prev;
@@ -138,7 +129,8 @@ export function useAgentEvents(selectedSessionId: string | null) {
             existing.sessionId === info.sessionId &&
             existing.pid === info.pid &&
             existing.pendingPermissionCount === info.pendingPermissionCount &&
-            existing.policyPreset === info.policyPreset &&
+            existing.alwaysApprove === info.alwaysApprove &&
+            existing.permissionMode === info.permissionMode &&
             existing.title === info.title &&
             existing.lastError === info.lastError
           ) {
@@ -327,35 +319,11 @@ export function useAgentEvents(selectedSessionId: string | null) {
           return next;
         });
       });
-      const u7 = await listen<PolicyActionEvent>("policy-action", (e) => {
-        if (cancelled) return;
-        const p = e.payload;
-        setPolicyActions((prev) =>
-          [
-            {
-              action: p.action,
-              title: p.pending?.title || p.pending?.detail || "action",
-              ts: p.ts || Date.now(),
-            },
-            ...prev,
-          ].slice(0, 30),
-        );
-      });
-      const u8 = await listen<ResolvedPolicy | PolicyConfig>("policy-changed", (e) => {
-        if (cancelled) return;
-        const p = e.payload as ResolvedPolicy;
-        if (p && typeof p === "object" && "config" in p && p.config) {
-          setResolvedPolicy(p);
-          setPolicy(p.config);
-        } else if (p && typeof p === "object" && "preset" in p) {
-          setPolicy(p as unknown as PolicyConfig);
-        }
-      });
 
       if (!cancelled) {
-        unsubs.push(u1, u2, u3, u4, u5, u6, u7, u8);
+        unsubs.push(u1, u2, u3, u4, u5, u6);
       } else {
-        [u1, u2, u3, u4, u5, u6, u7, u8].forEach((u) => u());
+        [u1, u2, u3, u4, u5, u6].forEach((u) => u());
       }
     }
 
@@ -417,11 +385,6 @@ export function useAgentEvents(selectedSessionId: string | null) {
     liveItems,
     permissions: allPermissions,
     permissionsForSession,
-    policy,
-    resolvedPolicy,
-    setPolicyState: setPolicy,
-    setResolvedPolicy,
-    policyActions,
     lastError,
     clearError,
     upsertManaged,

@@ -5,6 +5,7 @@ import type {
   MainTab,
   ManagedAgentInfo,
   PendingPermission,
+  PermissionMode,
   SessionDetail as Detail,
 } from "../types";
 import {
@@ -32,6 +33,8 @@ interface Props {
   permissions: PendingPermission[];
   permBusyKey: string | null;
   controlBusy: boolean;
+  permissionMode: PermissionMode;
+  onPermissionModeChange: (mode: PermissionMode) => void;
   onSendPrompt: (text: string) => void;
   onResolvePermission: (item: PendingPermission, optionId: string) => void;
   /** Bump after attach/spawn to force Live stream to the bottom. */
@@ -73,6 +76,8 @@ export function SessionDetailView({
   permissions,
   permBusyKey,
   controlBusy,
+  permissionMode,
+  onPermissionModeChange,
   onSendPrompt,
   onResolvePermission,
   pinLiveBottomSeq = 0,
@@ -193,16 +198,6 @@ export function SessionDetailView({
         </div>
       </div>
 
-      {card.toolsUsed.length > 0 && (
-        <div className="tool-tags">
-          {card.toolsUsed.map((t) => (
-            <span key={t} className="tag">
-              {t}
-            </span>
-          ))}
-        </div>
-      )}
-
       <div className="tabs">
         {(
           [
@@ -244,6 +239,8 @@ export function SessionDetailView({
       <PromptBar
         managed={managed}
         busy={controlBusy}
+        permissionMode={permissionMode}
+        onPermissionModeChange={onPermissionModeChange}
         onSend={onSendPrompt}
       />
     </section>

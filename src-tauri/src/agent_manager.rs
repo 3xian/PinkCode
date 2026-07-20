@@ -1,10 +1,16 @@
 //! Multi-agent process manager: spawn / attach / prompt / stop / permissions via ACP.
+//!
+//! Permission modes mirror Grok Build's prompt policy (see `22-permissions-and-safety.md`):
+//! - `default` — ask the user on gated ops
+//! - `acceptEdits` — auto-allow file edits; ask for shell / other tools
+//! - `bypassPermissions` — auto-allow (spawn with `grok --always-approve`)
+//! - `dontAsk` — auto-deny anything that would have prompted
+//!
+//! Process flag `--always-approve` is only available on `grok agent`; other modes are
+//! enforced by this ACP host. Runtime mode changes update host decisions only.
 
 use crate::acp::{AcpClient, NotifyFn};
-use crate::policy::{
-    self, EvalInput, EvalKind, PolicyConfig, PolicyDecision, PolicyPreset, PolicyStore,
-    ProjectBinding, ResolvedPolicy,
-};
+use crate::task_prefs;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -27,6 +33,48 @@ pub enum ManagedStatus {
     Stopped,
 }
 
+/// Grok Build permission prompt policy (subset that is meaningful for an ACP host).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum PermissionMode {
+    /// Prompt for anything not pre-approved (default interactive).
+    #[default]
+    Default,
+    /// Auto-approve file edits; ask for shell / other tools.
+    AcceptEdits,
+    /// Auto-approve tool calls (`--always-approve` / bypassPermissions).
+    BypassPermissions,
+    /// Deny anything that would prompt (CI / high-security style).
+    DontAsk,
+}
+
+impl PermissionMode {
+    /// Whether to pass `grok agent --always-approve` at process spawn.
+    pub fn spawns_always_approve(self) -> bool {
+        matches!(self, Self::BypassPermissions)
+    }
+
+    pub fn from_request(
+        mode: Option<PermissionMode>,
+        always_approve: Option<bool>,
+    ) -> Self {
+        if let Some(m) = mode {
+            return m;
+        }
+        if always_approve == Some(true) {
+            return Self::BypassPermissions;
+        }
+        Self::Default
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GateDecision {
+    Allow,
+    Deny,
+    Ask,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedAgentInfo {
@@ -35,16 +83,15 @@ pub struct ManagedAgentInfo {
     pub cwd: String,
     pub pid: Option<u32>,
     pub status: ManagedStatus,
+    /// Grok-aligned permission mode for this agent.
+    pub permission_mode: PermissionMode,
+    /// Convenience mirror of `permission_mode == bypassPermissions` (UI / legacy).
     pub always_approve: bool,
     pub model_id: Option<String>,
     pub last_error: Option<String>,
     pub title: Option<String>,
     pub created_at: String,
     pub pending_permission_count: u32,
-    /// Effective policy preset for this agent (from project bind or default).
-    pub policy_preset: Option<PolicyPreset>,
-    /// `default` | `project` | `inherited`
-    pub policy_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +99,8 @@ pub struct ManagedAgentInfo {
 pub struct SpawnRequest {
     pub cwd: String,
     pub prompt: Option<String>,
+    pub permission_mode: Option<PermissionMode>,
+    /// Legacy alias: `true` → `bypassPermissions` when `permission_mode` is omitted.
     pub always_approve: Option<bool>,
     pub model: Option<String>,
 }
@@ -61,6 +110,8 @@ pub struct SpawnRequest {
 pub struct AttachRequest {
     pub session_id: String,
     pub cwd: String,
+    pub permission_mode: Option<PermissionMode>,
+    /// Legacy alias: `true` → `bypassPermissions` when `permission_mode` is omitted.
     pub always_approve: Option<bool>,
 }
 
@@ -112,8 +163,6 @@ pub struct ResolvePermissionRequest {
 struct LiveAgent {
     info: ManagedAgentInfo,
     client: Arc<AcpClient>,
-    /// Effective policy for permission decisions (project-bound or default).
-    policy: PolicyConfig,
 }
 
 struct Inner {
@@ -123,9 +172,9 @@ struct Inner {
     /// Server→client requests that arrived before the agent was registered.
     early_requests: Mutex<Vec<(String, Value)>>,
     grok_bin: Mutex<Option<String>>,
-    store: Mutex<PolicyStore>,
 }
 
+#[derive(Clone)]
 pub struct AgentManager {
     inner: Arc<Inner>,
 }
@@ -139,104 +188,69 @@ impl AgentManager {
                 pending: Mutex::new(HashMap::new()),
                 early_requests: Mutex::new(Vec::new()),
                 grok_bin: Mutex::new(None),
-                store: Mutex::new(PolicyStore::load()),
             }),
         }
     }
 
-    pub fn get_policy(&self) -> PolicyConfig {
-        let store = self.inner.store.lock();
-        PolicyConfig::from_preset(store.default_preset)
-    }
-
-    pub fn get_policy_store(&self) -> PolicyStore {
-        self.inner.store.lock().clone()
-    }
-
-    pub fn resolve_policy(&self, cwd: Option<String>) -> ResolvedPolicy {
-        self.inner.store.lock().resolve(cwd.as_deref())
-    }
-
-    pub fn set_policy(&self, config: PolicyConfig) -> Result<PolicyConfig, String> {
-        // Treat as setting global default from full config; surface disk errors.
-        let resolved = self.set_default_preset(config.preset)?;
-        Ok(resolved.config)
-    }
-
-    pub fn set_policy_preset(&self, preset: PolicyPreset) -> Result<PolicyConfig, String> {
-        let resolved = self.set_default_preset(preset)?;
-        Ok(resolved.config)
-    }
-
-    pub fn set_default_preset(&self, preset: PolicyPreset) -> Result<ResolvedPolicy, String> {
-        let resolved = {
-            let mut store = self.inner.store.lock();
-            store.set_default(preset)?
-        };
-        // Agents on default (no project bind) pick up the new preset.
-        self.apply_policy_to_agents_for_cwd(&resolved);
-        self.emit_store_changed();
-        if let Ok(v) = serde_json::to_value(&resolved) {
-            Self::emit(&self.inner, "policy-changed", v);
-        }
-        Ok(resolved)
-    }
-
-    pub fn bind_project_policy(
-        &self,
-        cwd: String,
-        preset: PolicyPreset,
-    ) -> Result<ResolvedPolicy, String> {
-        let resolved = {
-            let mut store = self.inner.store.lock();
-            store.bind_project(&cwd, preset)?
-        };
-        self.apply_policy_to_agents_for_cwd(&resolved);
-        self.emit_store_changed();
-        if let Ok(v) = serde_json::to_value(&resolved) {
-            Self::emit(&self.inner, "policy-changed", v);
-        }
-        Ok(resolved)
-    }
-
-    pub fn unbind_project_policy(&self, cwd: String) -> Result<ResolvedPolicy, String> {
-        let resolved = {
-            let mut store = self.inner.store.lock();
-            store.unbind_project(&cwd)?
-        };
-        self.apply_policy_to_agents_for_cwd(&resolved);
-        self.emit_store_changed();
-        if let Ok(v) = serde_json::to_value(&resolved) {
-            Self::emit(&self.inner, "policy-changed", v);
-        }
-        Ok(resolved)
-    }
-
-    pub fn list_project_bindings(&self) -> Vec<ProjectBinding> {
-        self.inner.store.lock().list_bindings()
-    }
-
-    fn emit_store_changed(&self) {
-        let store = self.inner.store.lock().clone();
-        if let Ok(v) = serde_json::to_value(&store) {
-            Self::emit(&self.inner, "policy-store-changed", v);
-        }
-    }
-
-    /// Re-resolve policy for every live agent (after bind/unbind/default change).
+    /// Change host-side permission mode for a live agent.
     ///
-    /// Does **not** change `info.always_approve`: that flag is the process spawn
-    /// flag (`grok --always-approve`) and stays true until the agent is restarted.
-    /// Runtime FS/tool gates still use `agent.policy`.
-    fn apply_policy_to_agents_for_cwd(&self, _resolved: &ResolvedPolicy) {
-        let store = self.inner.store.lock().clone();
-        let mut agents = self.inner.agents.lock();
-        for agent in agents.values_mut() {
-            let r = store.resolve(Some(&agent.info.cwd));
-            agent.policy = r.config.clone();
-            agent.info.policy_preset = Some(r.config.preset);
-            agent.info.policy_source = Some(policy_source_str(&r.source).into());
+    /// Process-level `grok --always-approve` is fixed at spawn/attach; this updates
+    /// MarsBuild's ACP auto-response only. Pending requests are reconciled for the
+    /// new mode (allow / deny / leave for acceptEdits partial matches).
+    pub fn set_permission_mode(
+        &self,
+        handle_id: &str,
+        mode: PermissionMode,
+    ) -> Result<ManagedAgentInfo, String> {
+        let session_id = {
+            let mut agents = self.inner.agents.lock();
+            let agent = agents
+                .get_mut(handle_id)
+                .ok_or_else(|| format!("unknown handle {handle_id}"))?;
+            agent.info.permission_mode = mode;
+            agent.info.always_approve = mode.spawns_always_approve();
             Self::emit_status(&self.inner, &agent.info);
+            agent.info.session_id.clone()
+        };
+        if let Some(sid) = session_id.as_deref() {
+            task_prefs::set_permission_mode(sid, mode);
+        }
+        self.reconcile_pending_for_mode(handle_id, mode);
+        self.get(handle_id)
+            .ok_or_else(|| format!("unknown handle {handle_id}"))
+    }
+
+    /// Auto-resolve pending requests that the new mode no longer wants to ask about.
+    fn reconcile_pending_for_mode(&self, handle_id: &str, mode: PermissionMode) {
+        let items: Vec<(String, GateDecision, String)> = {
+            let pending = self.inner.pending.lock();
+            pending
+                .values()
+                .filter(|p| p.handle_id == handle_id)
+                .filter_map(|p| {
+                    let decision = decide_gate(mode, p);
+                    match decision {
+                        GateDecision::Ask => None,
+                        GateDecision::Allow => Some((
+                            p.request_key.clone(),
+                            decision,
+                            pick_allow_option(&p.options),
+                        )),
+                        GateDecision::Deny => Some((
+                            p.request_key.clone(),
+                            decision,
+                            pick_reject_option(&p.options, "reject-once"),
+                        )),
+                    }
+                })
+                .collect()
+        };
+        for (key, _decision, option_id) in items {
+            let _ = self.resolve_permission(ResolvePermissionRequest {
+                handle_id: handle_id.to_string(),
+                request_key: key,
+                option_id,
+            });
         }
     }
 
@@ -271,10 +285,6 @@ impl AgentManager {
         }
         Self::emit_status(inner, info);
         err
-    }
-
-    pub fn list_policy_presets(&self) -> Vec<PolicyConfig> {
-        policy::list_presets()
     }
 
     pub fn set_app(&self, app: AppHandle) {
@@ -518,14 +528,13 @@ impl AgentManager {
         let request_id = msg.get("id").cloned().unwrap_or(Value::Null);
         let params = msg.get("params").cloned().unwrap_or(Value::Null);
 
-        let (client, always_approve, session_hint, policy) = {
+        let (client, permission_mode, session_hint) = {
             let agents = inner.agents.lock();
             match agents.get(handle_id) {
                 Some(a) => (
                     Arc::clone(&a.client),
-                    a.info.always_approve,
+                    a.info.permission_mode,
                     a.info.session_id.clone(),
-                    a.policy.clone(),
                 ),
                 None => {
                     // Agent not registered yet (race with spawn) — buffer for drain after insert.
@@ -552,115 +561,38 @@ impl AgentManager {
                     request_id.clone(),
                     &params,
                 );
-                let decision = if always_approve {
-                    PolicyDecision::Allow
-                } else {
-                    evaluate_pending(&policy, &pending)
-                };
-                match decision {
-                    PolicyDecision::Allow => {
+                match decide_gate(permission_mode, &pending) {
+                    GateDecision::Allow => {
                         let oid = pick_allow_option(&pending.options);
                         let _ = client.respond_result(
                             &request_id,
                             json!({ "outcome": { "outcome": "selected", "optionId": oid } }),
                         );
-                        Self::emit_policy_action(inner, &pending, "allow", "policy");
                     }
-                    PolicyDecision::Deny => {
+                    GateDecision::Deny => {
                         let oid = pick_reject_option(&pending.options, "reject-once");
                         let _ = client.respond_result(
                             &request_id,
                             json!({ "outcome": { "outcome": "selected", "optionId": oid } }),
                         );
-                        Self::emit_policy_action(inner, &pending, "deny", "policy");
                     }
-                    PolicyDecision::Ask => {
+                    GateDecision::Ask => {
                         Self::enqueue_permission(inner, handle_id, pending);
                     }
                 }
             }
             "fs/read_text_file" => {
+                // Reads are always fulfilled (Grok treats read-only tools as auto-safe).
                 let path = params
                     .get("path")
                     .and_then(|p| p.as_str())
                     .unwrap_or("");
-                let decision = if always_approve {
-                    PolicyDecision::Allow
-                } else {
-                    policy::evaluate(
-                        &policy,
-                        &EvalInput {
-                            kind: EvalKind::FsRead,
-                            title: "Read file",
-                            detail: path,
-                            path: Some(path),
-                            command: None,
-                            raw_blob: path,
-                        },
-                    )
-                };
-                match decision {
-                    PolicyDecision::Allow => {
-                        match read_text_file(path, params.get("line"), params.get("limit")) {
-                            Ok(content) => {
-                                let _ =
-                                    client.respond_result(&request_id, json!({ "content": content }));
-                            }
-                            Err(e) => {
-                                let _ = client.respond_error(&request_id, -32000, &e);
-                            }
-                        }
+                match read_text_file(path, params.get("line"), params.get("limit")) {
+                    Ok(content) => {
+                        let _ = client.respond_result(&request_id, json!({ "content": content }));
                     }
-                    PolicyDecision::Deny => {
-                        let _ = client.respond_error(
-                            &request_id,
-                            -32000,
-                            "MarsBuild policy denied reading this path",
-                        );
-                        let pending = PendingPermission {
-                            request_key: format!("{handle_id}:{}", request_id_key(&request_id)),
-                            handle_id: handle_id.to_string(),
-                            session_id: session_id.clone(),
-                            request_id: request_id.clone(),
-                            kind: PermissionKind::FsRead,
-                            method: method.clone(),
-                            title: "Read file".into(),
-                            detail: path.to_string(),
-                            risk: risk_for_path(path),
-                            options: vec![],
-                            raw_params: params.clone(),
-                            created_at_ms: now_ms(),
-                        };
-                        Self::emit_policy_action(inner, &pending, "deny", "policy");
-                    }
-                    PolicyDecision::Ask => {
-                        // Sensitive / gated reads go to the permission gate.
-                        let pending = PendingPermission {
-                            request_key: format!("{handle_id}:{}", request_id_key(&request_id)),
-                            handle_id: handle_id.to_string(),
-                            session_id: session_id.clone(),
-                            request_id: request_id.clone(),
-                            kind: PermissionKind::FsRead,
-                            method: method.clone(),
-                            title: "Read file".into(),
-                            detail: path.to_string(),
-                            risk: risk_for_path(path),
-                            options: vec![
-                                PermissionOption {
-                                    option_id: "allow-once".into(),
-                                    name: "Allow once".into(),
-                                    kind: "allow_once".into(),
-                                },
-                                PermissionOption {
-                                    option_id: "reject-once".into(),
-                                    name: "Deny".into(),
-                                    kind: "reject_once".into(),
-                                },
-                            ],
-                            raw_params: params.clone(),
-                            created_at_ms: now_ms(),
-                        };
-                        Self::enqueue_permission(inner, handle_id, pending);
+                    Err(e) => {
+                        let _ = client.respond_error(&request_id, -32000, &e);
                     }
                 }
             }
@@ -700,32 +632,23 @@ impl AgentManager {
                     raw_params: params.clone(),
                     created_at_ms: now_ms(),
                 };
-
-                let decision = if always_approve {
-                    PolicyDecision::Allow
-                } else {
-                    evaluate_pending(&policy, &pending)
-                };
-
-                match decision {
-                    PolicyDecision::Allow => match write_text_file(&path, &content) {
+                match decide_gate(permission_mode, &pending) {
+                    GateDecision::Allow => match write_text_file(&path, &content) {
                         Ok(()) => {
                             let _ = client.respond_result(&request_id, Value::Null);
-                            Self::emit_policy_action(inner, &pending, "allow", "policy");
                         }
                         Err(e) => {
                             let _ = client.respond_error(&request_id, -32000, &e);
                         }
                     },
-                    PolicyDecision::Deny => {
+                    GateDecision::Deny => {
                         let _ = client.respond_error(
                             &request_id,
                             -32000,
-                            "Denied by MarsBuild risk policy",
+                            "Denied by permission mode (dontAsk)",
                         );
-                        Self::emit_policy_action(inner, &pending, "deny", "policy");
                     }
-                    PolicyDecision::Ask => {
+                    GateDecision::Ask => {
                         Self::enqueue_permission(inner, handle_id, pending);
                     }
                 }
@@ -738,26 +661,6 @@ impl AgentManager {
                     &format!("MarsBuild does not implement {other}"),
                 );
             }
-        }
-    }
-
-    fn emit_policy_action(
-        inner: &Inner,
-        pending: &PendingPermission,
-        action: &str,
-        source: &str,
-    ) {
-        if let Ok(v) = serde_json::to_value(pending) {
-            Self::emit(
-                inner,
-                "policy-action",
-                json!({
-                    "action": action,
-                    "source": source,
-                    "pending": v,
-                    "ts": now_ms(),
-                }),
-            );
         }
     }
 
@@ -971,12 +874,10 @@ impl AgentManager {
         if cwd.is_empty() || !PathBuf::from(&cwd).is_dir() {
             return Err(format!("Invalid working directory: {cwd}"));
         }
-        let resolved = self.inner.store.lock().resolve(Some(&cwd));
-        let agent_policy = resolved.config.clone();
-        // Prefer explicit request flag; otherwise project/default policy (Trusted → yolo).
-        let always_approve = req
-            .always_approve
-            .unwrap_or_else(|| agent_policy.always_approve_flag());
+        let permission_mode =
+            PermissionMode::from_request(req.permission_mode, req.always_approve);
+        let always_approve = permission_mode.spawns_always_approve();
+        task_prefs::set_last_spawn_mode(permission_mode);
         let handle_id = Uuid::new_v4().to_string();
         let grok_bin = self.resolve_grok_bin()?;
 
@@ -994,6 +895,7 @@ impl AgentManager {
             cwd: cwd.clone(),
             pid: None,
             status: ManagedStatus::Starting,
+            permission_mode,
             always_approve,
             model_id: req.model.clone(),
             last_error: None,
@@ -1004,8 +906,6 @@ impl AgentManager {
                 .or_else(|| Some("New agent".into())),
             created_at: now_iso(),
             pending_permission_count: 0,
-            policy_preset: Some(agent_policy.preset),
-            policy_source: Some(policy_source_str(&resolved.source).into()),
         };
         Self::emit_status(&self.inner, &info);
 
@@ -1021,7 +921,6 @@ impl AgentManager {
             LiveAgent {
                 info: info.clone(),
                 client: Arc::clone(&client),
-                policy: agent_policy,
             },
         );
         Self::drain_early_requests(&self.inner, &handle_id);
@@ -1060,6 +959,7 @@ impl AgentManager {
         };
 
         info.session_id = Some(session_id.clone());
+        task_prefs::set_permission_mode(&session_id, permission_mode);
         if let Some(m) = result
             .pointer("/models/currentModelId")
             .and_then(|v| v.as_str())
@@ -1102,11 +1002,15 @@ impl AgentManager {
             }
         }
 
-        let resolved = self.inner.store.lock().resolve(Some(&cwd));
-        let agent_policy = resolved.config.clone();
-        let always_approve = req
-            .always_approve
-            .unwrap_or_else(|| agent_policy.always_approve_flag());
+        // Explicit request wins; otherwise restore this task's saved mode.
+        let permission_mode = match (req.permission_mode, req.always_approve) {
+            (Some(m), _) => m,
+            (None, Some(true)) => PermissionMode::BypassPermissions,
+            (None, Some(false)) | (None, None) => task_prefs::get_permission_mode(&session_id)
+                .unwrap_or(PermissionMode::Default),
+        };
+        let always_approve = permission_mode.spawns_always_approve();
+        task_prefs::set_permission_mode(&session_id, permission_mode);
         let handle_id = Uuid::new_v4().to_string();
         let grok_bin = self.resolve_grok_bin()?;
 
@@ -1116,6 +1020,7 @@ impl AgentManager {
             cwd: cwd.clone(),
             pid: None,
             status: ManagedStatus::Starting,
+            permission_mode,
             always_approve,
             model_id: None,
             last_error: None,
@@ -1125,8 +1030,6 @@ impl AgentManager {
             )),
             created_at: now_iso(),
             pending_permission_count: 0,
-            policy_preset: Some(agent_policy.preset),
-            policy_source: Some(policy_source_str(&resolved.source).into()),
         };
         Self::emit_status(&self.inner, &info);
 
@@ -1141,7 +1044,6 @@ impl AgentManager {
             LiveAgent {
                 info: info.clone(),
                 client: Arc::clone(&client),
-                policy: agent_policy,
             },
         );
         Self::drain_early_requests(&self.inner, &handle_id);
@@ -1341,49 +1243,6 @@ impl AgentManager {
     }
 }
 
-fn policy_source_str(source: &policy::PolicySource) -> &'static str {
-    match source {
-        policy::PolicySource::Default => "default",
-        policy::PolicySource::Project => "project",
-        policy::PolicySource::Inherited => "inherited",
-    }
-}
-
-fn evaluate_pending(policy: &PolicyConfig, pending: &PendingPermission) -> PolicyDecision {
-    let raw = pending.raw_params.to_string();
-    let path = pending
-        .raw_params
-        .get("path")
-        .and_then(|p| p.as_str())
-        .or(Some(pending.detail.as_str()));
-    let command = pending
-        .raw_params
-        .pointer("/toolCall/rawInput/command")
-        .and_then(|c| c.as_str())
-        .or_else(|| {
-            pending
-                .raw_params
-                .pointer("/rawInput/command")
-                .and_then(|c| c.as_str())
-        });
-    policy::evaluate(
-        policy,
-        &EvalInput {
-            kind: match pending.kind {
-                PermissionKind::ToolPermission => EvalKind::ToolPermission,
-                PermissionKind::FsWrite => EvalKind::FsWrite,
-                PermissionKind::FsRead => EvalKind::FsRead,
-                PermissionKind::Other => EvalKind::Other,
-            },
-            title: &pending.title,
-            detail: &pending.detail,
-            path,
-            command,
-            raw_blob: &raw,
-        },
-    )
-}
-
 fn build_tool_permission(
     handle_id: &str,
     session_id: Option<String>,
@@ -1485,6 +1344,60 @@ fn request_id_key(id: &Value) -> String {
     }
 }
 
+/// Map Grok-style permission mode → host gate decision for one pending request.
+fn decide_gate(mode: PermissionMode, pending: &PendingPermission) -> GateDecision {
+    match mode {
+        PermissionMode::BypassPermissions => GateDecision::Allow,
+        PermissionMode::DontAsk => GateDecision::Deny,
+        PermissionMode::Default => GateDecision::Ask,
+        PermissionMode::AcceptEdits => {
+            if is_edit_permission(pending) {
+                GateDecision::Allow
+            } else {
+                GateDecision::Ask
+            }
+        }
+    }
+}
+
+/// Heuristic: file-write / edit tools that `acceptEdits` should auto-approve.
+fn is_edit_permission(pending: &PendingPermission) -> bool {
+    if matches!(pending.kind, PermissionKind::FsWrite) {
+        return true;
+    }
+    if matches!(pending.kind, PermissionKind::FsRead) {
+        return false;
+    }
+    let title = pending.title.to_lowercase();
+    let detail = pending.detail.to_lowercase();
+    let blob = format!("{title} {detail}");
+    // Shell / terminal never counts as an "edit".
+    if title.contains("bash")
+        || title.contains("shell")
+        || title.contains("terminal")
+        || title.contains("execute")
+        || detail.contains("\"command\"")
+    {
+        return false;
+    }
+    const EDIT_KEYS: &[&str] = &[
+        "write",
+        "edit",
+        "replace",
+        "search_replace",
+        "str_replace",
+        "create_file",
+        "apply_patch",
+        "apply_diff",
+        "write_text_file",
+        "write_file",
+        "fs/write",
+        "multi_edit",
+        "notebook_edit",
+    ];
+    EDIT_KEYS.iter().any(|k| blob.contains(k))
+}
+
 /// Pick an allow option for **automatic** policy Allow decisions.
 /// Prefer one-shot allow so we never silently grant session-wide always-allow.
 fn pick_allow_option(options: &[PermissionOption]) -> String {
@@ -1531,14 +1444,28 @@ fn is_allow_option(option_id: &str, options: &[PermissionOption]) -> bool {
 }
 
 fn risk_for_path(path: &str) -> String {
-    // Keep in sync with policy::path_looks_sensitive keywords.
-    if policy::path_looks_sensitive(path) {
-        "high".into()
-    } else if policy::path_looks_temp(path) {
-        "low".into()
-    } else {
-        "medium".into()
+    let lower = path.to_lowercase();
+    let sensitive = [
+        ".env",
+        "id_rsa",
+        "id_ed25519",
+        "credentials",
+        "secret",
+        ".pem",
+        "keystore",
+        "wallet",
+    ];
+    if sensitive.iter().any(|k| lower.contains(k)) {
+        return "high".into();
     }
+    if lower.contains("/tmp/")
+        || lower.contains("\\tmp\\")
+        || lower.contains("/temp/")
+        || lower.contains("\\temp\\")
+    {
+        return "low".into();
+    }
+    "medium".into()
 }
 
 fn read_text_file(path: &str, line: Option<&Value>, limit: Option<&Value>) -> Result<String, String> {
@@ -1721,5 +1648,78 @@ mod tests {
         let options = vec![opt("x", "allow_once"), opt("y", "reject_once")];
         assert!(is_allow_option("x", &options));
         assert!(!is_allow_option("y", &options));
+    }
+
+    fn pending(kind: PermissionKind, title: &str, detail: &str) -> PendingPermission {
+        PendingPermission {
+            request_key: "t".into(),
+            handle_id: "h".into(),
+            session_id: None,
+            request_id: Value::Null,
+            kind,
+            method: "m".into(),
+            title: title.into(),
+            detail: detail.into(),
+            risk: "medium".into(),
+            options: vec![],
+            raw_params: Value::Null,
+            created_at_ms: 0,
+        }
+    }
+
+    #[test]
+    fn decide_gate_modes() {
+        let write = pending(PermissionKind::FsWrite, "Write file", "/tmp/a.rs");
+        let bash = pending(
+            PermissionKind::ToolPermission,
+            "Bash",
+            r#"{"command":"rm -rf /"}"#,
+        );
+        let edit_tool = pending(
+            PermissionKind::ToolPermission,
+            "search_replace",
+            "src/main.rs",
+        );
+
+        assert_eq!(
+            decide_gate(PermissionMode::BypassPermissions, &bash),
+            GateDecision::Allow
+        );
+        assert_eq!(
+            decide_gate(PermissionMode::DontAsk, &write),
+            GateDecision::Deny
+        );
+        assert_eq!(
+            decide_gate(PermissionMode::Default, &write),
+            GateDecision::Ask
+        );
+        assert_eq!(
+            decide_gate(PermissionMode::AcceptEdits, &write),
+            GateDecision::Allow
+        );
+        assert_eq!(
+            decide_gate(PermissionMode::AcceptEdits, &edit_tool),
+            GateDecision::Allow
+        );
+        assert_eq!(
+            decide_gate(PermissionMode::AcceptEdits, &bash),
+            GateDecision::Ask
+        );
+    }
+
+    #[test]
+    fn from_request_legacy_always_approve() {
+        assert_eq!(
+            PermissionMode::from_request(None, Some(true)),
+            PermissionMode::BypassPermissions
+        );
+        assert_eq!(
+            PermissionMode::from_request(Some(PermissionMode::AcceptEdits), Some(true)),
+            PermissionMode::AcceptEdits
+        );
+        assert_eq!(
+            PermissionMode::from_request(None, None),
+            PermissionMode::Default
+        );
     }
 }

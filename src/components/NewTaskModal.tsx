@@ -1,15 +1,19 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
+import type { PermissionMode } from "../types";
+import { PERMISSION_MODE_OPTIONS } from "../types";
 
 interface Props {
   open: boolean;
   defaultCwd: string;
   busy: boolean;
+  /** Seed for the permission selector when the modal opens. */
+  defaultPermissionMode: PermissionMode;
   onClose: () => void;
   onSubmit: (opts: {
     cwd: string;
     prompt: string;
-    alwaysApprove: boolean;
+    permissionMode: PermissionMode;
   }) => void;
 }
 
@@ -17,12 +21,14 @@ export function NewTaskModal({
   open,
   defaultCwd,
   busy,
+  defaultPermissionMode,
   onClose,
   onSubmit,
 }: Props) {
   const [cwd, setCwd] = useState(defaultCwd);
   const [prompt, setPrompt] = useState("");
-  const [alwaysApprove, setAlwaysApprove] = useState(false);
+  const [permissionMode, setPermissionMode] =
+    useState<PermissionMode>(defaultPermissionMode);
   const [picking, setPicking] = useState(false);
 
   // Component stays mounted while closed (returns null); re-sync defaults on open.
@@ -30,10 +36,10 @@ export function NewTaskModal({
     if (open) {
       setCwd(defaultCwd);
       setPrompt("");
-      setAlwaysApprove(false);
+      setPermissionMode(defaultPermissionMode);
       setPicking(false);
     }
-  }, [open, defaultCwd]);
+  }, [open, defaultCwd, defaultPermissionMode]);
 
   async function pickDirectory() {
     if (busy || picking) return;
@@ -42,7 +48,6 @@ export function NewTaskModal({
       const selected = await openDialog({
         directory: true,
         multiple: false,
-        // Prefer current path as starting location when it looks absolute.
         defaultPath: cwd.trim() || undefined,
         title: "Choose working directory",
       });
@@ -58,6 +63,9 @@ export function NewTaskModal({
 
   if (!open) return null;
 
+  const modeHint =
+    PERMISSION_MODE_OPTIONS.find((o) => o.value === permissionMode)?.hint ?? "";
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
@@ -71,8 +79,7 @@ export function NewTaskModal({
         </div>
         <p className="muted small">
           Spawns <code>grok agent stdio</code>, creates an ACP session, and
-          streams updates live into MarsBuild. Risk policy (right panel) auto
-          allows / denies / asks on gated ops.
+          streams updates live. Permission mode is saved with this task.
         </p>
 
         <label className="field">
@@ -131,19 +138,29 @@ export function NewTaskModal({
           />
         </label>
 
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={alwaysApprove}
-            onChange={(e) => setAlwaysApprove(e.target.checked)}
+        <label className="field" title={modeHint}>
+          <span>Permission mode</span>
+          <select
+            className="field-select"
+            value={permissionMode}
             disabled={busy}
-          />
-          <span>
-            Always approve{" "}
-            <span className="muted">
-              (off = MarsBuild permission gate for file writes & tool prompts)
+            onChange={(e) =>
+              setPermissionMode(e.target.value as PermissionMode)
+            }
+            aria-label="Permission mode for this task"
+          >
+            {PERMISSION_MODE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value} title={o.hint}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <span className="field-hint muted small">{modeHint}</span>
+          {permissionMode === "bypassPermissions" ? (
+            <span className="field-hint muted small">
+              Spawns with <code>--always-approve</code>
             </span>
-          </span>
+          ) : null}
         </label>
 
         <div className="modal-actions">
@@ -158,7 +175,7 @@ export function NewTaskModal({
               onSubmit({
                 cwd: cwd.trim(),
                 prompt: prompt.trim(),
-                alwaysApprove,
+                permissionMode,
               })
             }
           >

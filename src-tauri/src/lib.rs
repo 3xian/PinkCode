@@ -2,19 +2,21 @@ mod acp;
 mod agent_manager;
 mod billing;
 mod models;
-mod policy;
+mod project_fs;
 mod sessions;
+mod task_prefs;
 mod watcher;
 
 use agent_manager::{
-    AgentManager, AttachRequest, ManagedAgentInfo, PendingPermission, ResolvePermissionRequest,
-    SpawnRequest,
+    AgentManager, AttachRequest, ManagedAgentInfo, PendingPermission, PermissionMode,
+    ResolvePermissionRequest, SpawnRequest,
 };
+use std::collections::HashMap;
 use billing::WeekUsage;
 use models::{
     ActiveSession, DashboardStats, HunkRecord, SessionCard, SessionDetail, TokenUsageSeries,
 };
-use policy::{PolicyConfig, PolicyPreset, PolicyStore, ProjectBinding, ResolvedPolicy};
+use project_fs::{DirEntry, GitChange};
 use serde_json::Value;
 use tauri::Manager;
 
@@ -86,36 +88,51 @@ fn list_managed_agents(manager: tauri::State<'_, AgentManager>) -> Vec<ManagedAg
 }
 
 #[tauri::command]
-fn spawn_agent(
+async fn spawn_agent(
     manager: tauri::State<'_, AgentManager>,
     request: SpawnRequest,
 ) -> Result<ManagedAgentInfo, String> {
-    manager.spawn(request)
+    // ACP spawn/init is blocking I/O — keep it off the UI/command hot path.
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.spawn(request))
+        .await
+        .map_err(|e| format!("spawn task failed: {e}"))?
 }
 
 #[tauri::command]
-fn attach_agent(
+async fn attach_agent(
     manager: tauri::State<'_, AgentManager>,
     request: AttachRequest,
 ) -> Result<ManagedAgentInfo, String> {
-    manager.attach(request)
+    // session/load can take seconds; run off-thread so the webview keeps painting
+    // (breathing light on the task card, etc.).
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.attach(request))
+        .await
+        .map_err(|e| format!("attach task failed: {e}"))?
 }
 
 #[tauri::command]
-fn prompt_agent(
+async fn prompt_agent(
     manager: tauri::State<'_, AgentManager>,
     handle_id: String,
     text: String,
 ) -> Result<Value, String> {
-    manager.prompt(&handle_id, &text)
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.prompt(&handle_id, &text))
+        .await
+        .map_err(|e| format!("prompt task failed: {e}"))?
 }
 
 #[tauri::command]
-fn stop_agent(
+async fn stop_agent(
     manager: tauri::State<'_, AgentManager>,
     handle_id: String,
 ) -> Result<ManagedAgentInfo, String> {
-    manager.stop(&handle_id)
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.stop(&handle_id))
+        .await
+        .map_err(|e| format!("stop task failed: {e}"))?
 }
 
 #[tauri::command]
@@ -151,72 +168,48 @@ fn resolve_permission(
 }
 
 #[tauri::command]
-fn get_policy(manager: tauri::State<'_, AgentManager>) -> PolicyConfig {
-    manager.get_policy()
-}
-
-#[tauri::command]
-fn get_policy_store(manager: tauri::State<'_, AgentManager>) -> PolicyStore {
-    manager.get_policy_store()
-}
-
-#[tauri::command]
-fn resolve_policy(
+fn set_permission_mode(
     manager: tauri::State<'_, AgentManager>,
-    cwd: Option<String>,
-) -> ResolvedPolicy {
-    manager.resolve_policy(cwd)
+    handle_id: String,
+    mode: PermissionMode,
+) -> Result<ManagedAgentInfo, String> {
+    manager.set_permission_mode(&handle_id, mode)
+}
+
+/// Persist permission mode for a task even when no agent is attached.
+#[tauri::command]
+fn set_task_permission_mode(session_id: String, mode: PermissionMode) {
+    task_prefs::set_permission_mode(&session_id, mode);
 }
 
 #[tauri::command]
-fn set_policy(
-    manager: tauri::State<'_, AgentManager>,
-    policy: PolicyConfig,
-) -> Result<PolicyConfig, String> {
-    manager.set_policy(policy)
+fn get_task_permission_mode(session_id: String) -> Option<PermissionMode> {
+    task_prefs::get_permission_mode(&session_id)
 }
 
 #[tauri::command]
-fn set_policy_preset(
-    manager: tauri::State<'_, AgentManager>,
-    preset: PolicyPreset,
-) -> Result<PolicyConfig, String> {
-    manager.set_policy_preset(preset)
+fn list_task_permission_modes() -> HashMap<String, PermissionMode> {
+    task_prefs::all_permission_modes()
 }
 
 #[tauri::command]
-fn set_default_policy_preset(
-    manager: tauri::State<'_, AgentManager>,
-    preset: PolicyPreset,
-) -> Result<ResolvedPolicy, String> {
-    manager.set_default_preset(preset)
+fn get_last_spawn_permission_mode() -> PermissionMode {
+    task_prefs::last_spawn_mode()
 }
 
 #[tauri::command]
-fn bind_project_policy(
-    manager: tauri::State<'_, AgentManager>,
-    cwd: String,
-    preset: PolicyPreset,
-) -> Result<ResolvedPolicy, String> {
-    manager.bind_project_policy(cwd, preset)
+fn list_project_dir(root: String, path: Option<String>) -> Result<Vec<DirEntry>, String> {
+    project_fs::list_dir(&root, path.as_deref())
 }
 
 #[tauri::command]
-fn unbind_project_policy(
-    manager: tauri::State<'_, AgentManager>,
-    cwd: String,
-) -> Result<ResolvedPolicy, String> {
-    manager.unbind_project_policy(cwd)
+fn open_project_path(root: String, path: String) -> Result<(), String> {
+    project_fs::open_path(&root, &path)
 }
 
 #[tauri::command]
-fn list_project_bindings(manager: tauri::State<'_, AgentManager>) -> Vec<ProjectBinding> {
-    manager.list_project_bindings()
-}
-
-#[tauri::command]
-fn list_policy_presets(manager: tauri::State<'_, AgentManager>) -> Vec<PolicyConfig> {
-    manager.list_policy_presets()
+fn git_status(cwd: String) -> Result<Vec<GitChange>, String> {
+    project_fs::git_status(&cwd)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -251,16 +244,14 @@ pub fn run() {
             find_managed_by_session,
             list_pending_permissions,
             resolve_permission,
-            get_policy,
-            get_policy_store,
-            resolve_policy,
-            set_policy,
-            set_policy_preset,
-            set_default_policy_preset,
-            bind_project_policy,
-            unbind_project_policy,
-            list_project_bindings,
-            list_policy_presets,
+            set_permission_mode,
+            set_task_permission_mode,
+            get_task_permission_mode,
+            list_task_permission_modes,
+            get_last_spawn_permission_mode,
+            list_project_dir,
+            open_project_path,
+            git_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -114,36 +114,16 @@ export type LiveFilterKind =
   | "event"
   | "unknown";
 
-export type PolicyPreset = "research" | "code" | "balanced" | "trusted";
-
-export type PolicySource = "default" | "project" | "inherited";
-
-export interface PolicyConfig {
-  preset: PolicyPreset;
-  denyBashSubstrings: string[];
-  sensitivePathSubstrings: string[];
-  autoAllowWritePrefixes: string[];
-  description: string;
+export interface DirEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
 }
 
-export interface PolicyStore {
-  defaultPreset: PolicyPreset;
-  projects: Record<string, PolicyPreset>;
-}
-
-export interface ProjectBinding {
-  cwd: string;
-  preset: PolicyPreset;
-  projectName: string;
-}
-
-export interface ResolvedPolicy {
-  config: PolicyConfig;
-  source: PolicySource;
-  cwd?: string | null;
-  boundPath?: string | null;
-  defaultPreset: PolicyPreset;
-  isProjectBound: boolean;
+export interface GitChange {
+  status: string;
+  path: string;
+  kind: string;
 }
 
 export interface ShellEntry {
@@ -167,20 +147,54 @@ export type ManagedStatus =
   | "error"
   | "stopped";
 
+/** Grok Build permission prompt policy (ACP host + spawn flag). */
+export type PermissionMode =
+  | "default"
+  | "acceptEdits"
+  | "bypassPermissions"
+  | "dontAsk";
+
+export const PERMISSION_MODE_OPTIONS: {
+  value: PermissionMode;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    value: "default",
+    label: "Default",
+    hint: "Ask for tool runs and file writes",
+  },
+  {
+    value: "acceptEdits",
+    label: "Accept edits",
+    hint: "Auto-approve file edits; ask for shell / other tools",
+  },
+  {
+    value: "bypassPermissions",
+    label: "Always approve",
+    hint: "Auto-approve all tools (grok --always-approve)",
+  },
+  {
+    value: "dontAsk",
+    label: "Don't ask",
+    hint: "Deny anything that would have prompted",
+  },
+];
+
 export interface ManagedAgentInfo {
   handleId: string;
   sessionId?: string | null;
   cwd: string;
   pid?: number | null;
   status: ManagedStatus;
+  permissionMode: PermissionMode;
+  /** Mirror of permissionMode === "bypassPermissions". */
   alwaysApprove: boolean;
   modelId?: string | null;
   lastError?: string | null;
   title?: string | null;
   createdAt: string;
   pendingPermissionCount?: number;
-  policyPreset?: PolicyPreset | null;
-  policySource?: PolicySource | string | null;
 }
 
 export type PermissionKind =
@@ -210,16 +224,11 @@ export interface PendingPermission {
   createdAtMs: number;
 }
 
-export interface PolicyActionEvent {
-  action: "allow" | "deny" | string;
-  source: string;
-  pending: PendingPermission;
-  ts: number;
-}
-
 export interface SpawnRequest {
   cwd: string;
   prompt?: string | null;
+  permissionMode?: PermissionMode | null;
+  /** Legacy; prefer permissionMode. */
   alwaysApprove?: boolean | null;
   model?: string | null;
 }
@@ -227,6 +236,8 @@ export interface SpawnRequest {
 export interface AttachRequest {
   sessionId: string;
   cwd: string;
+  permissionMode?: PermissionMode | null;
+  /** Legacy; prefer permissionMode. */
   alwaysApprove?: boolean | null;
 }
 

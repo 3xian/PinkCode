@@ -593,12 +593,12 @@ code,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   border: 1px solid transparent;
   background: var(--bg-elevated);
   border-radius: 999px;
-  padding: 6px 14px;
-  min-height: 30px;
+  padding: 4px 10px;
+  min-height: 26px;
   box-sizing: border-box;
   cursor: pointer;
   font-family: inherit;
@@ -711,8 +711,161 @@ code,
 
 .side-panel {
   background: var(--bg);
-  padding-bottom: 12px;
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
+.side-panel.workspace-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.workspace-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.file-tree-section {
+  flex: 1 1 50%;
+  min-height: 120px;
+}
+
+.git-changes-section {
+  flex: 1 1 50%;
+  min-height: 120px;
+}
+
+.workspace-split {
+  flex-shrink: 0;
+  height: 1px;
+  background: var(--border);
+}
+
+.file-tree-root {
+  padding: 0 14px 6px;
+  font-size: 11px;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.file-tree {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
+  padding: 0 4px 8px;
+  font-size: 12px;
+}
+
+.file-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 0;
+  cursor: default;
+  border-radius: 0;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.file-tree-row.is-dir {
+  cursor: pointer;
+  color: var(--text);
+}
+
+.file-tree-row.is-file {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.file-tree-row:hover {
+  background: var(--bg-hover);
+}
+
+.file-tree-chevron {
+  width: 12px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.file-tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-change-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px 10px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.git-change {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.git-change:hover {
+  background: var(--bg-hover);
+}
+
+.git-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--warn);
+}
+
+.git-badge.kind-added,
+.git-badge.kind-untracked {
+  color: var(--live);
+}
+
+.git-badge.kind-deleted {
+  color: var(--danger);
+}
+
+.git-badge.kind-modified {
+  color: var(--warn);
+}
+
+.git-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.git-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.btn.tiny {
+  padding: 1px 5px;
+  font-size: 12px;
+  min-height: 0;
+  line-height: 1.2;
+}
+
+.empty-hint.small {
+  padding: 8px 14px;
+  font-size: 12px;
 }
 
 .detail-panel {
@@ -781,7 +934,7 @@ code,
   border: 0;
   background: transparent;
   border-radius: 999px;
-  padding: 6px;
+  padding: 4px;
   cursor: pointer;
   color: var(--text-muted);
   text-transform: capitalize;
@@ -982,6 +1135,43 @@ code,
   background: #34d399;
 }
 
+/* Attach-in-flight: switch only (breathing glow until agent is up) */
+.attach-switch.pending {
+  opacity: 1;
+}
+
+.attach-switch.pending .attach-switch-track {
+  background: rgba(52, 211, 153, 0.28);
+  border-color: rgba(52, 211, 153, 0.55);
+  animation: switch-track-breathe 1.1s ease-in-out infinite;
+}
+
+.attach-switch.pending .attach-switch-thumb {
+  transform: translateX(7px);
+  background: #34d399;
+  box-shadow: 0 0 8px 1px rgba(52, 211, 153, 0.55);
+}
+
+@keyframes switch-track-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.28),
+      0 0 12px 2px rgba(52, 211, 153, 0.4);
+    filter: brightness(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .attach-switch.pending .attach-switch-track {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.22);
+  }
+}
+
 .stop-confirm-modal {
   width: min(420px, 100%);
 }
@@ -1120,22 +1310,6 @@ code,
   border-radius: inherit;
 }
 
-.tool-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 10px 18px 0;
-}
-
-.tag {
-  font-size: 11px;
-  padding: 2px 7px;
-  border-radius: 0;
-  background: var(--bg-hover);
-  color: var(--text-muted);
-  font-family: var(--mono);
-}
-
 .tabs {
   display: flex;
   gap: 4px;
@@ -1204,12 +1378,12 @@ code,
   background: transparent;
   color: var(--text-muted);
   font-size: 11px;
-  padding: 4px 10px;
+  padding: 2px 8px;
   border-radius: 999px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   line-height: 1.2;
   transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
@@ -1948,18 +2122,25 @@ code,
   justify-content: flex-end;
 }
 
-/* Prompt bar */
+/* Prompt bar — single composer card: textarea + bottom toolbar */
 .prompt-bar {
   padding: 10px 14px 12px;
   background: #0c0f15;
   flex-shrink: 0;
 }
 
-.prompt-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-  align-items: end;
+.prompt-composer {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 0 0 0 transparent;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.prompt-composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .prompt-input {
@@ -1967,36 +2148,77 @@ code,
   resize: vertical;
   min-height: 52px;
   max-height: 160px;
-  padding: 10px 12px;
+  padding: 10px 12px 6px;
   border-radius: 0;
   border: none;
-  background: var(--bg);
+  background: transparent;
   color: var(--text);
   outline: none;
   font: inherit;
-}
-
-.prompt-input:focus {
-  box-shadow: 0 0 0 1px var(--accent);
+  display: block;
 }
 
 .prompt-input:disabled {
   opacity: 0.55;
 }
 
-.prompt-actions {
+.prompt-toolbar {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: stretch;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px 8px;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.06));
 }
 
-.prompt-key-hint {
+.prompt-perm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+
+.prompt-perm-label {
   font-size: 10px;
-  line-height: 1.2;
-  text-align: center;
-  white-space: nowrap;
-  user-select: none;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.prompt-perm-select {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  color-scheme: dark;
+  cursor: pointer;
+  min-width: 0;
+  max-width: 160px;
+  outline: none;
+}
+
+.prompt-perm-select:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.prompt-perm-select:focus {
+  border-color: var(--accent);
+}
+
+.prompt-perm-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.prompt-send {
+  flex-shrink: 0;
+  min-width: 72px;
 }
 
 .live-timeline .tl-item {
@@ -2083,9 +2305,9 @@ code,
 }
 
 .btn.icon-btn {
-  padding: 6px;
-  min-width: 30px;
-  width: 30px;
+  padding: 4px;
+  min-width: 26px;
+  width: 26px;
 }
 
 .btn.icon-btn .icon {
@@ -2094,7 +2316,8 @@ code,
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field-select {
   width: 100%;
   padding: 9px 11px;
   border-radius: 0;
@@ -2104,11 +2327,25 @@ code,
   font: inherit;
   outline: none;
   resize: vertical;
+  color-scheme: dark;
+  box-sizing: border-box;
+}
+
+.field-select {
+  cursor: pointer;
+  resize: none;
 }
 
 .field input:focus,
-.field textarea:focus {
+.field textarea:focus,
+.field-select:focus {
   box-shadow: 0 0 0 1px var(--accent);
+}
+
+.field-hint {
+  display: block;
+  line-height: 1.35;
+  margin-top: 2px;
 }
 
 .check {

@@ -21,6 +21,8 @@ interface Props {
   onAttach?: (sessionId: string) => void;
   onRequestStop?: (sessionId: string) => void;
   toggleBusy?: boolean;
+  /** Session currently attaching — switch breathes until done. */
+  attachingSessionId?: string | null;
   onNewTask?: () => void;
 }
 
@@ -35,6 +37,7 @@ export function SessionList({
   onAttach,
   onRequestStop,
   toggleBusy,
+  attachingSessionId,
   onNewTask,
 }: Props) {
   const visible = useMemo(() => {
@@ -97,6 +100,7 @@ export function SessionList({
           // Left bar + badge only (no status dot).
           const managed = managedSessionIds?.has(s.id) ?? false;
           const attached = attachedSessionIds?.has(s.id) ?? false;
+          const isAttaching = attachingSessionId === s.id;
           const state = resolveCardState({
             status: s.status,
             managed,
@@ -115,25 +119,35 @@ export function SessionList({
               className={cardClass}
               onClick={() => onSelect(s.id)}
             >
-              <div className="card-top" title={stateTitle(state)}>
+              <div
+                className="card-top"
+                title={isAttaching ? "Attaching agent…" : stateTitle(state)}
+              >
                 <span className="card-title" title={s.title}>
                   {s.title}
                 </span>
                 {(onAttach || onRequestStop) && (
                   <button
                     type="button"
-                    className={`attach-switch${attached ? " on" : ""}`}
+                    className={`attach-switch${attached ? " on" : ""}${
+                      isAttaching ? " pending" : ""
+                    }`}
                     role="switch"
                     aria-checked={attached}
+                    aria-busy={isAttaching || undefined}
                     aria-label={
-                      attached
-                        ? "Detach agent (stop process)"
-                        : "Attach agent"
+                      isAttaching
+                        ? "Attaching agent…"
+                        : attached
+                          ? "Detach agent (stop process)"
+                          : "Attach agent"
                     }
                     title={
-                      attached
-                        ? "On — click to stop agent"
-                        : "Off — click to attach"
+                      isAttaching
+                        ? "Attaching…"
+                        : attached
+                          ? "On — click to stop agent"
+                          : "Off — click to attach"
                     }
                     disabled={toggleBusy}
                     onClick={(e) => {

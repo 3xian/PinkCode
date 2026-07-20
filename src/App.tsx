@@ -66,6 +66,12 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  /** Pending Stop confirmation: which managed agent to kill. */
+  const [stopConfirm, setStopConfirm] = useState<{
+    handleId: string;
+    sessionId: string;
+    title: string;
+  } | null>(null);
   /** Bumped after attach/spawn so Live timeline pins to bottom. */
   const [pinLiveBottomSeq, setPinLiveBottomSeq] = useState(0);
   const [controlBusy, setControlBusy] = useState(false);
@@ -387,14 +393,22 @@ function App() {
     }
   }
 
-  async function handleAttach() {
-    if (!detail) return;
+  async function handleAttach(sessionId: string) {
+    const card = sessions.find((s) => s.id === sessionId);
+    if (!card) return;
+    // Already managed — switch should already be on.
+    const already = managedList.some(
+      (m) => m.sessionId === sessionId && m.status !== "stopped",
+    );
+    if (already) return;
+
+    setSelectedId(sessionId);
     setControlBusy(true);
     setError(null);
     try {
       const info = await attachAgent({
-        sessionId: detail.card.id,
-        cwd: detail.card.cwd,
+        sessionId: card.id,
+        cwd: card.cwd,
         alwaysApprove: false,
       });
       upsertManaged(info);
@@ -485,12 +499,32 @@ function App() {
     }
   }
 
-  async function handleStop() {
-    if (!managedForSession) return;
+  function requestStop(sessionId: string) {
+    const managed = managedList.find(
+      (m) =>
+        m.sessionId === sessionId &&
+        m.status !== "stopped",
+    );
+    if (!managed) return;
+    const title =
+      sessions.find((s) => s.id === sessionId)?.title ??
+      managed.title ??
+      "this agent";
+    setStopConfirm({
+      handleId: managed.handleId,
+      sessionId,
+      title,
+    });
+  }
+
+  async function confirmStop() {
+    if (!stopConfirm) return;
     setControlBusy(true);
+    setError(null);
     try {
-      await stopAgent(managedForSession.handleId);
-      removeManaged(managedForSession.handleId);
+      await stopAgent(stopConfirm.handleId);
+      removeManaged(stopConfirm.handleId);
+      setStopConfirm(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -510,6 +544,17 @@ function App() {
               m.status !== "stopped" &&
               m.status !== "error",
           )
+          .map((m) => m.sessionId as string),
+      ),
+    [managedList],
+  );
+
+  /** Switch on = any non-stopped managed handle (includes error, so user can detach). */
+  const attachedSessionIds = useMemo(
+    () =>
+      new Set(
+        managedList
+          .filter((m) => m.sessionId && m.status !== "stopped")
           .map((m) => m.sessionId as string),
       ),
     [managedList],
@@ -549,6 +594,10 @@ function App() {
               setSelectedId(id);
             }}
             managedSessionIds={managedSessionIds}
+            attachedSessionIds={attachedSessionIds}
+            onAttach={(id) => void handleAttach(id)}
+            onRequestStop={requestStop}
+            toggleBusy={controlBusy}
             onNewTask={() => setModalOpen(true)}
           />
         </aside>
@@ -565,8 +614,6 @@ function App() {
           permBusyKey={permBusyKey}
           controlBusy={controlBusy}
           onSendPrompt={(t) => void handleSend(t)}
-          onAttach={() => void handleAttach()}
-          onStop={() => void handleStop()}
           onResolvePermission={(item, opt) =>
             void handleResolvePermission(item, opt)
           }
@@ -627,6 +674,51 @@ function App() {
         onClose={() => setModalOpen(false)}
         onSubmit={(o) => void handleSpawn(o)}
       />
+
+      {stopConfirm && (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            if (!controlBusy) setStopConfirm(null);
+          }}
+        >
+          <div
+            className="modal stop-confirm-modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal
+            aria-labelledby="stop-confirm-title"
+          >
+            <div className="modal-header">
+              <h2 id="stop-confirm-title">Stop agent?</h2>
+            </div>
+            <p className="muted small">
+              This will kill the agent process for{" "}
+              <strong title={stopConfirm.title}>{stopConfirm.title}</strong>,
+              cancel any pending permission requests, and detach it from
+              MarsBuild. Session history on disk is kept.
+            </p>
+            <div className="modal-actions">
+              <button
+                className="btn"
+                type="button"
+                disabled={controlBusy}
+                onClick={() => setStopConfirm(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn danger-btn"
+                type="button"
+                disabled={controlBusy}
+                onClick={() => void confirmStop()}
+              >
+                {controlBusy ? "Stopping…" : "Stop agent"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -16,6 +16,11 @@ interface Props {
   onQuery: (q: string) => void;
   onSelect: (id: string) => void;
   managedSessionIds?: Set<string>;
+  /** Sessions with a managed agent (includes error; switch is on). */
+  attachedSessionIds?: Set<string>;
+  onAttach?: (sessionId: string) => void;
+  onRequestStop?: (sessionId: string) => void;
+  toggleBusy?: boolean;
   onNewTask?: () => void;
 }
 
@@ -26,6 +31,10 @@ export function SessionList({
   onQuery,
   onSelect,
   managedSessionIds,
+  attachedSessionIds,
+  onAttach,
+  onRequestStop,
+  toggleBusy,
   onNewTask,
 }: Props) {
   const visible = useMemo(() => {
@@ -87,6 +96,7 @@ export function SessionList({
           // error > ACP attached > Grok disk-active > idle.
           // Left bar + badge only (no status dot).
           const managed = managedSessionIds?.has(s.id) ?? false;
+          const attached = attachedSessionIds?.has(s.id) ?? false;
           const state = resolveCardState({
             status: s.status,
             managed,
@@ -100,7 +110,7 @@ export function SessionList({
             .filter(Boolean)
             .join(" ");
           return (
-            <button
+            <div
               key={s.id}
               className={cardClass}
               onClick={() => onSelect(s.id)}
@@ -109,23 +119,36 @@ export function SessionList({
                 <span className="card-title" title={s.title}>
                   {s.title}
                 </span>
-                {state === "error" && (
-                  <span className="state-badge error-badge" title={stateTitle(state)}>
-                    error
-                  </span>
-                )}
-                {state === "live" && (
-                  <span className="state-badge managed-badge" title={stateTitle(state)}>
-                    ACP
-                  </span>
-                )}
-                {state === "disk-active" && (
-                  <span
-                    className="state-badge disk-active-badge"
-                    title={stateTitle(state)}
+                {(onAttach || onRequestStop) && (
+                  <button
+                    type="button"
+                    className={`attach-switch${attached ? " on" : ""}`}
+                    role="switch"
+                    aria-checked={attached}
+                    aria-label={
+                      attached
+                        ? "Detach agent (stop process)"
+                        : "Attach agent"
+                    }
+                    title={
+                      attached
+                        ? "On — click to stop agent"
+                        : "Off — click to attach"
+                    }
+                    disabled={toggleBusy}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (attached) {
+                        onRequestStop?.(s.id);
+                      } else {
+                        onAttach?.(s.id);
+                      }
+                    }}
                   >
-                    active
-                  </span>
+                    <span className="attach-switch-track" aria-hidden>
+                      <span className="attach-switch-thumb" />
+                    </span>
+                  </button>
                 )}
               </div>
               <div className="card-meta">
@@ -152,7 +175,7 @@ export function SessionList({
               <div className="card-path muted" title={s.cwd}>
                 {shortPath(s.cwd, 40)}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -185,7 +208,7 @@ function stateTitle(state: CardState): string {
     case "live":
       return "Attached (ACP)";
     case "disk-active":
-      return "Active in Grok (not attached) — Attach to stream";
+      return "Active in Grok (not attached) — flip switch to attach";
     case "idle":
       return "Idle";
   }

@@ -1,4 +1,11 @@
-import { useMemo, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import type { TokenUsageSeries, WeekUsage } from "../types";
 import {
   formatResetCountdown,
@@ -28,6 +35,12 @@ export function StatsBar({
   );
 }
 
+/** viewBox size — HTML dots use % so they stay circles under preserveAspectRatio=none. */
+const CHART_VB_W = 280;
+const CHART_VB_H = 48;
+/** Max distance (in plot %) from a point to show its tooltip. */
+const HOVER_PROXIMITY_PCT = 12;
+
 function TokenUsageChart({
   series,
   weekUsage,
@@ -40,11 +53,48 @@ function TokenUsageChart({
     return buildSmoothChart(series.days.map((d) => d.tokens));
   }, [series]);
 
+  const plotRef = useRef<HTMLDivElement>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const onPlotMove = useCallback(
+    (e: ReactMouseEvent<HTMLDivElement>) => {
+      if (!chart || !series) {
+        setHoverIdx(null);
+        return;
+      }
+      const el = plotRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const mx = ((e.clientX - rect.left) / rect.width) * 100;
+      const my = ((e.clientY - rect.top) / rect.height) * 100;
+
+      let best = -1;
+      let bestDist = Infinity;
+      for (let i = 0; i < chart.points.length; i++) {
+        const p = chart.points[i];
+        const px = (p.x / CHART_VB_W) * 100;
+        const py = (p.y / CHART_VB_H) * 100;
+        const dx = mx - px;
+        const dy = my - py;
+        const d = Math.hypot(dx, dy);
+        if (d < bestDist) {
+          bestDist = d;
+          best = i;
+        }
+      }
+      setHoverIdx(best >= 0 && bestDist <= HOVER_PROXIMITY_PCT ? best : null);
+    },
+    [chart, series],
+  );
+
+  const onPlotLeave = useCallback(() => setHoverIdx(null), []);
+
   const resetLabel = resetHeaderLabel(weekUsage);
 
   if (!series) {
     return (
-      <div className="token-chart loading" title="Loading 7-day token usage…">
+      <div className="token-chart loading">
         <div className="token-chart-top">
           <span
             className="token-chart-reset"
@@ -59,32 +109,29 @@ function TokenUsageChart({
   }
 
   const days = series.days;
-  const tip = days
-    .map(
-      (d) =>
-        `${d.date.slice(5)}: ${formatTokens(d.tokens)} tok · ${d.turns} turns`,
-    )
-    .join("\n");
-
-  // viewBox size — used to place HTML dots as % so they stay perfect circles
-  // (SVG preserveAspectRatio="none" would squash <circle> into ellipses).
-  const vbW = 280;
-  const vbH = 48;
+  const midDay = days[Math.floor(days.length / 2)];
+  const hoverDay = hoverIdx != null ? days[hoverIdx] : null;
+  const hoverPt = hoverIdx != null && chart ? chart.points[hoverIdx] : null;
+  const hoverTopPct = hoverPt ? (hoverPt.y / CHART_VB_H) * 100 : 0;
+  // Tip is taller than half the plot; flip below when the point is high.
+  const tipBelow = hoverPt != null && hoverTopPct < 52;
 
   return (
-    <div
-      className="token-chart"
-      title={`${tip}\n\nTotal ${formatTokens(series.totalTokens)} tok · ${series.totalTurns} turns\n(fresh input + output; cache hits excluded)`}
-    >
+    <div className="token-chart">
       <div className="token-chart-top">
         <span className="token-chart-reset" title={resetTooltip(weekUsage)}>
           {resetLabel}
         </span>
       </div>
-      <div className="token-chart-plot">
+      <div
+        ref={plotRef}
+        className="token-chart-plot"
+        onMouseMove={onPlotMove}
+        onMouseLeave={onPlotLeave}
+      >
         <svg
           className="token-chart-svg"
-          viewBox={`0 0 ${vbW} ${vbH}`}
+          viewBox={`0 0 ${CHART_VB_W} ${CHART_VB_H}`}
           preserveAspectRatio="none"
           role="img"
           aria-label="Token usage over the last 7 days"
@@ -112,24 +159,40 @@ function TokenUsageChart({
             {chart.points.map((p, i) => (
               <span
                 key={days[i]?.date ?? i}
-                className="token-chart-dot"
-                style={{
-                  left: `${(p.x / vbW) * 100}%`,
-                  top: `${(p.y / vbH) * 100}%`,
-                }}
-                title={
-                  days[i]
-                    ? `${days[i].date}: ${formatTokens(days[i].tokens)} tok`
-                    : undefined
+                className={
+                  "token-chart-dot" +
+                  (hoverIdx === i ? " token-chart-dot-active" : "")
                 }
+                style={{
+                  left: `${(p.x / CHART_VB_W) * 100}%`,
+                  top: `${(p.y / CHART_VB_H) * 100}%`,
+                }}
               />
             ))}
+          </div>
+        )}
+        {hoverDay && hoverPt && (
+          <div
+            className={
+              "token-chart-tip" + (tipBelow ? " token-chart-tip-below" : "")
+            }
+            style={{
+              left: `${(hoverPt.x / CHART_VB_W) * 100}%`,
+              top: `${hoverTopPct}%`,
+            }}
+            role="tooltip"
+          >
+            <div className="token-chart-tip-date">{hoverDay.date}</div>
+            <div className="token-chart-tip-row">
+              {formatTokens(hoverDay.tokens)} tokens
+            </div>
+            <div className="token-chart-tip-row">{hoverDay.turns} turns</div>
           </div>
         )}
       </div>
       <div className="token-chart-meta">
         <span>{shortDay(days[0]?.date)}</span>
-        <span>{series.totalTurns} turns</span>
+        <span>{shortDay(midDay?.date)}</span>
         <span>{shortDay(days[days.length - 1]?.date)}</span>
       </div>
     </div>

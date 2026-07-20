@@ -10,6 +10,8 @@
   --text-muted: #8b93a7;
   --accent: #6ea8ff;
   --accent-dim: rgba(110, 168, 255, 0.14);
+  /* Selected task title (card + detail header) */
+  --title-selected: #a78bfa;
   --live: #3dd68c;
   --live-dim: rgba(61, 214, 140, 0.15);
   --danger: #ff6b7a;
@@ -220,6 +222,48 @@ code,
   border: 1.5px solid #1a1030;
   box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.3);
   opacity: 1;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.token-chart-dot-active {
+  transform: scale(1.35);
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.45);
+}
+
+/* Proximity tooltip: date / tokens / turns near the hovered point */
+.token-chart-tip {
+  position: absolute;
+  z-index: 2;
+  /* Default: above the point */
+  transform: translate(-50%, calc(-100% - 10px));
+  pointer-events: none;
+  padding: 5px 8px;
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  border-radius: 6px;
+  background: rgba(18, 14, 28, 0.94);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Point is high — place tip below so it stays under the top edge */
+.token-chart-tip-below {
+  transform: translate(-50%, 12px);
+}
+
+.token-chart-tip-date {
+  font-weight: 600;
+  color: #c4b5fd;
+  margin-bottom: 2px;
+}
+
+.token-chart-tip-row {
+  color: var(--text-muted);
 }
 
 .token-chart-meta {
@@ -613,33 +657,6 @@ code,
   align-items: center;
 }
 
-/* Single text label per card — color matches bar + dot */
-.state-badge {
-  margin-left: auto;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 2px 8px;
-  border-radius: 999px;
-  flex-shrink: 0;
-  line-height: 1.25;
-}
-
-.managed-badge {
-  color: var(--live);
-  background: var(--live-dim);
-}
-
-.disk-active-badge {
-  color: var(--warn);
-  background: rgba(240, 180, 41, 0.12);
-}
-
-.error-badge {
-  color: var(--danger);
-  background: var(--danger-dim);
-}
-
 .banner {
   padding: 8px 16px;
   display: flex;
@@ -832,6 +849,7 @@ code,
 /*
  * Scheme A left bar: same color family as badge.
  * Priority applied in JS: error > live > disk-active > idle (no bar).
+ * Vertical gradient fades to transparent at both ends.
  */
 .session-card.state-error::before,
 .session-card.state-live::before,
@@ -839,29 +857,48 @@ code,
   content: "";
   position: absolute;
   left: 0;
-  top: 8px;
-  bottom: 8px;
+  top: 6px;
+  bottom: 6px;
   width: 2px;
   border-radius: 999px;
   pointer-events: none;
 }
 
 .session-card.state-error::before {
-  background: var(--danger);
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--danger) 22%,
+    var(--danger) 78%,
+    transparent 100%
+  );
 }
 
 .session-card.state-live::before {
-  background: var(--live);
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--live) 22%,
+    var(--live) 78%,
+    transparent 100%
+  );
 }
 
 .session-card.state-disk-active::before {
-  background: var(--warn);
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--warn) 22%,
+    var(--warn) 78%,
+    transparent 100%
+  );
 }
 
 .card-top {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .card-title {
@@ -869,6 +906,89 @@ code,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  margin-right: 8px;
+}
+
+.session-card.selected .card-title {
+  color: var(--title-selected);
+}
+
+/* Attach / stop toggle on task cards */
+.attach-switch {
+  margin-left: auto;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 0;
+  opacity: 0.85;
+  transition: opacity 0.12s ease;
+}
+
+.attach-switch:hover:not(:disabled),
+.session-card.selected .attach-switch,
+.session-card:hover .attach-switch {
+  opacity: 1;
+}
+
+.attach-switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.attach-switch:focus-visible {
+  outline: none;
+}
+
+.attach-switch:focus-visible .attach-switch-track {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
+.attach-switch-track {
+  position: relative;
+  display: block;
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--border-strong);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.attach-switch.on .attach-switch-track {
+  background: rgba(52, 211, 153, 0.35);
+  border-color: rgba(52, 211, 153, 0.55);
+}
+
+.attach-switch-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.attach-switch.on .attach-switch-thumb {
+  transform: translateX(14px);
+  background: #34d399;
+}
+
+.stop-confirm-modal {
+  width: min(420px, 100%);
+}
+
+.stop-confirm-modal strong {
+  color: var(--text);
+  font-weight: 600;
 }
 
 .card-meta,
@@ -914,6 +1034,7 @@ code,
   font-size: 20px;
   font-weight: 650;
   line-height: 1.25;
+  color: var(--title-selected);
 }
 
 .detail-status-row,
@@ -1834,13 +1955,6 @@ code,
   flex-shrink: 0;
 }
 
-.prompt-meta {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-}
-
 .prompt-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -1874,6 +1988,15 @@ code,
   display: flex;
   flex-direction: column;
   gap: 6px;
+  align-items: stretch;
+}
+
+.prompt-key-hint {
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  user-select: none;
 }
 
 .live-timeline .tl-item {
@@ -1956,6 +2079,17 @@ code,
 }
 
 .field-row .btn {
+  flex-shrink: 0;
+}
+
+.btn.icon-btn {
+  padding: 6px;
+  min-width: 30px;
+  width: 30px;
+}
+
+.btn.icon-btn .icon {
+  display: block;
   flex-shrink: 0;
 }
 

@@ -81,16 +81,36 @@ export function NewTaskModal({
             <input
               value={cwd}
               onChange={(e) => setCwd(e.target.value)}
-              placeholder="Click Browse or paste a path…"
+              placeholder="Browse folder or paste a path…"
               disabled={busy || picking}
             />
             <button
-              className="btn"
+              className="btn icon-btn"
               type="button"
               onClick={() => void pickDirectory()}
               disabled={busy || picking}
+              title="Browse folder"
+              aria-label={picking ? "Opening folder picker…" : "Browse folder"}
             >
-              {picking ? "…" : "Browse"}
+              {picking ? (
+                <span aria-hidden>…</span>
+              ) : (
+                <svg
+                  className="icon"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  aria-hidden
+                >
+                  <path
+                    d="M1.5 4.5A1.5 1.5 0 0 1 3 3h3.1c.3 0 .58.12.79.33L8 4.5h5A1.5 1.5 0 0 1 14.5 6v6A1.5 1.5 0 0 1 13 13.5H3A1.5 1.5 0 0 1 1.5 12V4.5Z"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
             </button>
           </div>
         </label>

@@ -33,8 +33,6 @@ interface Props {
   permBusyKey: string | null;
   controlBusy: boolean;
   onSendPrompt: (text: string) => void;
-  onAttach: () => void;
-  onStop: () => void;
   onResolvePermission: (item: PendingPermission, optionId: string) => void;
   /** Bump after attach/spawn to force Live stream to the bottom. */
   pinLiveBottomSeq?: number;
@@ -76,8 +74,6 @@ export function SessionDetailView({
   permBusyKey,
   controlBusy,
   onSendPrompt,
-  onAttach,
-  onStop,
   onResolvePermission,
   pinLiveBottomSeq = 0,
 }: Props) {
@@ -249,9 +245,6 @@ export function SessionDetailView({
         managed={managed}
         busy={controlBusy}
         onSend={onSendPrompt}
-        onAttach={onAttach}
-        onStop={onStop}
-        canAttach={!!detail}
       />
     </section>
   );
@@ -385,7 +378,7 @@ function LiveTimeline({
       <div className="empty-hint">
         {managed
           ? "Waiting for ACP stream… send a prompt or wait for the agent."
-          : "Attach or spawn this session to see live thought / tool / shell / message chunks."}
+          : "Flip the task card switch to attach, or spawn a new task, to stream thought / tool / shell / message chunks."}
       </div>
     );
   }

@@ -110,9 +110,7 @@ mod tests {
             &temp.join("marsbuild-probe").display().to_string()
         ));
         // Windows short-path style temp (common under Grok session groups).
-        assert!(is_system_temp_cwd(
-            r"C:\Users\ADMINI~1\AppData\Local\Temp\"
-        ));
+        assert!(is_system_temp_cwd(r"C:\Users\ADMINI~1\AppData\Local\Temp\"));
         assert!(is_system_temp_cwd(
             r"C:\Users\ADMINI~1\AppData\Local\Temp\probe"
         ));

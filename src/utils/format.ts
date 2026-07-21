@@ -1,4 +1,14 @@
 import type { AvailableCommand } from "../types";
+import { extractToolMeta, formatToolCardParts } from "./toolTitle";
+
+export type { ToolCardParts } from "./toolTitle";
+export {
+  composeToolTitle,
+  formatToolCardParts,
+  isToolCallId,
+  mergeToolCardParts,
+  toolPrimaryTarget,
+} from "./toolTitle";
 
 /** Compact token counts. Pass `decimals: false` for integer units (e.g. Context). */
 export function formatTokens(n: number, opts?: { decimals?: boolean }): string {
@@ -178,202 +188,6 @@ function numField(
   return Number.isFinite(n) ? n : 0;
 }
 
-/** ACP / Grok toolCallId shape: `call-<uuid>-N`. Never show as a card title. */
-export function isToolCallId(s: string): boolean {
-  return /^call-[\w-]+$/i.test(s.trim());
-}
-
-const TOOL_STATUS_RE =
-  /^(pending|in_progress|completed|failed|cancelled|running)$/i;
-
-/** Split `Base · status` written by `formatToolCardTitle`. */
-export function splitToolTitle(title: string): {
-  base: string;
-  status?: string;
-} {
-  const trimmed = title.trim();
-  const sep = trimmed.lastIndexOf(" · ");
-  if (sep <= 0) return { base: trimmed };
-  const base = trimmed.slice(0, sep).trim();
-  const status = trimmed.slice(sep + 3).trim();
-  if (base && status && TOOL_STATUS_RE.test(status)) {
-    return { base, status };
-  }
-  return { base: trimmed };
-}
-
-/** Higher = more human-readable. Used when merging tool_call → updates. */
-export function toolTitleBaseQuality(base: string): number {
-  const t = base.trim();
-  if (!t || isToolCallId(t) || t === "Tool call") return 0;
-  // Bare wire name: read_file, run_terminal_command
-  if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(t)) return 1;
-  // Wire name + target: "read_file · path" (better than bare, worse than ACP prose)
-  if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+\s*·/.test(t)) return 2;
-  // Human title from ACP: "Read `path`", "Execute `cmd`", "imagine: …"
-  if (t.includes("`") || /[/\\]/.test(t) || t.includes(": ") || /\s/.test(t)) {
-    return 3;
-  }
-  return 2;
-}
-
-/** Keep the better base title; take the newest status when present. */
-export function mergeToolTitles(prev: string, next: string): string {
-  const a = splitToolTitle(prev);
-  const b = splitToolTitle(next);
-  const base =
-    toolTitleBaseQuality(b.base) > toolTitleBaseQuality(a.base)
-      ? b.base
-      : toolTitleBaseQuality(a.base) > 0
-        ? a.base
-        : b.base || a.base || "Tool call";
-  const status = b.status || a.status;
-  return status ? `${base} · ${status}` : base;
-}
-
-function truncateDisplay(s: string, max = 96): string {
-  const t = s.trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, Math.max(1, max - 1))}…`;
-}
-
-/** Grok emits `_meta["x.ai/tool"]`; older shapes nest under `_meta["x.ai"].tool`. */
-function extractToolMeta(
-  inner: Record<string, unknown>,
-): Record<string, unknown> {
-  const meta = inner._meta as Record<string, unknown> | undefined;
-  if (!meta || typeof meta !== "object") return {};
-  const slash = meta["x.ai/tool"];
-  if (slash && typeof slash === "object") {
-    return slash as Record<string, unknown>;
-  }
-  const xai = meta["x.ai"] as Record<string, unknown> | undefined;
-  const nested = xai?.tool;
-  if (nested && typeof nested === "object") {
-    return nested as Record<string, unknown>;
-  }
-  return {};
-}
-
-function firstLocationPath(locations: unknown): string {
-  if (!Array.isArray(locations)) return "";
-  for (const loc of locations) {
-    if (!loc || typeof loc !== "object") continue;
-    const path = (loc as { path?: unknown }).path;
-    if (typeof path === "string" && path.trim()) return path.trim();
-  }
-  return "";
-}
-
-/**
- * Best-effort target string for tool cards (path, command, pattern, …).
- * Prefer short, scannable values over full prompts.
- */
-export function toolPrimaryTarget(inner: Record<string, unknown>): string {
-  const rawInput = inner.rawInput as Record<string, unknown> | undefined;
-  const meta = extractToolMeta(inner);
-  const metaInput =
-    meta.input && typeof meta.input === "object"
-      ? (meta.input as Record<string, unknown>)
-      : undefined;
-
-  const fromObj = (obj?: Record<string, unknown>): string => {
-    if (!obj) return "";
-    for (const key of [
-      "target_file",
-      "file_path",
-      "path",
-      "command",
-      "cmd",
-      "pattern",
-      "query",
-      "url",
-      "description",
-    ]) {
-      const v = obj[key];
-      if (typeof v === "string" && v.trim()) return v.trim();
-    }
-    // Prompts are long — only as last resort inside this object
-    if (typeof obj.prompt === "string" && obj.prompt.trim()) {
-      return obj.prompt.trim();
-    }
-    return "";
-  };
-
-  return (
-    firstLocationPath(inner.locations) ||
-    fromObj(rawInput) ||
-    fromObj(metaInput) ||
-    ""
-  );
-}
-
-function isSnakeToolName(s: string): boolean {
-  return /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(s.trim());
-}
-
-/**
- * Human-facing tool card title from an ACP tool_call / tool_call_update.
- * Never uses the raw `call-…` id as the title.
- */
-export function formatToolCardTitle(inner: Record<string, unknown>): {
-  title: string;
-  detail?: string;
-} {
-  const rawTitle = String(inner.title ?? "").trim();
-  const statusRaw = inner.status;
-  const status =
-    statusRaw != null && String(statusRaw).trim()
-      ? String(statusRaw).trim()
-      : "";
-  const meta = extractToolMeta(inner);
-  const label =
-    typeof meta.label === "string" && meta.label.trim()
-      ? meta.label.trim()
-      : "";
-  const name =
-    typeof meta.name === "string" && meta.name.trim()
-      ? meta.name.trim()
-      : "";
-  const target = toolPrimaryTarget(inner);
-  const targetShort = target
-    ? target.length > 64 || /[/\\]/.test(target)
-      ? shortPath(target, 48)
-      : truncateDisplay(target, 48)
-    : "";
-
-  let base = "";
-  if (rawTitle && !isToolCallId(rawTitle)) {
-    if (isSnakeToolName(rawTitle) && targetShort) {
-      // Wire name + target → prefer ACP label when present (not a local verb map)
-      base = label
-        ? `${label} \`${targetShort}\``
-        : `${rawTitle} · ${targetShort}`;
-    } else if (isSnakeToolName(rawTitle) && label && rawTitle === name) {
-      base = label;
-    } else {
-      base = truncateDisplay(rawTitle, 96);
-    }
-  } else if (label && targetShort) {
-    base = `${label} \`${targetShort}\``;
-  } else if (label) {
-    base = label;
-  } else if (name && targetShort) {
-    base = `${name} · ${targetShort}`;
-  } else if (name) {
-    base = name;
-  } else if (targetShort) {
-    base = targetShort;
-  } else {
-    base = "Tool call";
-  }
-
-  const title = status ? `${base} · ${status}` : base;
-  const detail =
-    targetShort && !title.includes(targetShort) ? targetShort : undefined;
-  return { title, detail };
-}
-
 /**
  * Whether Rust `maybe_emit_shell` would emit an `agent-shell` event for this
  * ACP update. Keep in sync with `agent_manager.rs` (title / meta / raw I/O).
@@ -418,6 +232,9 @@ export function describeUpdate(update: unknown): {
   /** True when this is a text stream chunk (merge with previous same kind). */
   coalesce?: boolean;
   toolCallId?: string;
+  /** Structured tool title parts when kind is `"tool"`. */
+  toolBase?: string;
+  toolStatus?: string;
   /** True when this update is a shell tool (Live uses agent-shell card only). */
   isShell?: boolean;
   /** Slash commands from `available_commands_update` (not shown as a live card). */
@@ -477,12 +294,14 @@ export function describeUpdate(update: unknown): {
     case "tool_call_update": {
       const toolCallId =
         (inner.toolCallId as string | undefined) ?? undefined;
-      const { title, detail } = formatToolCardTitle(inner);
+      const parts = formatToolCardParts(inner);
       return {
         kind: "tool",
-        title,
-        detail,
+        title: parts.title,
+        detail: parts.detail,
         toolCallId,
+        toolBase: parts.baseTitle,
+        toolStatus: parts.status,
         isShell: isShellToolUpdate({
           ...inner,
           sessionUpdate,

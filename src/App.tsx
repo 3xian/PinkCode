@@ -112,7 +112,7 @@ function App() {
   } = useAgentEvents(selectedId);
 
   const projectCwd = detail?.card.cwd ?? null;
-  const { updatePrompt, dismissUpdate } = useAppUpdate();
+  const { pendingUpdate, dismissUpdate } = useAppUpdate();
 
   const refreshList = useCallback(async () => {
     // Skip heavy list work while the window is hidden (drag/minimize storms).
@@ -660,7 +660,7 @@ function App() {
         onSubmit={(o) => void handleSpawn(o)}
       />
 
-      <UpdateModal prompt={updatePrompt} onDismiss={dismissUpdate} />
+      <UpdateModal update={pendingUpdate} onDismiss={dismissUpdate} />
 
       {stopConfirm && (
         <div

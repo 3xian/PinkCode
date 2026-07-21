@@ -7,8 +7,7 @@ import {
   COALESCE_LIVE_KINDS,
   describeUpdate,
   extractUpdateTsMs,
-  isToolCallId,
-  mergeToolTitles,
+  mergeToolCardParts,
 } from "../utils/format";
 
 export type UpdateDescription = ReturnType<typeof describeUpdate>;
@@ -174,24 +173,30 @@ export function reduceAgentUpdate(
   if (description.kind === "tool" && description.toolCallId) {
     const index = list.findIndex(
       (item) =>
-        item.kind === "tool" &&
-        (item.toolCallId === description.toolCallId ||
-          // Legacy hydrate: detail used to hold the call id
-          item.detail === description.toolCallId ||
-          item.title.includes(description.toolCallId!)),
+        item.kind === "tool" && item.toolCallId === description.toolCallId,
     );
     if (index >= 0) {
       const prev = list[index];
-      const nextDetail =
-        description.detail && !isToolCallId(description.detail)
-          ? description.detail
-          : prev.detail && !isToolCallId(prev.detail)
-            ? prev.detail
-            : undefined;
+      const merged = mergeToolCardParts(
+        {
+          baseTitle: prev.toolBase ?? prev.title,
+          status: prev.toolStatus,
+          detail: prev.detail,
+          title: prev.title,
+        },
+        {
+          baseTitle: description.toolBase ?? description.title,
+          status: description.toolStatus,
+          detail: description.detail,
+          title: description.title,
+        },
+      );
       list[index] = {
         ...prev,
-        title: mergeToolTitles(prev.title, description.title),
-        detail: nextDetail,
+        title: merged.title,
+        detail: merged.detail,
+        toolBase: merged.baseTitle,
+        toolStatus: merged.status,
         toolCallId: description.toolCallId,
         ts: now,
       };
@@ -224,6 +229,8 @@ export function reduceAgentUpdate(
     title: description.title,
     detail: description.detail,
     toolCallId: description.toolCallId,
+    toolBase: description.toolBase,
+    toolStatus: description.toolStatus,
     ts: now,
     streaming: markStreaming,
   });

@@ -2,51 +2,44 @@ import type { Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useEffect, useMemo, useState } from "react";
 
-export interface UpdatePrompt {
-  update: Update;
-  version: string;
-  currentVersion: string;
-  body?: string | null;
-}
-
 interface Props {
-  prompt: UpdatePrompt | null;
+  update: Update | null;
   onDismiss: () => void;
 }
 
 type Phase = "prompt" | "downloading" | "installing" | "done" | "error";
 
-export function UpdateModal({ prompt, onDismiss }: Props) {
+export function UpdateModal({ update, onDismiss }: Props) {
   const [phase, setPhase] = useState<Phase>("prompt");
   const [downloaded, setDownloaded] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!prompt) return;
+    if (!update) return;
     setPhase("prompt");
     setDownloaded(0);
     setTotal(null);
     setError(null);
-  }, [prompt?.version, prompt?.currentVersion]);
+  }, [update?.version, update?.currentVersion]);
 
   const pct = useMemo(() => {
     if (!total || total <= 0) return null;
     return Math.min(100, Math.round((downloaded / total) * 100));
   }, [downloaded, total]);
 
-  if (!prompt) return null;
+  if (!update) return null;
 
   const busy = phase === "downloading" || phase === "installing";
 
   async function handleInstall() {
-    if (!prompt || busy) return;
+    if (!update || busy) return;
     setError(null);
     setPhase("downloading");
     setDownloaded(0);
     setTotal(null);
     try {
-      await prompt.update.downloadAndInstall((event) => {
+      await update.downloadAndInstall((event) => {
         switch (event.event) {
           case "Started":
             setTotal(event.data.contentLength ?? null);
@@ -89,15 +82,15 @@ export function UpdateModal({ prompt, onDismiss }: Props) {
 
         <p className="update-version-line">
           <span className="muted">Current</span>{" "}
-          <strong>v{prompt.currentVersion}</strong>
+          <strong>v{update.currentVersion}</strong>
           <span className="muted"> → </span>
-          <strong>v{prompt.version}</strong>
+          <strong>v{update.version}</strong>
         </p>
 
-        {prompt.body?.trim() ? (
+        {update.body?.trim() ? (
           <div className="update-notes">
             <div className="muted small">Release notes</div>
-            <pre className="update-notes-body">{prompt.body.trim()}</pre>
+            <pre className="update-notes-body">{update.body.trim()}</pre>
           </div>
         ) : (
           <p className="muted small">

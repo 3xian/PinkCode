@@ -114,11 +114,14 @@ describe("live timeline reducer", () => {
     expect(items[0].toolCallId).toBe(
       "call-f8b05138-361f-4d22-96a9-d3d94930cd93-0",
     );
+    expect(items[0].toolBase).toBe(
+      "Read `D:\\code\\MarsBuild\\src\\utils\\format.ts`",
+    );
+    expect(items[0].toolStatus).toBe("completed");
     expect(items[0].title).toBe(
       "Read `D:\\code\\MarsBuild\\src\\utils\\format.ts` · completed",
     );
     expect(items[0].title).not.toMatch(/call-f8b05138/);
-    // detail is optional; never re-use the call id as detail
     expect(items[0].detail ?? "").not.toMatch(/^call-/);
   });
 

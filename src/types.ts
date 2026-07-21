@@ -279,6 +279,10 @@ export interface LiveStreamItem {
   streaming?: boolean;
   /** ACP toolCallId for tool cards (merge key; not shown as title). */
   toolCallId?: string;
+  /** Tool card base line without status (merge preserves this across updates). */
+  toolBase?: string;
+  /** Tool card ACP status (pending / completed / …). */
+  toolStatus?: string;
   /** Present when kind is `"shell"`. */
   shell?: LiveShellPayload;
 }

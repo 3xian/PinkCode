@@ -115,6 +115,10 @@ function TokenUsageChart({
   const hoverTopPct = hoverPt ? (hoverPt.y / CHART_VB_H) * 100 : 0;
   // Tip is taller than half the plot; flip below when the point is high.
   const tipBelow = hoverPt != null && hoverTopPct < 52;
+  const hoverUsageLine =
+    hoverDay != null
+      ? dayUsageEstimateLine(hoverDay.tokens, series, weekUsage)
+      : null;
 
   return (
     <div className="token-chart">
@@ -186,6 +190,11 @@ function TokenUsageChart({
             <div className="token-chart-tip-row">
               {formatTokens(hoverDay.tokens)} tokens
             </div>
+            {hoverUsageLine && (
+              <div className="token-chart-tip-row muted">
+                {hoverUsageLine}
+              </div>
+            )}
             <div className="token-chart-tip-row">{hoverDay.turns} turns</div>
           </div>
         )}
@@ -437,6 +446,30 @@ function fmtPct(n: number): string {
   if (!Number.isFinite(n)) return "—";
   const r = Math.round(n * 10) / 10;
   return Number.isInteger(r) ? `${r}%` : `${r.toFixed(1)}%`;
+}
+
+/**
+ * Rough day share of the billing period (local tokens only):
+ * (dayTokens / seriesTotal) * credit_usage_percent → "~12% usage".
+ * Leading ~ marks this as an estimate, not official Grok day accounting.
+ */
+function dayUsageEstimateLine(
+  dayTokens: number,
+  series: TokenUsageSeries,
+  weekUsage: WeekUsage | null,
+): string | null {
+  if (!weekUsage || weekUsage.error) return null;
+  const creditUsagePercent = weekUsage.usedPercent;
+  if (!Number.isFinite(creditUsagePercent) || creditUsagePercent <= 0) {
+    return null;
+  }
+  const total =
+    series.totalTokens > 0
+      ? series.totalTokens
+      : series.days.reduce((s, d) => s + d.tokens, 0);
+  if (!(total > 0) || !Number.isFinite(dayTokens) || dayTokens < 0) return null;
+  const pct = (dayTokens / total) * creditUsagePercent;
+  return `~${fmtPct(pct)} usage`;
 }
 
 

@@ -135,7 +135,8 @@ On Windows this produces NSIS/MSI installers under `src-tauri/target/release/bun
 ### GitHub Releases
 
 Pushing a version tag builds and publishes Windows x64 MSI/NSIS installers and
-macOS DMGs for Apple Silicon and Intel:
+macOS DMGs for Apple Silicon and Intel, plus signed updater artifacts and
+`latest.json` for in-app updates:
 
 ```bash
 git tag v0.1.1
@@ -145,6 +146,29 @@ git push origin v0.1.1
 The tag must match the version in `package.json`. Before creating a new release,
 keep the versions in `package.json`, `src-tauri/Cargo.toml`, and
 `src-tauri/tauri.conf.json` in sync.
+
+#### In-app updates
+
+On startup, MarsBuild checks
+`https://github.com/3xian/MarsBuild/releases/latest/download/latest.json`.
+If a newer signed build exists, a modal offers **Download & install** (progress,
+then relaunch). Failures in dev or offline are silent.
+
+Release CI needs the signing private key that matches the `plugins.updater.pubkey`
+in `src-tauri/tauri.conf.json`:
+
+| GitHub Actions secret | Value |
+|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | Contents of the private key file (minisign) |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Optional; empty if the key has no password |
+
+Generate a keypair once (do not commit the private key):
+
+```bash
+npx tauri signer generate -w ~/.tauri/marsbuild.key --ci -p ""
+# Public key → plugins.updater.pubkey in tauri.conf.json
+# Private key → TAURI_SIGNING_PRIVATE_KEY secret
+```
 
 Rust tests:
 

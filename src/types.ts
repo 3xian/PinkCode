@@ -277,6 +277,8 @@ export interface LiveStreamItem {
    * UI renders plain text while streaming to avoid full Markdown re-parse each chunk.
    */
   streaming?: boolean;
+  /** ACP toolCallId for tool cards (merge key; not shown as title). */
+  toolCallId?: string;
   /** Present when kind is `"shell"`. */
   shell?: LiveShellPayload;
 }

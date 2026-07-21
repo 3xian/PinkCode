@@ -58,6 +58,70 @@ describe("live timeline reducer", () => {
     expect(items[1].title).toContain("Read file");
   });
 
+  it("merges tool updates without clobbering friendly titles with call ids", () => {
+    const updates = [
+      {
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "call-f8b05138-361f-4d22-96a9-d3d94930cd93-0",
+            title: "read_file",
+            rawInput: {
+              target_file: "D:\\code\\MarsBuild\\src\\utils\\format.ts",
+            },
+            _meta: {
+              "x.ai/tool": {
+                name: "read_file",
+                label: "Read",
+                kind: "read",
+              },
+            },
+          },
+        },
+        timestamp: "2026-07-21T12:00:00Z",
+      },
+      {
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "call-f8b05138-361f-4d22-96a9-d3d94930cd93-0",
+            title: "Read `D:\\code\\MarsBuild\\src\\utils\\format.ts`",
+            kind: "read",
+            locations: [
+              { path: "D:\\code\\MarsBuild\\src\\utils\\format.ts" },
+            ],
+          },
+        },
+        timestamp: "2026-07-21T12:00:01Z",
+      },
+      {
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "call-f8b05138-361f-4d22-96a9-d3d94930cd93-0",
+            status: "completed",
+          },
+        },
+        timestamp: "2026-07-21T12:00:02Z",
+      },
+    ];
+    const items = hydrateLiveFromDiskUpdates(updates, "sess-tool");
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("tool");
+    expect(items[0].toolCallId).toBe(
+      "call-f8b05138-361f-4d22-96a9-d3d94930cd93-0",
+    );
+    expect(items[0].title).toBe(
+      "Read `D:\\code\\MarsBuild\\src\\utils\\format.ts` · completed",
+    );
+    expect(items[0].title).not.toMatch(/call-f8b05138/);
+    // detail is optional; never re-use the call id as detail
+    expect(items[0].detail ?? "").not.toMatch(/^call-/);
+  });
+
   it("merges disk hydrate without dropping local slash cards", () => {
     const local: LiveStreamItem = {
       id: "local-1",

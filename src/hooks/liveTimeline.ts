@@ -7,6 +7,8 @@ import {
   COALESCE_LIVE_KINDS,
   describeUpdate,
   extractUpdateTsMs,
+  isToolCallId,
+  mergeToolTitles,
 } from "../utils/format";
 
 export type UpdateDescription = ReturnType<typeof describeUpdate>;
@@ -173,14 +175,24 @@ export function reduceAgentUpdate(
     const index = list.findIndex(
       (item) =>
         item.kind === "tool" &&
-        (item.detail === description.toolCallId ||
+        (item.toolCallId === description.toolCallId ||
+          // Legacy hydrate: detail used to hold the call id
+          item.detail === description.toolCallId ||
           item.title.includes(description.toolCallId!)),
     );
     if (index >= 0) {
+      const prev = list[index];
+      const nextDetail =
+        description.detail && !isToolCallId(description.detail)
+          ? description.detail
+          : prev.detail && !isToolCallId(prev.detail)
+            ? prev.detail
+            : undefined;
       list[index] = {
-        ...list[index],
-        title: description.title || list[index].title,
-        detail: description.toolCallId,
+        ...prev,
+        title: mergeToolTitles(prev.title, description.title),
+        detail: nextDetail,
+        toolCallId: description.toolCallId,
         ts: now,
       };
       next.set(key, list);
@@ -211,6 +223,7 @@ export function reduceAgentUpdate(
     kind: description.kind,
     title: description.title,
     detail: description.detail,
+    toolCallId: description.toolCallId,
     ts: now,
     streaming: markStreaming,
   });

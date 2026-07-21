@@ -1,0 +1,171 @@
+import type { Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { useEffect, useMemo, useState } from "react";
+
+export interface UpdatePrompt {
+  update: Update;
+  version: string;
+  currentVersion: string;
+  body?: string | null;
+}
+
+interface Props {
+  prompt: UpdatePrompt | null;
+  onDismiss: () => void;
+}
+
+type Phase = "prompt" | "downloading" | "installing" | "done" | "error";
+
+export function UpdateModal({ prompt, onDismiss }: Props) {
+  const [phase, setPhase] = useState<Phase>("prompt");
+  const [downloaded, setDownloaded] = useState(0);
+  const [total, setTotal] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!prompt) return;
+    setPhase("prompt");
+    setDownloaded(0);
+    setTotal(null);
+    setError(null);
+  }, [prompt?.version, prompt?.currentVersion]);
+
+  const pct = useMemo(() => {
+    if (!total || total <= 0) return null;
+    return Math.min(100, Math.round((downloaded / total) * 100));
+  }, [downloaded, total]);
+
+  if (!prompt) return null;
+
+  const busy = phase === "downloading" || phase === "installing";
+
+  async function handleInstall() {
+    if (!prompt || busy) return;
+    setError(null);
+    setPhase("downloading");
+    setDownloaded(0);
+    setTotal(null);
+    try {
+      await prompt.update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case "Started":
+            setTotal(event.data.contentLength ?? null);
+            setDownloaded(0);
+            break;
+          case "Progress":
+            setDownloaded((n) => n + event.data.chunkLength);
+            break;
+          case "Finished":
+            setPhase("installing");
+            break;
+        }
+      });
+      setPhase("done");
+      // Windows quits during install; on other platforms relaunch the new binary.
+      await relaunch();
+    } catch (e) {
+      setPhase("error");
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return (
+    <div
+      className="modal-backdrop"
+      onClick={() => {
+        if (!busy) onDismiss();
+      }}
+    >
+      <div
+        className="modal update-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal
+        aria-labelledby="update-modal-title"
+      >
+        <div className="modal-header">
+          <h2 id="update-modal-title">Update available</h2>
+        </div>
+
+        <p className="update-version-line">
+          <span className="muted">Current</span>{" "}
+          <strong>v{prompt.currentVersion}</strong>
+          <span className="muted"> → </span>
+          <strong>v{prompt.version}</strong>
+        </p>
+
+        {prompt.body?.trim() ? (
+          <div className="update-notes">
+            <div className="muted small">Release notes</div>
+            <pre className="update-notes-body">{prompt.body.trim()}</pre>
+          </div>
+        ) : (
+          <p className="muted small">
+            A newer MarsBuild build is ready. Download and install without
+            leaving the app.
+          </p>
+        )}
+
+        {(phase === "downloading" || phase === "installing") && (
+          <div className="update-progress" aria-live="polite">
+            <div className="update-progress-label muted small">
+              {phase === "installing"
+                ? "Installing…"
+                : pct != null
+                  ? `Downloading… ${pct}%`
+                  : "Downloading…"}
+            </div>
+            <div className="update-progress-track">
+              <div
+                className="update-progress-fill"
+                style={{
+                  width:
+                    phase === "installing"
+                      ? "100%"
+                      : pct != null
+                        ? `${pct}%`
+                        : "30%",
+                }}
+                data-indeterminate={
+                  phase === "downloading" && pct == null ? "true" : undefined
+                }
+              />
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <p className="error-text small" role="alert">
+            {error}
+          </p>
+        )}
+
+        <div className="modal-actions">
+          <button
+            className="btn"
+            type="button"
+            disabled={busy}
+            onClick={onDismiss}
+          >
+            Later
+          </button>
+          <button
+            className="btn primary"
+            type="button"
+            disabled={busy || phase === "done"}
+            autoFocus
+            onClick={() => void handleInstall()}
+          >
+            {phase === "downloading"
+              ? "Downloading…"
+              : phase === "installing"
+                ? "Installing…"
+                : phase === "error"
+                  ? "Retry"
+                  : "Download & install"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -97,13 +97,11 @@ export function SessionList({
         )}
         {visible.map((s) => {
           // Scheme A: single visual state (priority order).
-          // error > ACP attached > Grok disk-active > idle.
-          // Left bar + badge only (no status dot).
+          // ACP attached > Grok disk-active > idle. (No red/error bar.)
           const managed = managedSessionIds?.has(s.id) ?? false;
           const attached = attachedSessionIds?.has(s.id) ?? false;
           const isAttaching = attachingSessionId === s.id;
           const state = resolveCardState({
-            status: s.status,
             managed,
             diskActive: s.isActive && !managed,
           });
@@ -199,27 +197,22 @@ export function SessionList({
 }
 
 /** Visual run-state for a task card (scheme A). */
-type CardState = "error" | "live" | "disk-active" | "idle";
+type CardState = "live" | "disk-active" | "idle";
 
 function resolveCardState(opts: {
-  status: SessionCard["status"];
   managed: boolean;
   diskActive: boolean;
 }): CardState {
-  // 1) error always wins (overrides ACP / disk-active colors)
-  if (opts.status === "error") return "error";
-  // 2) MarsBuild ACP attached
+  // 1) MarsBuild ACP attached
   if (opts.managed) return "live";
-  // 3) Grok lists session active on disk, not attached here
+  // 2) Grok lists session active on disk, not attached here
   if (opts.diskActive) return "disk-active";
-  // 4) idle / unknown / anything else → neutral idle
+  // 3) idle / unknown / anything else → neutral idle
   return "idle";
 }
 
 function stateTitle(state: CardState): string {
   switch (state) {
-    case "error":
-      return "Session error";
     case "live":
       return "Attached (ACP)";
     case "disk-active":

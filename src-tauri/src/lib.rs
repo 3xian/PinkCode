@@ -248,8 +248,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
         .manage(AgentManager::new())
         .setup(|app| {
+            #[cfg(desktop)]
+            {
+                app.handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())?;
+            }
             let manager = app.state::<AgentManager>();
             manager.set_app(app.handle().clone());
             // Disk-driven session index: FS events + debounce (no fixed 4s poll).

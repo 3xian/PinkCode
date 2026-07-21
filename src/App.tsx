@@ -22,7 +22,9 @@ import { NewTaskModal } from "./components/NewTaskModal";
 import { SessionDetailView } from "./components/SessionDetail";
 import { SessionList } from "./components/SessionList";
 import { StatsBar } from "./components/StatsBar";
+import { UpdateModal } from "./components/UpdateModal";
 import { useAgentEvents } from "./hooks/useAgentEvents";
+import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useUsageMetrics } from "./hooks/useUsageMetrics";
 import type {
   MainTab,
@@ -110,6 +112,7 @@ function App() {
   } = useAgentEvents(selectedId);
 
   const projectCwd = detail?.card.cwd ?? null;
+  const { updatePrompt, dismissUpdate } = useAppUpdate();
 
   const refreshList = useCallback(async () => {
     // Skip heavy list work while the window is hidden (drag/minimize storms).
@@ -656,6 +659,8 @@ function App() {
         onClose={() => setModalOpen(false)}
         onSubmit={(o) => void handleSpawn(o)}
       />
+
+      <UpdateModal prompt={updatePrompt} onDismiss={dismissUpdate} />
 
       {stopConfirm && (
         <div

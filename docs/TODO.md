@@ -142,7 +142,7 @@ Inspired by Reasonix status footer, approval keyboard flow, and dense session ch
 - [ ] Customizable shortcuts sheet (`?`)
 - [ ] Hooks: on-task-create inject project context (optional; don’t break Grok cache blindly)
 - [ ] Memory file browser (read-only view of agent memory if present under session/project)
-- [ ] Auto-update channel for release builds
+- [x] Auto-update channel for release builds (startup check + download/install modal; GitHub `latest.json`)
 
 ---
 

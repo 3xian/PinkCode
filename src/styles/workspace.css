@@ -370,10 +370,9 @@
 
 /*
  * Scheme A left bar: same color family as badge.
- * Priority applied in JS: error > live > disk-active > idle (no bar).
+ * Priority applied in JS: live > disk-active > idle (no bar).
  * Vertical gradient fades to transparent at both ends.
  */
-.session-card.state-error::before,
 .session-card.state-live::before,
 .session-card.state-disk-active::before {
   content: "";
@@ -384,16 +383,6 @@
   width: 2px;
   border-radius: 999px;
   pointer-events: none;
-}
-
-.session-card.state-error::before {
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    var(--danger) 22%,
-    var(--danger) 78%,
-    transparent 100%
-  );
 }
 
 .session-card.state-live::before {

@@ -85,12 +85,16 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Required for signed updater artifacts (must match pubkey in tauri.conf.json).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "MarsBuild ${{ github.ref_name }}"
-          releaseBody: "Download the installer for your platform below."
+          releaseBody: "Download the installer for your platform below. In-app updates use latest.json + signed bundles."
           releaseDraft: false
           prerelease: false
-          uploadUpdaterJson: false
+          # Publishes latest.json for tauri-plugin-updater endpoints.
+          uploadUpdaterJson: true
           args: ${{ matrix.args }}
           releaseAssetNamePattern: "[name]_[version]_[platform]_[arch]_[bundle][ext]"

@@ -19,8 +19,14 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
+
+/// Min interval between intermediate shell stdout emits for the same tool call.
+const SHELL_EMIT_MIN_INTERVAL: Duration = Duration::from_millis(120);
+/// Always re-emit when stdout grew by at least this many bytes (even inside interval).
+const SHELL_EMIT_MIN_BYTES: usize = 4_096;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -165,6 +171,18 @@ struct LiveAgent {
     client: Arc<AcpClient>,
 }
 
+/// Throttle state for `agent-shell` IPC (full stdout re-send is expensive).
+struct ShellEmitState {
+    last_at: Instant,
+    last_status: String,
+    last_out_len: usize,
+    last_exit: Option<i64>,
+    /// Latest intermediate payload suppressed by the rate limit; flushed after interval.
+    pending_payload: Option<Value>,
+    /// Bumped on every update; trailing flush only emits if gen still matches.
+    gen: u64,
+}
+
 struct Inner {
     app: Mutex<Option<AppHandle>>,
     agents: Mutex<HashMap<String, LiveAgent>>,
@@ -172,6 +190,8 @@ struct Inner {
     /// Server→client requests that arrived before the agent was registered.
     early_requests: Mutex<Vec<(String, Value)>>,
     grok_bin: Mutex<Option<String>>,
+    /// Key: `{handleId}:{toolCallId}` → last shell emit snapshot.
+    shell_emit: Mutex<HashMap<String, ShellEmitState>>,
 }
 
 #[derive(Clone)]
@@ -188,6 +208,7 @@ impl AgentManager {
                 pending: Mutex::new(HashMap::new()),
                 early_requests: Mutex::new(Vec::new()),
                 grok_bin: Mutex::new(None),
+                shell_emit: Mutex::new(HashMap::new()),
             }),
         }
     }
@@ -402,7 +423,7 @@ impl AgentManager {
     }
 
     fn maybe_emit_shell(
-        inner: &Inner,
+        inner: &Arc<Inner>,
         handle_id: &str,
         session_id: &Option<String>,
         params: &Value,
@@ -437,6 +458,7 @@ impl AgentManager {
             .and_then(|t| t.as_str())
             .unwrap_or("");
 
+        // Keep in sync with frontend `isShellToolUpdate` in format.ts.
         let is_shell = tool_meta_name == "run_terminal_command"
             || tool_kind == "execute"
             || title.contains("run_terminal")
@@ -504,21 +526,102 @@ impl AgentManager {
             .unwrap_or("")
             .to_string();
 
-        Self::emit(
-            inner,
-            "agent-shell",
-            json!({
-                "handleId": handle_id,
-                "sessionId": session_id,
-                "toolCallId": tool_call_id,
-                "command": command,
-                "description": description,
-                "status": status,
-                "output": output,
-                "exitCode": exit_code,
-                "ts": now_ms(),
-            }),
-        );
+        let shell_payload = json!({
+            "handleId": handle_id,
+            "sessionId": session_id,
+            "toolCallId": tool_call_id,
+            "command": command,
+            "description": description,
+            "status": status,
+            "output": output,
+            "exitCode": exit_code,
+            "ts": now_ms(),
+        });
+
+        // Throttle intermediate stdout floods; always emit first / status change / terminal.
+        // Suppressed updates schedule a trailing flush so the last snapshot is not stuck.
+        let throttle_key = format!("{handle_id}:{tool_call_id}");
+        let out_len = output.len();
+        let is_terminal = status == "completed"
+            || status == "failed"
+            || status == "cancelled"
+            || exit_code.is_some();
+        {
+            let mut map = inner.shell_emit.lock();
+            let now = Instant::now();
+            if let Some(prev) = map.get_mut(&throttle_key) {
+                let status_changed = prev.last_status != status;
+                let exit_changed = prev.last_exit != exit_code;
+                let grew = out_len.saturating_sub(prev.last_out_len) >= SHELL_EMIT_MIN_BYTES;
+                let interval_ok = now.duration_since(prev.last_at) >= SHELL_EMIT_MIN_INTERVAL;
+                let same_snapshot = !status_changed
+                    && !exit_changed
+                    && out_len == prev.last_out_len;
+                if same_snapshot {
+                    return;
+                }
+                if !is_terminal && !status_changed && !exit_changed && !grew && !interval_ok
+                {
+                    // Rate-limited: keep latest payload and schedule a deferred emit.
+                    prev.pending_payload = Some(shell_payload);
+                    prev.gen = prev.gen.wrapping_add(1);
+                    let gen = prev.gen;
+                    drop(map);
+                    let inner_flush = Arc::clone(inner);
+                    let key_flush = throttle_key;
+                    thread::spawn(move || {
+                        thread::sleep(SHELL_EMIT_MIN_INTERVAL);
+                        let mut map = inner_flush.shell_emit.lock();
+                        let Some(state) = map.get_mut(&key_flush) else {
+                            return;
+                        };
+                        if state.gen != gen {
+                            return; // superseded by a newer update
+                        }
+                        let Some(payload) = state.pending_payload.take() else {
+                            return;
+                        };
+                        let out_len = payload
+                            .get("output")
+                            .and_then(|o| o.as_str())
+                            .map(|s| s.len())
+                            .unwrap_or(0);
+                        let status = payload
+                            .get("status")
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let exit = payload.get("exitCode").and_then(|c| c.as_i64());
+                        state.last_at = Instant::now();
+                        state.last_out_len = out_len;
+                        state.last_status = status;
+                        state.last_exit = exit;
+                        drop(map);
+                        Self::emit(&inner_flush, "agent-shell", payload);
+                    });
+                    return;
+                }
+            }
+
+            if is_terminal {
+                // Terminal: drop throttle entry so the map does not grow unbounded.
+                map.remove(&throttle_key);
+            } else {
+                map.insert(
+                    throttle_key,
+                    ShellEmitState {
+                        last_at: Instant::now(),
+                        last_status: status.clone(),
+                        last_out_len: out_len,
+                        last_exit: exit_code,
+                        pending_payload: None,
+                        gen: 0,
+                    },
+                );
+            }
+        }
+
+        Self::emit(inner, "agent-shell", shell_payload);
     }
 
     fn handle_server_request(inner: &Arc<Inner>, handle_id: &str, msg: &Value) {
@@ -1199,6 +1302,13 @@ impl AgentManager {
     }
 
     pub fn stop(&self, handle_id: &str) -> Result<ManagedAgentInfo, String> {
+        // Drop shell throttle entries for this agent.
+        {
+            let prefix = format!("{handle_id}:");
+            let mut map = self.inner.shell_emit.lock();
+            map.retain(|k, _| !k.starts_with(&prefix));
+        }
+
         let cancelled: Vec<PendingPermission> = {
             let mut pending = self.inner.pending.lock();
             let keys: Vec<_> = pending

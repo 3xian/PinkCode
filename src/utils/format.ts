@@ -119,6 +119,44 @@ function numField(
   return Number.isFinite(n) ? n : 0;
 }
 
+/**
+ * Whether Rust `maybe_emit_shell` would emit an `agent-shell` event for this
+ * ACP update. Keep in sync with `agent_manager.rs` (title / meta / raw I/O).
+ */
+export function isShellToolUpdate(inner: Record<string, unknown>): boolean {
+  const sessionUpdate = String(inner.sessionUpdate ?? "");
+  if (sessionUpdate !== "tool_call" && sessionUpdate !== "tool_call_update") {
+    return false;
+  }
+
+  const meta = inner._meta as Record<string, unknown> | undefined;
+  const xai = meta?.["x.ai"] as Record<string, unknown> | undefined;
+  const tool = xai?.tool as Record<string, unknown> | undefined;
+  const toolMetaName = String(tool?.name ?? "");
+  const toolKind = String(
+    (inner.kind as string | undefined) ?? (tool?.kind as string | undefined) ?? "",
+  );
+  const title = String(inner.title ?? "");
+  const titleLower = title.toLowerCase();
+
+  const flagged =
+    toolMetaName === "run_terminal_command" ||
+    toolKind === "execute" ||
+    title.includes("run_terminal") ||
+    titleLower.includes("execute `");
+
+  if (flagged) return true;
+
+  if (sessionUpdate === "tool_call") {
+    const rawInput = inner.rawInput as Record<string, unknown> | undefined;
+    return typeof rawInput?.command === "string" && rawInput.command.length > 0;
+  }
+
+  // tool_call_update: only shell if Bash-shaped output
+  const rawOutput = inner.rawOutput as Record<string, unknown> | undefined;
+  return rawOutput?.type === "Bash";
+}
+
 /** Best-effort parse of ACP session/update stream for timeline display. */
 export function describeUpdate(update: unknown): {
   kind: string;
@@ -127,6 +165,8 @@ export function describeUpdate(update: unknown): {
   /** True when this is a text stream chunk (merge with previous same kind). */
   coalesce?: boolean;
   toolCallId?: string;
+  /** True when this update is a shell tool (Live uses agent-shell card only). */
+  isShell?: boolean;
   /** Slash commands from `available_commands_update` (not shown as a live card). */
   availableCommands?: AvailableCommand[];
 } {
@@ -194,6 +234,10 @@ export function describeUpdate(update: unknown): {
         title: status ? `${title} · ${status}` : title,
         detail: toolCallId,
         toolCallId,
+        isShell: isShellToolUpdate({
+          ...inner,
+          sessionUpdate,
+        }),
       };
     }
     case "plan": {

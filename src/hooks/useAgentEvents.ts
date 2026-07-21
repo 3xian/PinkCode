@@ -11,6 +11,62 @@ import type {
 import { COALESCE_LIVE_KINDS, describeUpdate } from "../utils/format";
 
 const MAX_LIVE = 400;
+/** Cap stored shell stdout (keep tail) so huge logs don't blow memory / IPC. */
+const MAX_SHELL_OUTPUT_CHARS = 200_000;
+/** After last text chunk for a handle, mark its streaming cards settled. */
+const STREAM_SETTLE_MS = 320;
+
+function capShellOutput(output: string): string {
+  if (output.length <= MAX_SHELL_OUTPUT_CHARS) return output;
+  // Build prefix first so total never exceeds the cap (digit count varies).
+  const omittedGuess = output.length - MAX_SHELL_OUTPUT_CHARS;
+  let prefix = `…[truncated ${omittedGuess} chars]…\n`;
+  let keep = MAX_SHELL_OUTPUT_CHARS - prefix.length;
+  if (keep < 1) {
+    prefix = "…\n";
+    keep = Math.max(1, MAX_SHELL_OUTPUT_CHARS - prefix.length);
+  }
+  // Recompute omitted after final keep so the label matches reality.
+  const omitted = output.length - keep;
+  prefix = `…[truncated ${omitted} chars]…\n`;
+  keep = MAX_SHELL_OUTPUT_CHARS - prefix.length;
+  if (keep < 1) return output.slice(-MAX_SHELL_OUTPUT_CHARS);
+  return prefix + output.slice(-keep);
+}
+
+function settleStreamingItems(
+  map: Map<string, LiveStreamItem[]>,
+  match?: { handleId?: string; key?: string },
+): Map<string, LiveStreamItem[]> {
+  let changed = false;
+  const next = new Map(map);
+  for (const [k, list] of next) {
+    if (match?.key && k !== match.key) continue;
+    let listChanged = false;
+    const out = list.map((item) => {
+      if (!item.streaming) return item;
+      if (match?.handleId && item.handleId !== match.handleId) return item;
+      listChanged = true;
+      return { ...item, streaming: false };
+    });
+    if (listChanged) {
+      next.set(k, out);
+      changed = true;
+    }
+  }
+  return changed ? next : map;
+}
+
+function trimLiveList(
+  list: LiveStreamItem[],
+  key: string,
+  shellIndexByKey: Map<string, Map<string, number>>,
+): void {
+  if (list.length > MAX_LIVE) {
+    list.splice(0, list.length - MAX_LIVE);
+    shellIndexByKey.delete(key);
+  }
+}
 
 export function useAgentEvents(selectedSessionId: string | null) {
   const [managed, setManaged] = useState<Map<string, ManagedAgentInfo>>(
@@ -104,11 +160,17 @@ export function useAgentEvents(selectedSessionId: string | null) {
     // smooth window drag on Windows when agents stream many tiny chunks.
     let liveBuf: Map<string, LiveStreamItem[]> | null = null;
     let liveRaf = 0;
+    /** Per-handle settle timers so concurrent agents do not block each other. */
+    const settleTimers = new Map<string, number>();
+    /** toolCallId → list index for O(1) shell merge when list is long. */
+    const shellIndexByKey = new Map<string, Map<string, number>>();
+
     const flushLive = () => {
       liveRaf = 0;
       if (!liveBuf || cancelled) return;
       const snapshot = liveBuf;
       liveBuf = null;
+      if (snapshot === liveRef.current) return;
       liveRef.current = snapshot;
       setLiveBySession(snapshot);
     };
@@ -116,10 +178,23 @@ export function useAgentEvents(selectedSessionId: string | null) {
       mutator: (prev: Map<string, LiveStreamItem[]>) => Map<string, LiveStreamItem[]>,
     ) => {
       const src = liveBuf ?? liveRef.current;
-      liveBuf = mutator(src);
+      const out = mutator(src);
+      if (out === src) return;
+      liveBuf = out;
       if (!liveRaf) {
         liveRaf = window.requestAnimationFrame(flushLive);
       }
+    };
+
+    const bumpSettleTimer = (handleId: string) => {
+      const prev = settleTimers.get(handleId);
+      if (prev) window.clearTimeout(prev);
+      const t = window.setTimeout(() => {
+        settleTimers.delete(handleId);
+        if (cancelled) return;
+        scheduleLive((map) => settleStreamingItems(map, { handleId }));
+      }, STREAM_SETTLE_MS);
+      settleTimers.set(handleId, t);
     };
 
     async function setup() {
@@ -184,22 +259,41 @@ export function useAgentEvents(selectedSessionId: string | null) {
         if (desc.coalesce && !(desc.detail && desc.detail.length > 0)) {
           return;
         }
+        // Shell cards come from agent-shell only (aligned with Rust maybe_emit_shell).
+        if (desc.isShell) {
+          return;
+        }
 
         const key = sessionId || handleId;
         const now = Date.now();
+        const isTextChunk =
+          Boolean(desc.coalesce) || COALESCE_LIVE_KINDS.has(desc.kind);
 
         scheduleLive((prev) => {
           const next = new Map(prev);
           const list = [...(next.get(key) ?? [])];
 
+          // Settle prior streaming cards when a non-text event arrives.
+          if (!isTextChunk) {
+            for (let i = 0; i < list.length; i++) {
+              if (list[i].streaming && list[i].handleId === handleId) {
+                list[i] = { ...list[i], streaming: false };
+              }
+            }
+          }
+
           // 1) Coalesce streaming text: agent/user/thought word-chunks → one card
-          if (desc.coalesce || COALESCE_LIVE_KINDS.has(desc.kind)) {
+          if (isTextChunk) {
             const last = list[list.length - 1];
             if (last && last.kind === desc.kind && last.handleId === handleId) {
+              // Once settled to Markdown, stay Markdown (avoid plain↔md flicker
+              // after a mid-turn pause). Still append for correct content.
+              const stillStreaming = last.streaming === true;
               list[list.length - 1] = {
                 ...last,
                 detail: (last.detail ?? "") + (desc.detail ?? ""),
                 ts: now,
+                streaming: stillStreaming,
               };
               next.set(key, list);
               return next;
@@ -251,17 +345,28 @@ export function useAgentEvents(selectedSessionId: string | null) {
             title: desc.title,
             detail: desc.detail,
             ts: now,
+            streaming: isTextChunk ? true : undefined,
           });
-          if (list.length > MAX_LIVE) list.splice(0, list.length - MAX_LIVE);
+          trimLiveList(list, key, shellIndexByKey);
           next.set(key, list);
           return next;
         });
+
+        if (isTextChunk) bumpSettleTimer(handleId);
       });
       const u3 = await listen<{ handleId: string; error?: string }>(
         "agent-prompt-complete",
         (e) => {
           if (cancelled) return;
           if (e.payload.error) setLastError(e.payload.error);
+          const hid = e.payload.handleId;
+          const t = settleTimers.get(hid);
+          if (t) {
+            window.clearTimeout(t);
+            settleTimers.delete(hid);
+          }
+          // Turn finished → Markdown-render any still-streaming text cards.
+          scheduleLive((prev) => settleStreamingItems(prev, { handleId: hid }));
         },
       );
       const u4 = await listen<PendingPermission>("agent-permission", (e) => {
@@ -298,7 +403,7 @@ export function useAgentEvents(selectedSessionId: string | null) {
         const command = raw.command || "";
         const description = raw.description;
         const status = raw.status || "in_progress";
-        const output = raw.output || "";
+        const output = capShellOutput(raw.output || "");
         const exitCode = raw.exitCode;
         const now = raw.ts || Date.now();
         const key = sessionId || handleId;
@@ -310,14 +415,40 @@ export function useAgentEvents(selectedSessionId: string | null) {
         scheduleLive((prev) => {
           const next = new Map(prev);
           const list = [...(next.get(key) ?? [])];
-          const idx = list.findIndex(
-            (x) => x.kind === "shell" && x.shell?.toolCallId === toolCallId,
-          );
+
+          let idx = -1;
+          let indexMap = shellIndexByKey.get(key);
+          if (indexMap?.has(toolCallId)) {
+            const guess = indexMap.get(toolCallId)!;
+            if (
+              guess >= 0 &&
+              guess < list.length &&
+              list[guess].kind === "shell" &&
+              list[guess].shell?.toolCallId === toolCallId
+            ) {
+              idx = guess;
+            }
+          }
+          if (idx < 0) {
+            idx = list.findIndex(
+              (x) => x.kind === "shell" && x.shell?.toolCallId === toolCallId,
+            );
+          }
+
           if (idx >= 0) {
             const old = list[idx];
             const prevOut = old.shell?.output ?? "";
             const mergedOut =
               output.length >= prevOut.length ? output : prevOut;
+            // Skip no-op updates (throttled backend may still repeat).
+            if (
+              mergedOut === prevOut &&
+              status === old.shell?.status &&
+              (exitCode ?? old.shell?.exitCode) === old.shell?.exitCode &&
+              title === old.title
+            ) {
+              return prev;
+            }
             list[idx] = {
               ...old,
               title,
@@ -328,10 +459,15 @@ export function useAgentEvents(selectedSessionId: string | null) {
                 command: command || old.shell?.command || "",
                 description: description ?? old.shell?.description,
                 status,
-                output: mergedOut,
+                output: capShellOutput(mergedOut),
                 exitCode: exitCode ?? old.shell?.exitCode,
               },
             };
+            if (!indexMap) {
+              indexMap = new Map();
+              shellIndexByKey.set(key, indexMap);
+            }
+            indexMap.set(toolCallId, idx);
           } else {
             list.push({
               id: `shell-${toolCallId}-${now}`,
@@ -350,8 +486,23 @@ export function useAgentEvents(selectedSessionId: string | null) {
                 exitCode,
               },
             });
+            if (!indexMap) {
+              indexMap = new Map();
+              shellIndexByKey.set(key, indexMap);
+            }
+            indexMap.set(toolCallId, list.length - 1);
           }
-          if (list.length > MAX_LIVE) list.splice(0, list.length - MAX_LIVE);
+          trimLiveList(list, key, shellIndexByKey);
+          // After trim, index map may be gone; rebuild entry for this tool if kept.
+          if (!shellIndexByKey.has(key)) {
+            const rebuild = new Map<string, number>();
+            list.forEach((item, i) => {
+              if (item.kind === "shell" && item.shell?.toolCallId) {
+                rebuild.set(item.shell.toolCallId, i);
+              }
+            });
+            if (rebuild.size) shellIndexByKey.set(key, rebuild);
+          }
           next.set(key, list);
           return next;
         });
@@ -370,6 +521,9 @@ export function useAgentEvents(selectedSessionId: string | null) {
       if (liveRaf) window.cancelAnimationFrame(liveRaf);
       liveRaf = 0;
       liveBuf = null;
+      for (const t of settleTimers.values()) window.clearTimeout(t);
+      settleTimers.clear();
+      shellIndexByKey.clear();
       unsubs.forEach((u) => u());
     };
   }, []);

@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   AvailableCommand,
   LiveFilterKind,
@@ -415,29 +422,7 @@ function LiveTimeline({
       ) : (
         <div className="timeline live-timeline" ref={rootRef}>
           {filtered.map((item) => (
-            <div key={item.id} className={`tl-item kind-${item.kind}`}>
-              <div className="tl-kind">{item.kind}</div>
-              <div className="tl-body">
-                {item.kind === "shell" && item.shell ? (
-                  <ShellCard shell={item.shell} />
-                ) : (
-                  <>
-                    <div className="tl-title">{item.title}</div>
-                    {item.detail && (
-                      <div className="tl-detail">
-                        {item.kind === "agent" ||
-                        item.kind === "user" ||
-                        item.kind === "thought" ? (
-                          <Markdown>{item.detail}</Markdown>
-                        ) : (
-                          item.detail
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
+            <LiveItemRow key={item.id} item={item} />
           ))}
           <div ref={endRef} className="live-timeline-end" aria-hidden />
         </div>
@@ -445,6 +430,48 @@ function LiveTimeline({
     </div>
   );
 }
+
+/**
+ * One Live timeline row. Memoized so streaming updates to the tail card do not
+ * re-parse Markdown / re-layout every prior item.
+ */
+const LiveItemRow = memo(function LiveItemRow({
+  item,
+}: {
+  item: LiveStreamItem;
+}) {
+  const isMdKind =
+    item.kind === "agent" || item.kind === "user" || item.kind === "thought";
+  // While chunks are still coalescing, skip react-markdown (O(len) per frame).
+  const useMarkdown = isMdKind && Boolean(item.detail) && !item.streaming;
+
+  return (
+    <div className={`tl-item kind-${item.kind}`}>
+      <div className="tl-kind">{item.kind}</div>
+      <div className="tl-body">
+        {item.kind === "shell" && item.shell ? (
+          <ShellCard shell={item.shell} />
+        ) : (
+          <>
+            <div className="tl-title">{item.title}</div>
+            {item.detail && (
+              <div className="tl-detail">
+                {useMarkdown ? (
+                  <Markdown>{item.detail}</Markdown>
+                ) : isMdKind ? (
+                  <pre className="tl-stream-plain">{item.detail}</pre>
+                ) : (
+                  item.detail
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+});
+
 
 function HistoryTimeline({ detail }: { detail: Detail }) {
   const source =

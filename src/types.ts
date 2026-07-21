@@ -266,6 +266,11 @@ export interface LiveStreamItem {
   title: string;
   detail?: string;
   ts: number;
+  /**
+   * True while agent/user/thought text is still coalescing.
+   * UI renders plain text while streaming to avoid full Markdown re-parse each chunk.
+   */
+  streaming?: boolean;
   /** Present when kind is `"shell"`. */
   shell?: LiveShellPayload;
 }

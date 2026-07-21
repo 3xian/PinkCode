@@ -2049,8 +2049,36 @@ code,
   color: #c8d0e0;
 }
 
+.shell-collapse-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 4px 10px 0;
+}
+
+.shell-collapse-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  min-height: 0;
+}
+
 .shell-waiting {
   padding: 8px 12px 12px;
+}
+
+/* Streaming text: plain mono until settle → Markdown (avoids per-chunk parse). */
+.tl-stream-plain {
+  margin: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: inherit;
+  background: transparent;
+  border: none;
 }
 
 /* Permission gate */

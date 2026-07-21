@@ -90,6 +90,7 @@ function App() {
     managedList,
     managedForSession,
     liveItems,
+    availableCommands,
     permissionsForSession,
     lastError,
     clearError,
@@ -667,10 +668,11 @@ function App() {
             void handleResolvePermission(item, opt)
           }
           pinLiveBottomSeq={pinLiveBottomSeq}
+          availableCommands={availableCommands}
         />
 
         <aside className="side-panel workspace-panel">
-          <FileTree root={projectCwd} />
+          <FileTree root={projectCwd} refreshKey={gitRefreshKey} />
           <div className="workspace-split" />
           <GitChanges cwd={projectCwd} refreshKey={gitRefreshKey} />
         </aside>

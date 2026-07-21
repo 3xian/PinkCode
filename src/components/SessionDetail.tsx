@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
+  AvailableCommand,
   LiveFilterKind,
   LiveStreamItem,
   MainTab,
@@ -39,6 +40,8 @@ interface Props {
   onResolvePermission: (item: PendingPermission, optionId: string) => void;
   /** Bump after attach/spawn to force Live stream to the bottom. */
   pinLiveBottomSeq?: number;
+  /** Agent-advertised slash commands for the prompt autocomplete. */
+  availableCommands?: AvailableCommand[];
 }
 
 const LIVE_FILTER_LABELS: Record<string, string> = {
@@ -81,6 +84,7 @@ export function SessionDetailView({
   onSendPrompt,
   onResolvePermission,
   pinLiveBottomSeq = 0,
+  availableCommands = [],
 }: Props) {
   const tabBodyRef = useRef<HTMLDivElement>(null);
 
@@ -242,6 +246,7 @@ export function SessionDetailView({
         permissionMode={permissionMode}
         onPermissionModeChange={onPermissionModeChange}
         onSend={onSendPrompt}
+        availableCommands={availableCommands}
       />
     </section>
   );

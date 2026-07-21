@@ -63,15 +63,6 @@ export function GitChanges({ cwd, refreshKey = 0 }: Props) {
             <span className="tab-count">{changes.length}</span>
           )}
         </h2>
-        <button
-          type="button"
-          className="btn ghost tiny"
-          title="Refresh"
-          onClick={() => void refresh(cwd)}
-          disabled={loading}
-        >
-          ↻
-        </button>
       </div>
       {error && <div className="empty-hint error-text small">{error}</div>}
       {loading && changes.length === 0 ? (

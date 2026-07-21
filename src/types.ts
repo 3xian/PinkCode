@@ -114,6 +114,13 @@ export type LiveFilterKind =
   | "event"
   | "unknown";
 
+/** Slash command advertised by the agent (ACP available_commands_update). */
+export interface AvailableCommand {
+  name: string;
+  description: string;
+  inputHint?: string;
+}
+
 export interface DirEntry {
   name: string;
   path: string;

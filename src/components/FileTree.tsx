@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { listProjectDir, openProjectPath } from "../api";
 import type { DirEntry } from "../types";
 import { projectName, shortPath } from "../utils/format";
 
 interface Props {
   root: string | null;
+  /** Bump to re-read the tree (FS events / turn complete). */
+  refreshKey?: number;
 }
 
 interface TreeNode {
@@ -15,41 +24,177 @@ interface TreeNode {
   loading?: boolean;
 }
 
-export function FileTree({ root }: Props) {
+interface CtxMenu {
+  x: number;
+  y: number;
+  path: string;
+  isDir: boolean;
+}
+
+export function FileTree({ root, refreshKey = 0 }: Props) {
   const [nodes, setNodes] = useState<TreeNode[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loadingRoot, setLoadingRoot] = useState(false);
+  const [ctx, setCtx] = useState<CtxMenu | null>(null);
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
+  /** Paths the user has expanded — preserved + re-fetched on silent refresh. */
+  const expandedPathsRef = useRef<Set<string>>(new Set());
+  /** Ignore the opening right-click when wiring global dismiss listeners. */
+  const ignoreDismissUntilRef = useRef(0);
+  /**
+   * Track which (root, refreshKey) silent loads already ran so we don't double
+   * load on first mount (root effect owns the initial fetch).
+   */
+  const lastSilentRef = useRef<{ root: string | null; key: number }>({
+    root: null,
+    key: -1,
+  });
 
-  const loadRoot = useCallback(async (cwd: string) => {
-    setLoadingRoot(true);
-    setError(null);
-    try {
-      const entries = await listProjectDir(cwd);
-      setNodes(
-        entries.map((entry) => ({
-          entry,
-          expanded: false,
-          loaded: false,
-        })),
-      );
-    } catch (e) {
-      setNodes([]);
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoadingRoot(false);
-    }
-  }, []);
+  /**
+   * Build a tree level. When `refreshExpanded` is true, every path in
+   * `expandedPathsRef` is re-listed so agent-created files appear without a
+   * manual collapse/expand.
+   */
+  const buildLevel = useCallback(
+    async (
+      projectRoot: string,
+      dirPath: string | null,
+      prevNodes: TreeNode[],
+      refreshExpanded: boolean,
+    ): Promise<TreeNode[]> => {
+      const entries = await listProjectDir(projectRoot, dirPath);
+      const prevByPath = new Map(prevNodes.map((n) => [n.entry.path, n]));
+      const expanded = expandedPathsRef.current;
+      const out: TreeNode[] = [];
+
+      for (const entry of entries) {
+        const old = prevByPath.get(entry.path);
+        const wantExpand =
+          entry.isDir &&
+          (expanded.has(entry.path) || Boolean(old?.expanded));
+
+        if (wantExpand) {
+          expanded.add(entry.path);
+          const prevChildren = old?.children ?? [];
+          // Always re-fetch children when refreshing expanded dirs; on first
+          // expand without refreshExpanded we still need a fetch if not loaded.
+          const needFetch = refreshExpanded || !old?.loaded || !old.children;
+          let children: TreeNode[];
+          if (needFetch) {
+            children = await buildLevel(
+              projectRoot,
+              entry.path,
+              prevChildren,
+              refreshExpanded,
+            );
+          } else {
+            children = prevChildren;
+          }
+          out.push({
+            entry,
+            expanded: true,
+            loaded: true,
+            loading: false,
+            children,
+          });
+        } else {
+          out.push({
+            entry,
+            expanded: false,
+            // Drop cached children when collapsed so a later expand re-fetches.
+            loaded: false,
+            children: undefined,
+          });
+        }
+      }
+      return out;
+    },
+    [],
+  );
+
+  const loadRoot = useCallback(
+    async (cwd: string, silent = false) => {
+      if (!silent) setLoadingRoot(true);
+      setError(null);
+      try {
+        const next = await buildLevel(
+          cwd,
+          null,
+          nodesRef.current,
+          /* refreshExpanded */ silent,
+        );
+        setNodes(next);
+      } catch (e) {
+        setNodes([]);
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!silent) setLoadingRoot(false);
+      }
+    },
+    [buildLevel],
+  );
 
   useEffect(() => {
     if (!root) {
       setNodes([]);
       setError(null);
+      expandedPathsRef.current = new Set();
+      lastSilentRef.current = { root: null, key: -1 };
+      setCtx(null);
       return;
     }
-    void loadRoot(root);
+    // New project path → drop expand state from the previous tree.
+    if (lastSilentRef.current.root !== root) {
+      expandedPathsRef.current = new Set();
+    }
+    // Root effect owns the initial (and root-change) load.
+    // Capture current refreshKey so the silent effect does not double-fetch.
+    lastSilentRef.current = { root, key: refreshKey };
+    void loadRoot(root, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshKey handled by silent effect
   }, [root, loadRoot]);
+
+  // Silent refresh when FS / turn events bump refreshKey (same root).
+  useEffect(() => {
+    if (!root) return;
+    const last = lastSilentRef.current;
+    if (last.root !== root) {
+      // Root effect is about to / already did the load for this root.
+      lastSilentRef.current = { root, key: refreshKey };
+      return;
+    }
+    if (last.key === refreshKey) return;
+    lastSilentRef.current = { root, key: refreshKey };
+    void loadRoot(root, true);
+  }, [refreshKey, root, loadRoot]);
+
+  // Dismiss menu: next click / Esc / scroll / blur (portal lives on body)
+  useEffect(() => {
+    if (!ctx) return;
+    const close = () => {
+      if (Date.now() < ignoreDismissUntilRef.current) return;
+      setCtx(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    const t = window.setTimeout(() => {
+      window.addEventListener("pointerdown", close);
+      window.addEventListener("keydown", onKey);
+      window.addEventListener("resize", close);
+      window.addEventListener("blur", close);
+      window.addEventListener("scroll", close, true);
+    }, 0);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("blur", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [ctx]);
 
   async function toggle(path: string) {
     if (!root) return;
@@ -57,17 +202,21 @@ export function FileTree({ root }: Props) {
     if (!current || !current.entry.isDir) return;
 
     if (current.expanded) {
+      expandedPathsRef.current.delete(path);
       setNodes((prev) =>
         updateNode(prev, path, (n) => ({
           ...n,
           expanded: false,
           loading: false,
+          // Keep loaded children for fast re-expand; silent refresh will
+          // re-fetch when refreshExpanded walks this path again.
         })),
       );
       return;
     }
 
     if (current.loaded && current.children) {
+      expandedPathsRef.current.add(path);
       setNodes((prev) =>
         updateNode(prev, path, (n) => ({
           ...n,
@@ -83,6 +232,7 @@ export function FileTree({ root }: Props) {
     );
     try {
       const children = await listProjectDir(root, path);
+      expandedPathsRef.current.add(path);
       setNodes((prev) =>
         updateNode(prev, path, (n) => ({
           ...n,
@@ -104,7 +254,7 @@ export function FileTree({ root }: Props) {
     }
   }
 
-  async function openFile(path: string) {
+  async function openInSystem(path: string) {
     if (!root) return;
     try {
       await openProjectPath(root, path);
@@ -114,13 +264,39 @@ export function FileTree({ root }: Props) {
     }
   }
 
+  async function copyFullPath(path: string) {
+    try {
+      await writeClipboard(path);
+      setError(null);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? `Copy failed: ${e.message}`
+          : "Copy failed: clipboard unavailable",
+      );
+    }
+  }
+
+  function openContextMenu(
+    e: React.MouseEvent,
+    path: string,
+    isDir: boolean,
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+    ignoreDismissUntilRef.current = Date.now() + 250;
+    setCtx({ x: e.clientX, y: e.clientY, path, isDir });
+  }
+
   if (!root) {
     return (
       <div className="workspace-section file-tree-section">
         <div className="panel-header">
           <h2>Files</h2>
         </div>
-        <div className="empty-hint small">Select a session to browse its project.</div>
+        <div className="empty-hint small">
+          Select a session to browse its project.
+        </div>
       </div>
     );
   }
@@ -129,17 +305,12 @@ export function FileTree({ root }: Props) {
     <div className="workspace-section file-tree-section">
       <div className="panel-header">
         <h2>Files</h2>
-        <button
-          type="button"
-          className="btn ghost tiny"
-          title="Refresh"
-          onClick={() => void loadRoot(root)}
-          disabled={loadingRoot}
-        >
-          ↻
-        </button>
       </div>
-      <div className="file-tree-root mono" title={root}>
+      <div
+        className="file-tree-root mono"
+        title={`${root}\nRight-click for actions`}
+        onContextMenu={(e) => openContextMenu(e, root, true)}
+      >
         {projectName(root)}
         <span className="muted"> · {shortPath(root, 24)}</span>
       </div>
@@ -156,10 +327,97 @@ export function FileTree({ root }: Props) {
               node={n}
               depth={0}
               onToggle={toggle}
-              onOpenFile={openFile}
+              onOpenFile={openInSystem}
+              onContextMenu={openContextMenu}
             />
           ))}
         </div>
+      )}
+
+      {ctx &&
+        createPortal(
+          <FileContextMenu
+            x={ctx.x}
+            y={ctx.y}
+            isDir={ctx.isDir}
+            onCopy={() => {
+              void copyFullPath(ctx.path);
+              setCtx(null);
+            }}
+            onOpen={() => {
+              void openInSystem(ctx.path);
+              setCtx(null);
+            }}
+          />,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+function FileContextMenu({
+  x,
+  y,
+  isDir,
+  onCopy,
+  onOpen,
+}: {
+  x: number;
+  y: number;
+  isDir: boolean;
+  onCopy: () => void;
+  onOpen: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const pad = 8;
+    let left = x;
+    let top = y;
+    if (left + rect.width > window.innerWidth - pad) {
+      left = Math.max(pad, window.innerWidth - rect.width - pad);
+    }
+    if (top + rect.height > window.innerHeight - pad) {
+      top = Math.max(pad, window.innerHeight - rect.height - pad);
+    }
+    if (left < pad) left = pad;
+    if (top < pad) top = pad;
+    setPos({ left, top });
+  }, [x, y]);
+
+  return (
+    <div
+      ref={ref}
+      className="file-ctx-menu"
+      role="menu"
+      style={{ left: pos.left, top: pos.top }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        className="file-ctx-item"
+        onClick={onCopy}
+      >
+        Copy full path
+      </button>
+      {isDir && (
+        <button
+          type="button"
+          role="menuitem"
+          className="file-ctx-item"
+          onClick={onOpen}
+        >
+          Open in system
+        </button>
       )}
     </div>
   );
@@ -170,11 +428,13 @@ function TreeRow({
   depth,
   onToggle,
   onOpenFile,
+  onContextMenu,
 }: {
   node: TreeNode;
   depth: number;
   onToggle: (path: string) => void;
   onOpenFile: (path: string) => void;
+  onContextMenu: (e: React.MouseEvent, path: string, isDir: boolean) => void;
 }) {
   const { entry } = node;
   return (
@@ -186,8 +446,8 @@ function TreeRow({
         aria-expanded={entry.isDir ? Boolean(node.expanded) : undefined}
         title={
           entry.isDir
-            ? entry.path
-            : `${entry.path}\nDouble-click to open`
+            ? `${entry.path}\nRight-click: copy path · open in system`
+            : `${entry.path}\nDouble-click to open · right-click to copy path`
         }
         onClick={() => {
           if (entry.isDir) onToggle(entry.path);
@@ -195,6 +455,7 @@ function TreeRow({
         onDoubleClick={() => {
           if (!entry.isDir) onOpenFile(entry.path);
         }}
+        onContextMenu={(e) => onContextMenu(e, entry.path, entry.isDir)}
       >
         <span className="file-tree-chevron" aria-hidden>
           {entry.isDir ? (node.loading ? "…" : node.expanded ? "▾" : "▸") : "·"}
@@ -210,10 +471,35 @@ function TreeRow({
             depth={depth + 1}
             onToggle={onToggle}
             onOpenFile={onOpenFile}
+            onContextMenu={onContextMenu}
           />
         ))}
     </>
   );
+}
+
+/** Prefer async clipboard API; fall back to a hidden textarea for Tauri/WebView. */
+async function writeClipboard(text: string): Promise<void> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    // fall through
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  ta.style.top = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  ta.setSelectionRange(0, text.length);
+  const ok = document.execCommand("copy");
+  document.body.removeChild(ta);
+  if (!ok) throw new Error("clipboard write rejected");
 }
 
 function findNode(nodes: TreeNode[], path: string): TreeNode | null {

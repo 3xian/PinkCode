@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AgentUpdateEvent,
+  AvailableCommand,
   LiveStreamItem,
   ManagedAgentInfo,
   PendingPermission,
@@ -17,6 +18,10 @@ export function useAgentEvents(selectedSessionId: string | null) {
   );
   const [liveBySession, setLiveBySession] = useState<
     Map<string, LiveStreamItem[]>
+  >(() => new Map());
+  /** Slash commands advertised by the agent, keyed by sessionId or handleId. */
+  const [commandsByKey, setCommandsByKey] = useState<
+    Map<string, AvailableCommand[]>
   >(() => new Map());
   const [permissions, setPermissions] = useState<Map<string, PendingPermission>>(
     () => new Map(),
@@ -143,20 +148,35 @@ export function useAgentEvents(selectedSessionId: string | null) {
       });
       const u2 = await listen<AgentUpdateEvent>("agent-update", (e) => {
         if (cancelled) return;
-        // Don't fight the compositor while the window is not visible.
-        if (document.visibilityState === "hidden") return;
         const { handleId, sessionId, params } = e.payload;
         const update = params?.update ?? params;
         const desc = describeUpdate({
           method: "session/update",
           params: { update },
         });
-        // Drop pure noise
+
+        // Slash commands are durable session state — apply even when hidden so
+        // we do not permanently miss available_commands_update during attach.
+        if (desc.kind === "commands") {
+          const cmds = desc.availableCommands ?? [];
+          const keys = [sessionId, handleId].filter(Boolean) as string[];
+          if (keys.length) {
+            setCommandsByKey((prev) => {
+              const next = new Map(prev);
+              for (const k of keys) next.set(k, cmds);
+              return next;
+            });
+          }
+          return;
+        }
+
+        // Don't fight the compositor while the window is not visible (stream only).
+        if (document.visibilityState === "hidden") return;
+
+        // Drop pure noise (empty / unlabeled events)
         if (
           desc.kind === "event" &&
-          (desc.title === "available_commands_update" ||
-            !desc.title ||
-            desc.title === "event")
+          (!desc.title || desc.title === "event")
         ) {
           return;
         }
@@ -199,6 +219,23 @@ export function useAgentEvents(selectedSessionId: string | null) {
                 ...list[idx],
                 title: desc.title || list[idx].title,
                 detail: desc.toolCallId,
+                ts: now,
+              };
+              next.set(key, list);
+              return next;
+            }
+          }
+
+          // 3) Keep one live plan card (latest snapshot replaces previous)
+          if (desc.kind === "plan") {
+            const idx = list.findIndex(
+              (x) => x.kind === "plan" && x.handleId === handleId,
+            );
+            if (idx >= 0) {
+              list[idx] = {
+                ...list[idx],
+                title: desc.title,
+                detail: desc.detail,
                 ts: now,
               };
               next.set(key, list);
@@ -359,6 +396,19 @@ export function useAgentEvents(selectedSessionId: string | null) {
     return Array.from(map.values()).sort((a, b) => a.ts - b.ts);
   }, [selectedSessionId, liveBySession, managedForSession]);
 
+  /** Agent-advertised slash commands for the selected session (may be empty). */
+  const availableCommands = useMemo(() => {
+    if (!selectedSessionId) return [] as AvailableCommand[];
+    const bySession = commandsByKey.get(selectedSessionId);
+    if (bySession?.length) return bySession;
+    const handle = managedForSession?.handleId;
+    if (handle) {
+      const byHandle = commandsByKey.get(handle);
+      if (byHandle?.length) return byHandle;
+    }
+    return [] as AvailableCommand[];
+  }, [selectedSessionId, commandsByKey, managedForSession]);
+
   const allPermissions = useMemo(
     () =>
       Array.from(permissions.values()).sort(
@@ -383,6 +433,7 @@ export function useAgentEvents(selectedSessionId: string | null) {
     managedList,
     managedForSession,
     liveItems,
+    availableCommands,
     permissions: allPermissions,
     permissionsForSession,
     lastError,

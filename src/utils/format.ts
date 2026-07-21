@@ -1,3 +1,5 @@
+import type { AvailableCommand } from "../types";
+
 export function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -100,6 +102,23 @@ export function formatResetCountdown(isoOrUnix?: string | null): string {
 /** Stream kinds that arrive as many tiny chunks and should be coalesced. */
 export const COALESCE_LIVE_KINDS = new Set(["user", "agent", "thought"]);
 
+function formatTokensShort(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+/** Read a numeric field that may arrive as camelCase or snake_case. */
+function numField(
+  obj: Record<string, unknown>,
+  camel: string,
+  snake: string,
+): number {
+  const v = obj[camel] ?? obj[snake];
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
 /** Best-effort parse of ACP session/update stream for timeline display. */
 export function describeUpdate(update: unknown): {
   kind: string;
@@ -108,6 +127,8 @@ export function describeUpdate(update: unknown): {
   /** True when this is a text stream chunk (merge with previous same kind). */
   coalesce?: boolean;
   toolCallId?: string;
+  /** Slash commands from `available_commands_update` (not shown as a live card). */
+  availableCommands?: AvailableCommand[];
 } {
   if (!update || typeof update !== "object") {
     return { kind: "unknown", title: String(update) };
@@ -175,18 +196,198 @@ export function describeUpdate(update: unknown): {
         toolCallId,
       };
     }
-    case "plan":
-      return { kind: "plan", title: "Plan update" };
-    case "available_commands_update":
-      return { kind: "event", title: "available_commands_update" };
+    case "plan": {
+      const entries = Array.isArray(inner.entries)
+        ? (inner.entries as Array<Record<string, unknown>>)
+        : [];
+      const lines = entries.map((e) => {
+        const status = String(e.status ?? "pending");
+        const mark =
+          status === "completed"
+            ? "✓"
+            : status === "in_progress"
+              ? "→"
+              : status === "failed" || status === "blocked"
+                ? "!"
+                : "·";
+        return `${mark} ${String(e.content ?? e.title ?? "").trim()}`;
+      });
+      const done = entries.filter((e) => e.status === "completed").length;
+      return {
+        kind: "plan",
+        title:
+          entries.length > 0
+            ? `Plan · ${done}/${entries.length}`
+            : "Plan update",
+        detail: lines.filter(Boolean).join("\n") || undefined,
+      };
+    }
+    case "turn_completed": {
+      const stop = String(
+        inner.stop_reason ?? inner.stopReason ?? "end_turn",
+      );
+      const usage = (inner.usage ?? {}) as Record<string, unknown>;
+      const total = numField(usage, "totalTokens", "total_tokens");
+      const inTok = numField(usage, "inputTokens", "input_tokens");
+      const outTok = numField(usage, "outputTokens", "output_tokens");
+      const turns = numField(usage, "numTurns", "num_turns");
+      const parts: string[] = [];
+      if (total > 0) {
+        parts.push(
+          `${formatTokensShort(total)} tok (in ${formatTokensShort(inTok)} / out ${formatTokensShort(outTok)})`,
+        );
+      }
+      if (turns > 0) parts.push(`${turns} model calls`);
+      return {
+        kind: "event",
+        title: `Turn completed · ${stop}`,
+        detail: parts.length ? parts.join(" · ") : undefined,
+      };
+    }
+    case "session_recap": {
+      const summary = String(inner.summary ?? "").trim();
+      const auto = inner.auto === true;
+      return {
+        kind: "event",
+        title: auto ? "Session recap (auto)" : "Session recap",
+        detail: summary || undefined,
+      };
+    }
+    case "auto_compact_completed": {
+      const before = numField(inner, "tokensBefore", "tokens_before");
+      const after = numField(inner, "tokensAfter", "tokens_after");
+      const preview =
+        typeof inner.summary_preview === "string"
+          ? inner.summary_preview
+          : typeof inner.summaryPreview === "string"
+            ? (inner.summaryPreview as string)
+            : undefined;
+      return {
+        kind: "event",
+        title: "Auto-compact completed",
+        detail:
+          before || after
+            ? `${formatTokensShort(before)} → ${formatTokensShort(after)} tok${preview ? `\n${preview}` : ""}`
+            : preview,
+      };
+    }
+    case "compaction_checkpoint": {
+      const id = String(
+        inner.checkpoint_id ?? inner.checkpointId ?? "",
+      ).slice(0, 8);
+      const idx =
+        inner.prompt_index_at_compaction ?? inner.promptIndexAtCompaction;
+      return {
+        kind: "event",
+        title: id ? `Compaction checkpoint · ${id}…` : "Compaction checkpoint",
+        detail:
+          typeof idx === "number" ? `At prompt index ${idx}` : undefined,
+      };
+    }
+    case "rewind_marker": {
+      const idx = inner.target_prompt_index ?? inner.targetPromptIndex;
+      return {
+        kind: "event",
+        title: "Rewind marker",
+        detail:
+          typeof idx === "number" ? `Target prompt index ${idx}` : undefined,
+      };
+    }
+    case "available_commands_update": {
+      const raw = inner.availableCommands ?? inner.available_commands;
+      const commands = parseAvailableCommands(raw);
+      return {
+        kind: "commands",
+        title: "available_commands_update",
+        availableCommands: commands,
+      };
+    }
     default: {
       const type = (u.type as string) || sessionUpdate;
       // Noise phase/events — skip empty ones in the listener
       return {
         kind: "event",
         title: type,
-        detail: (u.phase as string) || (u.model_id as string) || undefined,
+        detail:
+          (inner.phase as string) ||
+          (u.phase as string) ||
+          (inner.model_id as string) ||
+          (u.model_id as string) ||
+          undefined,
       };
     }
   }
+}
+
+function parseAvailableCommands(raw: unknown): AvailableCommand[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AvailableCommand[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const name = String(o.name ?? "").trim().replace(/^\//, "");
+    if (!name) continue;
+    const description = String(o.description ?? "").trim();
+    const input = o.input as { hint?: string } | undefined;
+    const inputHint =
+      (typeof input?.hint === "string" && input.hint) ||
+      (typeof o.inputHint === "string" ? o.inputHint : undefined) ||
+      (typeof o.input_hint === "string" ? o.input_hint : undefined);
+    out.push({ name, description, inputHint: inputHint || undefined });
+  }
+  return out;
+}
+
+/**
+ * Built-in Grok Build slash commands (shell + common pager).
+ * Merged with agent-advertised commands via {@link mergeSlashCommands}.
+ */
+export const GROK_BUILTIN_SLASH_COMMANDS: AvailableCommand[] = [
+  { name: "new", description: "Start a new session" },
+  { name: "compact", description: "Compress conversation history", inputHint: "optional context to keep" },
+  { name: "context", description: "Show context window usage" },
+  { name: "session-info", description: "Show session details" },
+  { name: "fork", description: "Branch session into a new agent" },
+  { name: "rewind", description: "Rewind to an earlier turn" },
+  { name: "copy", description: "Copy recent response", inputHint: "N or file path" },
+  { name: "export", description: "Export conversation" },
+  { name: "model", description: "Switch model", inputHint: "model name" },
+  { name: "effort", description: "Set reasoning effort", inputHint: "low|medium|high|xhigh" },
+  { name: "always-approve", description: "Toggle always-approve permissions" },
+  { name: "auto", description: "Toggle auto permission mode" },
+  { name: "plan", description: "Enter plan mode", inputHint: "description" },
+  { name: "view-plan", description: "Open saved plan preview" },
+  { name: "memory", description: "Browse or toggle memory", inputHint: "on|off" },
+  { name: "remember", description: "Save a note to memory", inputHint: "note" },
+  { name: "skills", description: "Open skills modal" },
+  { name: "hooks", description: "Open hooks modal" },
+  { name: "plugins", description: "Open plugins modal" },
+  { name: "mcps", description: "Open MCP servers modal" },
+  { name: "settings", description: "Open settings" },
+  { name: "usage", description: "View credit usage / billing" },
+  { name: "login", description: "Log in or re-authenticate" },
+  { name: "logout", description: "Log out" },
+  { name: "imagine", description: "Generate an image", inputHint: "description" },
+  { name: "loop", description: "Run a prompt on an interval", inputHint: "interval prompt" },
+  { name: "goal", description: "Set or manage an autonomous goal", inputHint: "objective|status|…" },
+  { name: "btw", description: "Aside question without interrupting", inputHint: "question" },
+  { name: "docs", description: "Browse how-to guides", inputHint: "title or web" },
+  { name: "feedback", description: "Send feedback", inputHint: "message" },
+];
+
+/**
+ * Merge agent-advertised slash commands with builtins.
+ * Agent entries win on name collision; builtins not advertised remain available.
+ */
+export function mergeSlashCommands(
+  agent: AvailableCommand[],
+  builtins: AvailableCommand[] = GROK_BUILTIN_SLASH_COMMANDS,
+): AvailableCommand[] {
+  if (!agent.length) return builtins;
+  const agentNames = new Set(agent.map((c) => c.name.toLowerCase()));
+  const out: AvailableCommand[] = [...agent];
+  for (const b of builtins) {
+    if (!agentNames.has(b.name.toLowerCase())) out.push(b);
+  }
+  return out;
 }

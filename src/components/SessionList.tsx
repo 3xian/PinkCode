@@ -130,11 +130,11 @@ export function SessionList({
                 {(onAttach || onRequestStop) && (
                   <button
                     type="button"
-                    className={`attach-switch${attached ? " on" : ""}${
-                      isAttaching ? " pending" : ""
-                    }`}
+                    className={`attach-switch${
+                      attached && !isAttaching ? " on" : ""
+                    }${isAttaching ? " pending" : ""}`}
                     role="switch"
-                    aria-checked={attached}
+                    aria-checked={attached && !isAttaching}
                     aria-busy={isAttaching || undefined}
                     aria-label={
                       isAttaching

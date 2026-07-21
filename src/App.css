@@ -749,6 +749,7 @@ code,
   font-size: 11px;
   color: var(--text);
   flex-shrink: 0;
+  cursor: default;
 }
 
 .file-tree {
@@ -796,6 +797,43 @@ code,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Files panel context menu — portaled to document.body (side-panel has
+   contain:layout which breaks position:fixed descendants). */
+.file-ctx-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 176px;
+  padding: 4px 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+}
+
+.file-ctx-item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 8px 14px;
+  cursor: pointer;
+  width: 100%;
+  line-height: 1.3;
+}
+
+.file-ctx-item:hover,
+.file-ctx-item:focus-visible {
+  background: var(--accent-dim);
+  outline: none;
 }
 
 .git-change-list {
@@ -1135,40 +1173,51 @@ code,
   background: #34d399;
 }
 
-/* Attach-in-flight: switch only (breathing glow until agent is up) */
+/* Attach-in-flight: neutral/accent breathe — green only after fully on */
 .attach-switch.pending {
   opacity: 1;
 }
 
 .attach-switch.pending .attach-switch-track {
-  background: rgba(52, 211, 153, 0.28);
-  border-color: rgba(52, 211, 153, 0.55);
+  background: rgba(110, 168, 255, 0.18);
+  border-color: rgba(110, 168, 255, 0.45);
   animation: switch-track-breathe 1.1s ease-in-out infinite;
 }
 
 .attach-switch.pending .attach-switch-thumb {
   transform: translateX(7px);
-  background: #34d399;
-  box-shadow: 0 0 8px 1px rgba(52, 211, 153, 0.55);
+  background: var(--accent);
+  box-shadow: 0 0 8px 1px rgba(110, 168, 255, 0.45);
+}
+
+/* Pending must not inherit the "on" green if both classes ever combine */
+.attach-switch.pending.on .attach-switch-track {
+  background: rgba(110, 168, 255, 0.18);
+  border-color: rgba(110, 168, 255, 0.45);
+}
+
+.attach-switch.pending.on .attach-switch-thumb {
+  transform: translateX(7px);
+  background: var(--accent);
 }
 
 @keyframes switch-track-breathe {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+    box-shadow: 0 0 0 0 rgba(110, 168, 255, 0);
     filter: brightness(1);
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.28),
-      0 0 12px 2px rgba(52, 211, 153, 0.4);
-    filter: brightness(1.15);
+    box-shadow: 0 0 0 4px rgba(110, 168, 255, 0.22),
+      0 0 12px 2px rgba(110, 168, 255, 0.35);
+    filter: brightness(1.1);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .attach-switch.pending .attach-switch-track {
     animation: none;
-    box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.22);
+    box-shadow: 0 0 0 3px rgba(110, 168, 255, 0.2);
   }
 }
 
@@ -1626,6 +1675,18 @@ code,
 
 .kind-event {
   box-shadow: inset 3px 0 0 var(--warn);
+}
+
+.kind-plan {
+  box-shadow: inset 3px 0 0 #a78bfa;
+}
+
+.tl-item.kind-plan .tl-detail,
+.tl-item.kind-event .tl-detail {
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.45;
 }
 
 /* Diff */
@@ -2130,12 +2191,87 @@ code,
 }
 
 .prompt-composer {
+  position: relative;
   display: flex;
   flex-direction: column;
   background: var(--bg);
   border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
   box-shadow: 0 0 0 0 transparent;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+/* Slash command autocomplete (Grok Build / ACP available_commands) */
+.slash-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.45);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+}
+
+.slash-menu-hint {
+  padding: 6px 10px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.slash-menu-item {
+  display: grid;
+  grid-template-columns: minmax(88px, max-content) 1fr auto;
+  gap: 8px 12px;
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.slash-menu-item:last-child {
+  border-bottom: none;
+}
+
+.slash-menu-item:hover,
+.slash-menu-item.active {
+  background: var(--accent-dim);
+}
+
+.slash-menu-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.slash-menu-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-menu-hint-arg {
+  font-family: var(--mono);
+  font-size: 10px;
+  opacity: 0.75;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .prompt-composer:focus-within {

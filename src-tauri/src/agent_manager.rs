@@ -390,7 +390,9 @@ impl AgentManager {
                 "params": params,
             });
 
-            if method == "session/update" {
+            // Standard ACP + Grok x.ai extension (`_x.ai/session/update` for
+            // turn_completed, session_recap, compact, rewind, …).
+            if method == "session/update" || method.ends_with("/session/update") {
                 Self::emit(&inner, "agent-update", payload.clone());
                 Self::maybe_emit_shell(&inner, &handle_id, &session_id, &params);
             } else if !method.is_empty() {

@@ -1,14 +1,16 @@
 # MarsBuild TODO
 
-Product roadmap and backlog. Priorities lean on control-plane strengths (multi-task observability, policy gates, file-change radar) rather than re-implementing a full coding agent.
+Product roadmap and backlog. See [README](../README.md) for positioning.
+
+**Priorities:** multi-task attach · Live white-box stream · workspace radar · Grok-aligned permissions · usage — not re-implementing a coding agent.
 
 **Positioning**
 
 | | MarsBuild | Reasonix (reference) |
 |---|---|---|
-| Role | Desktop **control plane** for Grok agents | DeepSeek-native **agent harness** |
+| Role | Desktop **mission control** for Grok agents | DeepSeek-native **agent harness** |
 | Engine | Attach / spawn external `grok` (ACP) | Owns the agent loop |
-| Core value | Multi-task board · live stream · permissions · diff radar | Cache-first long sessions · cost · plugins |
+| Core value | Task board · Live + slash · workspace · usage · permission modes | Cache-first long sessions · cost · plugins |
 
 Learn from Reasonix **UX and architecture habits**, not its DeepSeek runtime.
 
@@ -20,6 +22,11 @@ Learn from Reasonix **UX and architecture habits**, not its DeepSeek runtime.
 - [x] Live tab: chronological order (terminal-style) + stick-to-bottom scroll
 - [x] Top Week usage health bar (Grok billing API)
 - [x] Week usage refresh: post-turn, adaptive poll, click-to-refresh
+- [x] Shell merged into Live + type filter chips
+- [x] Workspace panel: file tree + Git status; path context menu
+- [x] Grok-aligned permission modes (per-task prefs)
+- [x] Slash-command autocomplete; richer Live events (plan / turn / recap / …)
+- [x] Attach-switch pending UX; auto-refresh expanded file tree
 
 ---
 
@@ -154,8 +161,8 @@ Do **not** treat these as MarsBuild core work:
 
 1. **Single truth in Rust** — `AgentManager` + session index; UI is a shell.
 2. **ACP-first live path** — disk/FS for history & radar; stream for live.
-3. **Config & policy driven** — presets + per-project bindings; few hardcodes.
-4. **Permissions = policy, paths = boundary** — don’t blur the two.
+3. **Config driven** — permission modes + light prefs under `~/.marsbuild`; few hardcodes.
+4. **Permissions = host policy, paths = boundary** — align with Grok; don’t invent a second system.
 5. **Ship light** — Tauri app that assumes Grok installed; minimal new deps.
 
 ---
@@ -175,4 +182,4 @@ Then: Plan/Todo Live cards → Rewind timeline → serve / notifications.
 
 - Reasonix: https://reasonix.io/ · https://github.com/esengine/DeepSeek-Reasonix  
 - Takeaways: status density · approval keyboard · independent mode axes · multi-entry same engine · doctor · remote SSH as long-horizon  
-- MarsBuild stack: Tauri 2 · React · Rust · Grok home `~/.grok` · policies `~/.marsbuild`
+- MarsBuild stack: Tauri 2 · React · Rust · Grok home `~/.grok` · prefs `~/.marsbuild`

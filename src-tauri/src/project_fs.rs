@@ -115,11 +115,7 @@ pub fn git_status(cwd: &str) -> Result<Vec<GitChange>, String> {
             continue;
         }
         let kind = classify_status(&status);
-        changes.push(GitChange {
-            status,
-            path,
-            kind,
-        });
+        changes.push(GitChange { status, path, kind });
     }
     Ok(changes)
 }

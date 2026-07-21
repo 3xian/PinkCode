@@ -83,8 +83,7 @@ impl AcpClient {
             .ok_or_else(|| AcpError::Other("missing stdout".into()))?;
         let stderr = child.stderr.take();
 
-        let pending: Arc<Mutex<HashMap<u64, Sender<Value>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let pending: Arc<Mutex<HashMap<u64, Sender<Value>>>> = Arc::new(Mutex::new(HashMap::new()));
 
         if let Some(stderr) = stderr {
             thread::spawn(move || {
@@ -109,28 +108,25 @@ impl AcpClient {
                 let msg: Value = match serde_json::from_str(line) {
                     Ok(v) => v,
                     Err(e) => {
-                        eprintln!(
-                            "[acp] bad json: {e}; line={}",
-                            &line[..line.len().min(200)]
-                        );
+                        eprintln!("[acp] bad json: {e}; line={}", &line[..line.len().min(200)]);
                         continue;
                     }
                 };
 
                 // Client-bound response to our request
                 if let Some(id_val) = msg.get("id") {
-                    if msg.get("result").is_some() || msg.get("error").is_some() {
-                        if msg.get("method").is_none() {
-                            let id = match id_val {
-                                Value::Number(n) => n.as_u64(),
-                                Value::String(s) => s.parse().ok(),
-                                _ => None,
-                            };
-                            if let Some(id) = id {
-                                if let Some(tx) = pending_reader.lock().remove(&id) {
-                                    let _ = tx.send(msg);
-                                    continue;
-                                }
+                    if (msg.get("result").is_some() || msg.get("error").is_some())
+                        && msg.get("method").is_none()
+                    {
+                        let id = match id_val {
+                            Value::Number(n) => n.as_u64(),
+                            Value::String(s) => s.parse().ok(),
+                            _ => None,
+                        };
+                        if let Some(id) = id {
+                            if let Some(tx) = pending_reader.lock().remove(&id) {
+                                let _ = tx.send(msg);
+                                continue;
                             }
                         }
                     }
@@ -320,8 +316,7 @@ mod tests {
                             return Some(exe.display().to_string());
                         }
                     }
-                    base.is_file()
-                        .then(|| base.display().to_string())
+                    base.is_file().then(|| base.display().to_string())
                 })
             })
             .or_else(|| {

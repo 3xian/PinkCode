@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -23,6 +23,25 @@ struct TokenSeriesCache {
 fn token_series_cache() -> &'static Mutex<Option<TokenSeriesCache>> {
     static CACHE: OnceLock<Mutex<Option<TokenSeriesCache>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(None))
+}
+
+#[derive(Clone)]
+struct JsonFileCache {
+    modified: Option<SystemTime>,
+    len: u64,
+    value: Value,
+}
+
+fn json_file_cache() -> &'static Mutex<HashMap<PathBuf, JsonFileCache>> {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, JsonFileCache>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+type SessionLocation = (PathBuf, String);
+
+fn session_dir_cache() -> &'static Mutex<HashMap<String, SessionLocation>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, SessionLocation>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -65,13 +84,30 @@ pub fn read_active_sessions() -> Result<Vec<ActiveSession>> {
 
 fn load_json_value(path: &Path) -> Result<Option<Value>> {
     if !path.exists() {
+        json_file_cache().lock().remove(path);
         return Ok(None);
+    }
+    let metadata = fs::metadata(path)?;
+    let modified = metadata.modified().ok();
+    if let Some(cached) = json_file_cache().lock().get(path) {
+        if cached.len == metadata.len() && cached.modified == modified {
+            return Ok(Some(cached.value.clone()));
+        }
     }
     let raw = fs::read_to_string(path)?;
     if raw.trim().is_empty() {
         return Ok(None);
     }
-    Ok(Some(serde_json::from_str(&raw)?))
+    let value: Value = serde_json::from_str(&raw)?;
+    json_file_cache().lock().insert(
+        path.to_path_buf(),
+        JsonFileCache {
+            modified,
+            len: metadata.len(),
+            value: value.clone(),
+        },
+    );
+    Ok(Some(value))
 }
 
 fn u64_field(v: &Value, keys: &[&str]) -> u64 {
@@ -153,7 +189,9 @@ fn build_card(
         context_window_usage: signals
             .map(|s| u64_field(s, &["contextWindowUsage"]))
             .unwrap_or(0),
-        tool_call_count: signals.map(|s| u64_field(s, &["toolCallCount"])).unwrap_or(0),
+        tool_call_count: signals
+            .map(|s| u64_field(s, &["toolCallCount"]))
+            .unwrap_or(0),
         turn_count: signals.map(|s| u64_field(s, &["turnCount"])).unwrap_or(0),
         tools_used: signals.map(tools_used).unwrap_or_default(),
         agent_lines_added: signals
@@ -179,6 +217,14 @@ fn decode_cwd_dir_name(name: &str) -> String {
 }
 
 fn find_session_dir(session_id: &str) -> Result<(PathBuf, String)> {
+    let cached = { session_dir_cache().lock().get(session_id).cloned() };
+    if let Some(cached) = cached {
+        if cached.0.is_dir() {
+            return Ok(cached);
+        }
+        session_dir_cache().lock().remove(session_id);
+    }
+
     let root = sessions_root();
     if !root.exists() {
         return Err(SessionError::NotFound(session_id.to_string()));
@@ -203,7 +249,11 @@ fn find_session_dir(session_id: &str) -> Result<(PathBuf, String)> {
             } else {
                 decode_cwd_dir_name(&group_name)
             };
-            return Ok((session_path, cwd));
+            let location = (session_path, cwd);
+            session_dir_cache()
+                .lock()
+                .insert(session_id.to_string(), location.clone());
+            return Ok(location);
         }
     }
 
@@ -255,36 +305,31 @@ pub fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>> {
                 None => continue,
             };
             let signals = load_json_value(&entry.path().join("signals.json"))?;
-            let card = build_card(
-                &id,
-                &cwd,
-                &summary,
-                signals.as_ref(),
-                active_map.get(&id),
-            );
+            let card = build_card(&id, &cwd, &summary, signals.as_ref(), active_map.get(&id));
+            session_dir_cache()
+                .lock()
+                .insert(id.clone(), (entry.path(), cwd.clone()));
             cards.push(card);
         }
     }
 
     cards.sort_by(|a, b| {
         // Active first, then by last_active_at / updated_at desc
-        b.is_active
-            .cmp(&a.is_active)
-            .then_with(|| {
-                let a_ts = a
-                    .last_active_at
-                    .as_ref()
-                    .or(a.updated_at.as_ref())
-                    .cloned()
-                    .unwrap_or_default();
-                let b_ts = b
-                    .last_active_at
-                    .as_ref()
-                    .or(b.updated_at.as_ref())
-                    .cloned()
-                    .unwrap_or_default();
-                b_ts.cmp(&a_ts)
-            })
+        b.is_active.cmp(&a.is_active).then_with(|| {
+            let a_ts = a
+                .last_active_at
+                .as_ref()
+                .or(a.updated_at.as_ref())
+                .cloned()
+                .unwrap_or_default();
+            let b_ts = b
+                .last_active_at
+                .as_ref()
+                .or(b.updated_at.as_ref())
+                .cloned()
+                .unwrap_or_default();
+            b_ts.cmp(&a_ts)
+        })
     });
 
     if let Some(n) = limit {
@@ -295,29 +340,52 @@ pub fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>> {
 }
 
 fn read_jsonl_tail(path: &Path, max_lines: usize) -> Result<Vec<Value>> {
-    if !path.exists() {
+    if !path.exists() || max_lines == 0 {
         return Ok(Vec::new());
     }
-    let file = fs::File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut ring: std::collections::VecDeque<Value> =
-        std::collections::VecDeque::with_capacity(max_lines);
+    const BLOCK_SIZE: usize = 16 * 1024;
+    let mut file = fs::File::open(path)?;
+    let mut position = file.metadata()?.len();
+    let mut buffer = Vec::new();
 
-    for line in reader.lines() {
-        let line = line?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
-            if ring.len() == max_lines {
-                ring.pop_front();
-            }
-            ring.push_back(v);
+    loop {
+        let read_len = position.min(BLOCK_SIZE as u64) as usize;
+        position -= read_len as u64;
+        file.seek(SeekFrom::Start(position))?;
+        let mut chunk = vec![0; read_len];
+        file.read_exact(&mut chunk)?;
+        chunk.extend_from_slice(&buffer);
+        buffer = chunk;
+
+        let text = String::from_utf8_lossy(&buffer);
+        let complete_lines = if position > 0 {
+            text.lines().skip(1).collect::<Vec<_>>()
+        } else {
+            text.lines().collect::<Vec<_>>()
+        };
+        let valid_count = complete_lines
+            .iter()
+            .filter(|line| serde_json::from_str::<Value>(line.trim()).is_ok())
+            .count();
+        if position == 0 || valid_count >= max_lines {
+            break;
         }
     }
 
-    Ok(ring.into_iter().collect())
+    let text = String::from_utf8_lossy(&buffer);
+    let lines: Vec<_> = if position > 0 {
+        text.lines().skip(1).collect()
+    } else {
+        text.lines().collect()
+    };
+    let mut values: Vec<Value> = lines
+        .into_iter()
+        .rev()
+        .filter_map(|line| serde_json::from_str(line.trim()).ok())
+        .take(max_lines)
+        .collect();
+    values.reverse();
+    Ok(values)
 }
 
 fn parse_hunk(v: &Value) -> HunkRecord {
@@ -347,7 +415,7 @@ pub fn list_hunks(session_id: &str, limit: Option<usize>) -> Result<Vec<HunkReco
     let values = read_jsonl_tail(&path, max)?;
     let mut hunks: Vec<HunkRecord> = values.iter().map(parse_hunk).collect();
     hunks.reverse(); // newest first after tail
-    // tail keeps last N in file order (oldest->newest in ring). reverse for newest first.
+                     // tail keeps last N in file order (oldest->newest in ring). reverse for newest first.
     Ok(hunks)
 }
 
@@ -708,19 +776,47 @@ mod tests {
     }
 
     #[test]
-    fn lists_local_sessions() {
-        let cards = list_sessions(Some(5)).expect("list sessions");
-        assert!(!cards.is_empty(), "expected at least one local grok session");
-        println!("first: {} — {}", cards[0].id, cards[0].title);
-        let stats = dashboard_stats().expect("stats");
-        assert!(stats.total_sessions >= cards.len());
+    fn jsonl_tail_reads_last_valid_records_across_blocks() {
+        let path = std::env::temp_dir().join(format!(
+            "marsbuild-tail-{}-{}.jsonl",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let mut content = String::new();
+        for index in 0..120 {
+            content.push_str(
+                &serde_json::json!({ "index": index, "padding": "x".repeat(300) }).to_string(),
+            );
+            content.push('\n');
+        }
+        fs::write(&path, content).expect("write fixture");
+
+        let tail = read_jsonl_tail(&path, 3).expect("read tail");
+        let _ = fs::remove_file(&path);
+        assert_eq!(tail.len(), 3);
+        assert_eq!(tail[0]["index"], 117);
+        assert_eq!(tail[2]["index"], 119);
     }
 
     #[test]
-    fn loads_detail_for_first_session() {
+    fn lists_local_sessions_when_available() {
+        let cards = list_sessions(Some(5)).expect("list sessions");
+        let stats = dashboard_stats().expect("stats");
+        assert!(stats.total_sessions >= cards.len());
+        if let Some(first) = cards.first() {
+            assert!(!first.id.is_empty());
+        }
+    }
+
+    #[test]
+    fn loads_detail_for_first_session_when_available() {
         let cards = list_sessions(Some(1)).expect("list");
-        let id = &cards[0].id;
-        let detail = get_session_detail(id).expect("detail");
-        assert_eq!(detail.card.id, *id);
+        if let Some(card) = cards.first() {
+            let detail = get_session_detail(&card.id).expect("detail");
+            assert_eq!(detail.card.id, card.id);
+        }
     }
 }

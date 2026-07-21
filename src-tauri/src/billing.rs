@@ -263,10 +263,7 @@ mod tests {
             "HTTP_PROXY",
             "http_proxy",
         ];
-        let saved: Vec<_> = keys
-            .iter()
-            .map(|k| (*k, std::env::var(k).ok()))
-            .collect();
+        let saved: Vec<_> = keys.iter().map(|k| (*k, std::env::var(k).ok())).collect();
         for k in keys {
             std::env::remove_var(k);
         }

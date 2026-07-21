@@ -1,0 +1,17 @@
+{
+  "managedStatuses": [
+    "starting",
+    "ready",
+    "running",
+    "awaitingPermission",
+    "error",
+    "stopped"
+  ],
+  "permissionModes": [
+    "default",
+    "acceptEdits",
+    "bypassPermissions",
+    "dontAsk"
+  ],
+  "permissionKinds": ["toolPermission", "fsWrite", "fsRead", "other"]
+}

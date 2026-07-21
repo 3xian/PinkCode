@@ -8,65 +8,17 @@ import type {
   PendingPermission,
   ShellEntry,
 } from "../types";
-import { COALESCE_LIVE_KINDS, describeUpdate } from "../utils/format";
+import { describeUpdate } from "../utils/format";
+import {
+  isTextUpdate,
+  reduceAgentUpdate,
+  reduceShellUpdate,
+  sameManagedAgent,
+  settleStreamingItems,
+} from "./liveTimeline";
 
-const MAX_LIVE = 400;
-/** Cap stored shell stdout (keep tail) so huge logs don't blow memory / IPC. */
-const MAX_SHELL_OUTPUT_CHARS = 200_000;
 /** After last text chunk for a handle, mark its streaming cards settled. */
 const STREAM_SETTLE_MS = 320;
-
-function capShellOutput(output: string): string {
-  if (output.length <= MAX_SHELL_OUTPUT_CHARS) return output;
-  // Build prefix first so total never exceeds the cap (digit count varies).
-  const omittedGuess = output.length - MAX_SHELL_OUTPUT_CHARS;
-  let prefix = `…[truncated ${omittedGuess} chars]…\n`;
-  let keep = MAX_SHELL_OUTPUT_CHARS - prefix.length;
-  if (keep < 1) {
-    prefix = "…\n";
-    keep = Math.max(1, MAX_SHELL_OUTPUT_CHARS - prefix.length);
-  }
-  // Recompute omitted after final keep so the label matches reality.
-  const omitted = output.length - keep;
-  prefix = `…[truncated ${omitted} chars]…\n`;
-  keep = MAX_SHELL_OUTPUT_CHARS - prefix.length;
-  if (keep < 1) return output.slice(-MAX_SHELL_OUTPUT_CHARS);
-  return prefix + output.slice(-keep);
-}
-
-function settleStreamingItems(
-  map: Map<string, LiveStreamItem[]>,
-  match?: { handleId?: string; key?: string },
-): Map<string, LiveStreamItem[]> {
-  let changed = false;
-  const next = new Map(map);
-  for (const [k, list] of next) {
-    if (match?.key && k !== match.key) continue;
-    let listChanged = false;
-    const out = list.map((item) => {
-      if (!item.streaming) return item;
-      if (match?.handleId && item.handleId !== match.handleId) return item;
-      listChanged = true;
-      return { ...item, streaming: false };
-    });
-    if (listChanged) {
-      next.set(k, out);
-      changed = true;
-    }
-  }
-  return changed ? next : map;
-}
-
-function trimLiveList(
-  list: LiveStreamItem[],
-  key: string,
-  shellIndexByKey: Map<string, Map<string, number>>,
-): void {
-  if (list.length > MAX_LIVE) {
-    list.splice(0, list.length - MAX_LIVE);
-    shellIndexByKey.delete(key);
-  }
-}
 
 export function useAgentEvents(selectedSessionId: string | null) {
   const [managed, setManaged] = useState<Map<string, ManagedAgentInfo>>(
@@ -94,16 +46,7 @@ export function useAgentEvents(selectedSessionId: string | null) {
     setManaged((prev) => {
       const existing = prev.get(info.handleId);
       // Avoid re-render storms when poll returns identical managed agents.
-      if (
-        existing &&
-        existing.status === info.status &&
-        existing.sessionId === info.sessionId &&
-        existing.pid === info.pid &&
-        existing.pendingPermissionCount === info.pendingPermissionCount &&
-        existing.alwaysApprove === info.alwaysApprove &&
-        existing.permissionMode === info.permissionMode &&
-        existing.title === info.title
-      ) {
+      if (existing && sameManagedAgent(existing, info)) {
         return prev;
       }
       const next = new Map(prev);
@@ -203,17 +146,7 @@ export function useAgentEvents(selectedSessionId: string | null) {
         const info = e.payload;
         setManaged((prev) => {
           const existing = prev.get(info.handleId);
-          if (
-            existing &&
-            existing.status === info.status &&
-            existing.sessionId === info.sessionId &&
-            existing.pid === info.pid &&
-            existing.pendingPermissionCount === info.pendingPermissionCount &&
-            existing.alwaysApprove === info.alwaysApprove &&
-            existing.permissionMode === info.permissionMode &&
-            existing.title === info.title &&
-            existing.lastError === info.lastError
-          ) {
+          if (existing && sameManagedAgent(existing, info)) {
             return prev;
           }
           const next = new Map(prev);
@@ -245,9 +178,6 @@ export function useAgentEvents(selectedSessionId: string | null) {
           return;
         }
 
-        // Don't fight the compositor while the window is not visible (stream only).
-        if (document.visibilityState === "hidden") return;
-
         // Drop pure noise (empty / unlabeled events)
         if (
           desc.kind === "event" &&
@@ -264,93 +194,21 @@ export function useAgentEvents(selectedSessionId: string | null) {
           return;
         }
 
-        const key = sessionId || handleId;
         const now = Date.now();
-        const isTextChunk =
-          Boolean(desc.coalesce) || COALESCE_LIVE_KINDS.has(desc.kind);
-
-        scheduleLive((prev) => {
-          const next = new Map(prev);
-          const list = [...(next.get(key) ?? [])];
-
-          // Settle prior streaming cards when a non-text event arrives.
-          if (!isTextChunk) {
-            for (let i = 0; i < list.length; i++) {
-              if (list[i].streaming && list[i].handleId === handleId) {
-                list[i] = { ...list[i], streaming: false };
-              }
-            }
-          }
-
-          // 1) Coalesce streaming text: agent/user/thought word-chunks → one card
-          if (isTextChunk) {
-            const last = list[list.length - 1];
-            if (last && last.kind === desc.kind && last.handleId === handleId) {
-              // Once settled to Markdown, stay Markdown (avoid plain↔md flicker
-              // after a mid-turn pause). Still append for correct content.
-              const stillStreaming = last.streaming === true;
-              list[list.length - 1] = {
-                ...last,
-                detail: (last.detail ?? "") + (desc.detail ?? ""),
-                ts: now,
-                streaming: stillStreaming,
-              };
-              next.set(key, list);
-              return next;
-            }
-          }
-
-          // 2) Merge tool_call + tool_call_update by toolCallId into one card
-          if (desc.kind === "tool" && desc.toolCallId) {
-            const idx = list.findIndex(
-              (x) =>
-                x.kind === "tool" &&
-                (x.detail === desc.toolCallId ||
-                  x.title.includes(desc.toolCallId!)),
-            );
-            if (idx >= 0) {
-              list[idx] = {
-                ...list[idx],
-                title: desc.title || list[idx].title,
-                detail: desc.toolCallId,
-                ts: now,
-              };
-              next.set(key, list);
-              return next;
-            }
-          }
-
-          // 3) Keep one live plan card (latest snapshot replaces previous)
-          if (desc.kind === "plan") {
-            const idx = list.findIndex(
-              (x) => x.kind === "plan" && x.handleId === handleId,
-            );
-            if (idx >= 0) {
-              list[idx] = {
-                ...list[idx],
-                title: desc.title,
-                detail: desc.detail,
-                ts: now,
-              };
-              next.set(key, list);
-              return next;
-            }
-          }
-
-          list.push({
-            id: `${now}-${seq.current++}`,
-            handleId,
-            sessionId: sessionId ?? null,
-            kind: desc.kind,
-            title: desc.title,
-            detail: desc.detail,
-            ts: now,
-            streaming: isTextChunk ? true : undefined,
-          });
-          trimLiveList(list, key, shellIndexByKey);
-          next.set(key, list);
-          return next;
-        });
+        const isTextChunk = isTextUpdate(desc);
+        scheduleLive((prev) =>
+          reduceAgentUpdate(
+            prev,
+            {
+              handleId,
+              sessionId,
+              description: desc,
+              now,
+              nextId: () => `${now}-${seq.current++}`,
+            },
+            shellIndexByKey,
+          ),
+        );
 
         if (isTextChunk) bumpSettleTimer(handleId);
       });
@@ -395,117 +253,9 @@ export function useAgentEvents(selectedSessionId: string | null) {
       // Shell stdout/stderr → same Live stream (kind "shell"), filtered in UI
       const u6 = await listen<ShellEntry>("agent-shell", (e) => {
         if (cancelled) return;
-        if (document.visibilityState === "hidden") return;
-        const raw = e.payload;
-        const handleId = raw.handleId;
-        const sessionId = raw.sessionId ?? null;
-        const toolCallId = raw.toolCallId;
-        const command = raw.command || "";
-        const description = raw.description;
-        const status = raw.status || "in_progress";
-        const output = capShellOutput(raw.output || "");
-        const exitCode = raw.exitCode;
-        const now = raw.ts || Date.now();
-        const key = sessionId || handleId;
-        const title =
-          status === "completed" || status === "failed"
-            ? `$ ${command || "shell"}${exitCode != null ? ` · exit ${exitCode}` : ""}`
-            : `$ ${command || "shell"} · ${status}`;
-
-        scheduleLive((prev) => {
-          const next = new Map(prev);
-          const list = [...(next.get(key) ?? [])];
-
-          let idx = -1;
-          let indexMap = shellIndexByKey.get(key);
-          if (indexMap?.has(toolCallId)) {
-            const guess = indexMap.get(toolCallId)!;
-            if (
-              guess >= 0 &&
-              guess < list.length &&
-              list[guess].kind === "shell" &&
-              list[guess].shell?.toolCallId === toolCallId
-            ) {
-              idx = guess;
-            }
-          }
-          if (idx < 0) {
-            idx = list.findIndex(
-              (x) => x.kind === "shell" && x.shell?.toolCallId === toolCallId,
-            );
-          }
-
-          if (idx >= 0) {
-            const old = list[idx];
-            const prevOut = old.shell?.output ?? "";
-            const mergedOut =
-              output.length >= prevOut.length ? output : prevOut;
-            // Skip no-op updates (throttled backend may still repeat).
-            if (
-              mergedOut === prevOut &&
-              status === old.shell?.status &&
-              (exitCode ?? old.shell?.exitCode) === old.shell?.exitCode &&
-              title === old.title
-            ) {
-              return prev;
-            }
-            list[idx] = {
-              ...old,
-              title,
-              detail: description || command || old.detail,
-              ts: now,
-              shell: {
-                toolCallId,
-                command: command || old.shell?.command || "",
-                description: description ?? old.shell?.description,
-                status,
-                output: capShellOutput(mergedOut),
-                exitCode: exitCode ?? old.shell?.exitCode,
-              },
-            };
-            if (!indexMap) {
-              indexMap = new Map();
-              shellIndexByKey.set(key, indexMap);
-            }
-            indexMap.set(toolCallId, idx);
-          } else {
-            list.push({
-              id: `shell-${toolCallId}-${now}`,
-              handleId,
-              sessionId,
-              kind: "shell",
-              title,
-              detail: description || command || undefined,
-              ts: now,
-              shell: {
-                toolCallId,
-                command,
-                description,
-                status,
-                output,
-                exitCode,
-              },
-            });
-            if (!indexMap) {
-              indexMap = new Map();
-              shellIndexByKey.set(key, indexMap);
-            }
-            indexMap.set(toolCallId, list.length - 1);
-          }
-          trimLiveList(list, key, shellIndexByKey);
-          // After trim, index map may be gone; rebuild entry for this tool if kept.
-          if (!shellIndexByKey.has(key)) {
-            const rebuild = new Map<string, number>();
-            list.forEach((item, i) => {
-              if (item.kind === "shell" && item.shell?.toolCallId) {
-                rebuild.set(item.shell.toolCallId, i);
-              }
-            });
-            if (rebuild.size) shellIndexByKey.set(key, rebuild);
-          }
-          next.set(key, list);
-          return next;
-        });
+        scheduleLive((prev) =>
+          reduceShellUpdate(prev, e.payload, shellIndexByKey),
+        );
       });
 
       if (!cancelled) {

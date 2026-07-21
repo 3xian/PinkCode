@@ -1,0 +1,124 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0d12;
+  --bg-elevated: #12151c;
+  --bg-panel: #0f1218;
+  --bg-hover: #1a1f2b;
+  --border: #232833;
+  --border-strong: #2e3545;
+  --text: #e8ecf4;
+  --text-muted: #8b93a7;
+  --accent: #6ea8ff;
+  --accent-dim: rgba(110, 168, 255, 0.14);
+  /* Selected task title (card + detail header) */
+  --title-selected: #a78bfa;
+  --live: #3dd68c;
+  --live-dim: rgba(61, 214, 140, 0.15);
+  --danger: #ff6b7a;
+  --danger-dim: rgba(255, 107, 122, 0.14);
+  --warn: #f0b429;
+  --add: #3dd68c;
+  --del: #ff6b7a;
+  --radius: 0;
+  --font: "IBM Plex Sans", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  /* mac-like thin scrollbars (WebView2 / Chromium on Windows) */
+  --scrollbar-size: 8px;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.14);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.26);
+  --scrollbar-thumb-active: rgba(255, 255, 255, 0.34);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  /* Firefox / newer engines */
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* Overlay-ish thin scrollbars (Chromium / Tauri WebView2 on Windows) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+  background: transparent;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track-piece {
+  background: transparent;
+  border: none;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  /* Keep slight round only on the thumb — reads as a capsule rail, not a card corner */
+  border-radius: 999px;
+  min-height: 32px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+code,
+.mono {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+.app-shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* Limit paint invalidation when the OS moves/resizes the window. */
+  contain: layout style;
+}
+

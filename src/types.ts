@@ -146,20 +146,24 @@ export interface ShellEntry {
   ts: number;
 }
 
-export type ManagedStatus =
-  | "starting"
-  | "ready"
-  | "running"
-  | "awaitingPermission"
-  | "error"
-  | "stopped";
+export const MANAGED_STATUSES = [
+  "starting",
+  "ready",
+  "running",
+  "awaitingPermission",
+  "error",
+  "stopped",
+] as const;
+export type ManagedStatus = (typeof MANAGED_STATUSES)[number];
 
 /** Grok Build permission prompt policy (ACP host + spawn flag). */
-export type PermissionMode =
-  | "default"
-  | "acceptEdits"
-  | "bypassPermissions"
-  | "dontAsk";
+export const PERMISSION_MODES = [
+  "default",
+  "acceptEdits",
+  "bypassPermissions",
+  "dontAsk",
+] as const;
+export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
 export const PERMISSION_MODE_OPTIONS: {
   value: PermissionMode;
@@ -204,11 +208,13 @@ export interface ManagedAgentInfo {
   pendingPermissionCount?: number;
 }
 
-export type PermissionKind =
-  | "toolPermission"
-  | "fsWrite"
-  | "fsRead"
-  | "other";
+export const PERMISSION_KINDS = [
+  "toolPermission",
+  "fsWrite",
+  "fsRead",
+  "other",
+] as const;
+export type PermissionKind = (typeof PERMISSION_KINDS)[number];
 
 export interface PermissionOption {
   optionId: string;

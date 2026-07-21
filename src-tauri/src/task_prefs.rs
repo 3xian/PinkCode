@@ -3,7 +3,7 @@
 //! Stored under `~/.marsbuild/task_prefs.json` so permission mode survives
 //! restarts and re-attach, independent of Grok's own session files.
 
-use crate::agent_manager::PermissionMode;
+use crate::agent_types::PermissionMode;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

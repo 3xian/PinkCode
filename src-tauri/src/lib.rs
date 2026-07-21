@@ -1,23 +1,29 @@
 mod acp;
+mod agent_fs;
 mod agent_manager;
+mod agent_runtime;
+mod agent_types;
 mod billing;
 mod models;
+mod permission_policy;
 mod project_fs;
 mod sessions;
+mod shell_stream;
 mod task_prefs;
 mod watcher;
 
-use agent_manager::{
-    AgentManager, AttachRequest, ManagedAgentInfo, PendingPermission, PermissionMode,
-    ResolvePermissionRequest, SpawnRequest,
+use agent_manager::AgentManager;
+use agent_types::{
+    AttachRequest, ManagedAgentInfo, PendingPermission, PermissionMode, ResolvePermissionRequest,
+    SpawnRequest,
 };
-use std::collections::HashMap;
 use billing::WeekUsage;
 use models::{
     ActiveSession, DashboardStats, HunkRecord, SessionCard, SessionDetail, TokenUsageSeries,
 };
 use project_fs::{DirEntry, GitChange};
 use serde_json::Value;
+use std::collections::HashMap;
 use tauri::Manager;
 
 #[tauri::command]
@@ -41,10 +47,7 @@ fn get_session_detail(session_id: String) -> Result<SessionDetail, String> {
 }
 
 #[tauri::command]
-fn list_session_hunks(
-    session_id: String,
-    limit: Option<usize>,
-) -> Result<Vec<HunkRecord>, String> {
+fn list_session_hunks(session_id: String, limit: Option<usize>) -> Result<Vec<HunkRecord>, String> {
     sessions::list_hunks(&session_id, limit).map_err(|e| e.to_string())
 }
 

@@ -5,8 +5,6 @@ import {
   attachAgent,
   getLastSpawnPermissionMode,
   getSessionDetail,
-  getTokenUsageSeries,
-  getWeekUsage,
   listManagedAgents,
   listPendingPermissions,
   listSessions,
@@ -25,14 +23,13 @@ import { SessionDetailView } from "./components/SessionDetail";
 import { SessionList } from "./components/SessionList";
 import { StatsBar } from "./components/StatsBar";
 import { useAgentEvents } from "./hooks/useAgentEvents";
+import { useUsageMetrics } from "./hooks/useUsageMetrics";
 import type {
   MainTab,
   PendingPermission,
   PermissionMode,
   SessionCard,
   SessionDetail,
-  TokenUsageSeries,
-  WeekUsage,
 } from "./types";
 import "./App.css";
 
@@ -40,20 +37,8 @@ import "./App.css";
 const FS_REFRESH_MIN_MS = 750;
 /** Slow safety net if FSEvents miss a write (rare). */
 const SAFETY_POLL_MS = 90_000;
-/** Idle poll for week usage (billing API). Faster while agents are live. */
-const WEEK_USAGE_IDLE_POLL_MS = 60_000;
-const WEEK_USAGE_ACTIVE_POLL_MS = 20_000;
-/** After a turn ends, wait a beat for billing to settle then refresh. */
-const WEEK_USAGE_AFTER_TURN_MS = 2_500;
-/** Min gap between billing fetches to avoid thrashing the API. */
-const WEEK_USAGE_MIN_GAP_MS = 8_000;
-/** Token chart is expensive (scans updates.jsonl); keep off the FS hot path. */
-const TOKEN_SERIES_POLL_MS = 90_000;
-
 function App() {
   const [sessions, setSessions] = useState<SessionCard[]>([]);
-  const [tokenSeries, setTokenSeries] = useState<TokenUsageSeries | null>(null);
-  const [weekUsage, setWeekUsage] = useState<WeekUsage | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [query, setQuery] = useState("");
@@ -162,18 +147,6 @@ function App() {
     return "default";
   }, [managedForSession, selectedId, taskPermissionModes]);
 
-  const refreshTokenSeries = useCallback(async () => {
-    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-      return;
-    }
-    try {
-      const series = await getTokenUsageSeries(7);
-      setTokenSeries(series);
-    } catch {
-      /* non-tauri / offline */
-    }
-  }, []);
-
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
   const detailReqSeq = useRef(0);
@@ -218,50 +191,6 @@ function App() {
     void refreshList();
   }, [refreshList]);
 
-  // Token chart: initial + slow poll (not tied to FS watcher).
-  useEffect(() => {
-    void refreshTokenSeries();
-    const id = window.setInterval(() => void refreshTokenSeries(), TOKEN_SERIES_POLL_MS);
-    return () => window.clearInterval(id);
-  }, [refreshTokenSeries]);
-
-  const weekUsageInflight = useRef(false);
-  const weekUsageLastAt = useRef(0);
-  const weekUsageTimer = useRef<number | null>(null);
-
-  const refreshWeekUsage = useCallback(async (opts?: { force?: boolean }) => {
-    const force = opts?.force ?? false;
-    const now = Date.now();
-    if (!force && now - weekUsageLastAt.current < WEEK_USAGE_MIN_GAP_MS) {
-      return;
-    }
-    if (weekUsageInflight.current) return;
-    weekUsageInflight.current = true;
-    try {
-      const u = await getWeekUsage();
-      weekUsageLastAt.current = Date.now();
-      setWeekUsage(u);
-    } catch {
-      /* non-tauri preview or offline */
-    } finally {
-      weekUsageInflight.current = false;
-    }
-  }, []);
-
-  /** Schedule a debounced refresh (used after turns complete). */
-  const scheduleWeekUsageRefresh = useCallback(
-    (delayMs = WEEK_USAGE_AFTER_TURN_MS) => {
-      if (weekUsageTimer.current != null) {
-        window.clearTimeout(weekUsageTimer.current);
-      }
-      weekUsageTimer.current = window.setTimeout(() => {
-        weekUsageTimer.current = null;
-        void refreshWeekUsage({ force: true });
-      }, delayMs);
-    },
-    [refreshWeekUsage],
-  );
-
   const liveManagedCount = useMemo(
     () =>
       managedList.filter(
@@ -270,39 +199,10 @@ function App() {
     [managedList],
   );
 
-  // Initial + adaptive poll: faster while agents are running
-  useEffect(() => {
-    void refreshWeekUsage({ force: true });
-    const interval =
-      liveManagedCount > 0 ? WEEK_USAGE_ACTIVE_POLL_MS : WEEK_USAGE_IDLE_POLL_MS;
-    const id = window.setInterval(() => void refreshWeekUsage(), interval);
-    return () => window.clearInterval(id);
-  }, [refreshWeekUsage, liveManagedCount]);
-
-  // Real-time trigger: refresh billing after each prompt turn completes
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-    void listen("agent-prompt-complete", () => {
-      if (!cancelled) {
-        scheduleWeekUsageRefresh();
-        // Turn finished → refresh chart once (cheap cache on Rust side).
-        window.setTimeout(() => void refreshTokenSeries(), 1_500);
-        setGitRefreshKey((n) => n + 1);
-      }
-    }).then((fn) => {
-      if (cancelled) fn();
-      else unlisten = fn;
-    });
-    return () => {
-      cancelled = true;
-      unlisten?.();
-      if (weekUsageTimer.current != null) {
-        window.clearTimeout(weekUsageTimer.current);
-        weekUsageTimer.current = null;
-      }
-    };
-  }, [scheduleWeekUsageRefresh, refreshTokenSeries]);
+  const { tokenSeries, weekUsage, refreshWeekUsage } = useUsageMetrics(
+    liveManagedCount,
+    () => setGitRefreshKey((n) => n + 1),
+  );
 
   useEffect(() => {
     if (!selectedId) {
@@ -339,7 +239,6 @@ function App() {
       t = window.setTimeout(() => {
         t = null;
         refreshFromDisk();
-        void refreshTokenSeries();
       }, 300);
     };
     document.addEventListener("visibilitychange", onVis);
@@ -349,7 +248,7 @@ function App() {
       window.removeEventListener("focus", onVis);
       if (t != null) window.clearTimeout(t);
     };
-  }, [refreshFromDisk, refreshTokenSeries]);
+  }, [refreshFromDisk]);
 
   // Slow safety net only (not the main update path)
   useEffect(() => {
@@ -478,9 +377,11 @@ function App() {
   }
 
   async function handlePermissionModeChange(mode: PermissionMode) {
+    const sessionId = selectedId;
+    const previousMode = effectivePermissionMode;
     // Optimistic local map so the select updates immediately.
-    if (selectedId) {
-      setTaskPermissionModes((prev) => ({ ...prev, [selectedId]: mode }));
+    if (sessionId) {
+      setTaskPermissionModes((prev) => ({ ...prev, [sessionId]: mode }));
     }
 
     setControlBusy(true);
@@ -499,10 +400,17 @@ function App() {
             [info.sessionId!]: mode,
           }));
         }
-      } else if (selectedId) {
-        await setTaskPermissionMode(selectedId, mode);
+      } else if (sessionId) {
+        await setTaskPermissionMode(sessionId, mode);
       }
     } catch (e) {
+      // Keep the UI aligned with the backend when the optimistic write fails.
+      if (sessionId) {
+        setTaskPermissionModes((prev) => ({
+          ...prev,
+          [sessionId]: previousMode,
+        }));
+      }
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setControlBusy(false);

@@ -42,10 +42,7 @@ fn run_loop(app: AppHandle) {
     };
 
     if let Err(e) = watcher.watch(&sessions_dir, RecursiveMode::Recursive) {
-        eprintln!(
-            "[marsbuild] watch {} failed: {e}",
-            sessions_dir.display()
-        );
+        eprintln!("[marsbuild] watch {} failed: {e}", sessions_dir.display());
     }
     // Non-recursive on ~/.grok so active_sessions.json creates/writes are seen
     // without re-walking the whole sessions tree twice.

@@ -126,6 +126,12 @@ Rust tests:
 cd src-tauri && cargo test
 ```
 
+Frontend tests and production type/build check:
+
+```bash
+npm run check
+```
+
 **Env (optional):**
 
 | Variable | Meaning |
@@ -144,8 +150,10 @@ UI (React)
   └─ listen()  ←  agent-update | agent-status | agent-permission
                     | agent-shell | agent-prompt-complete | sessions-changed
         │
-        ├─► AgentManager (Rust) — N × ACP client, permission queue, permission modes
-        └─► Session index (Rust) — FS watch on ~/.grok/sessions, stats, hunks
+        ├─► AgentManager (Rust) — N × ACP lifecycle + request coordination
+        │     ├─ agent_types / permission_policy / agent_fs
+        │     └─ shell_stream / agent_runtime
+        └─► Session index (Rust) — FS watch, mtime cache, stats, hunks
 ```
 
 Grok-native by design: reads `~/.grok/sessions`, speaks ACP over `grok agent stdio`, keeps light prefs under `~/.marsbuild`.

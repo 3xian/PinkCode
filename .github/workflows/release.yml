@@ -97,4 +97,6 @@ jobs:
           # Publishes latest.json for tauri-plugin-updater endpoints.
           uploadUpdaterJson: true
           args: ${{ matrix.args }}
-          releaseAssetNamePattern: "[name]_[version]_[platform]_[arch]_[bundle][ext]"
+          # Drop [bundle] so we don't get dmg.dmg / msi.msi / nsis.exe.
+          # Result: MarsBuild_0.1.2_darwin_aarch64.dmg, …_windows_x64.msi, …_windows_x64.exe
+          releaseAssetNamePattern: "[name]_[version]_[platform]_[arch][ext]"

@@ -44,7 +44,7 @@ jobs:
           - name: Windows x64
             platform: windows-latest
             rustTarget: ""
-            args: "--bundles msi,nsis"
+            args: "--bundles nsis"
           - name: macOS Apple Silicon
             platform: macos-latest
             rustTarget: aarch64-apple-darwin

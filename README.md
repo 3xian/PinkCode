@@ -130,11 +130,11 @@ Release build:
 npm run tauri:build
 ```
 
-On Windows this produces NSIS/MSI installers under `src-tauri/target/release/bundle/`.
+On Windows this produces an NSIS installer under `src-tauri/target/release/bundle/`.
 
 ### GitHub Releases
 
-Pushing a version tag builds and publishes Windows x64 MSI/NSIS installers and
+Pushing a version tag builds and publishes a Windows x64 NSIS installer and
 macOS DMGs for Apple Silicon and Intel, plus signed updater artifacts and
 `latest.json` for in-app updates:
 

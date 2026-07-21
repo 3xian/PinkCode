@@ -135,6 +135,15 @@ impl AcpClient {
                 // Notifications + server→client requests
                 on_notify(msg);
             }
+
+            // EOF means this transport can no longer satisfy any in-flight RPC.
+            // Notify the manager before waking request waiters so their error path
+            // cannot briefly move an already-dead agent back to Ready.
+            on_notify(json!({
+                "method": "_marsbuild/transport_closed",
+                "params": { "reason": "ACP stdout closed" }
+            }));
+            fail_pending_requests(&pending_reader, "ACP transport closed");
         });
 
         Ok(Self {
@@ -289,6 +298,17 @@ impl AcpClient {
     }
 }
 
+fn fail_pending_requests(pending: &Mutex<HashMap<u64, Sender<Value>>>, message: &str) {
+    let waiters: Vec<(u64, Sender<Value>)> = pending.lock().drain().collect();
+    for (id, tx) in waiters {
+        let _ = tx.send(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32001, "message": message }
+        }));
+    }
+}
+
 impl Drop for AcpClient {
     fn drop(&mut self) {
         let _ = self.kill();
@@ -299,6 +319,24 @@ impl Drop for AcpClient {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn transport_close_wakes_all_pending_requests() {
+        let pending = Mutex::new(HashMap::new());
+        let (tx1, rx1) = mpsc::channel();
+        let (tx2, rx2) = mpsc::channel();
+        pending.lock().insert(10, tx1);
+        pending.lock().insert(11, tx2);
+
+        fail_pending_requests(&pending, "closed");
+
+        assert!(pending.lock().is_empty());
+        assert_eq!(rx1.recv().expect("first waiter")["error"]["code"], -32001);
+        assert_eq!(
+            rx2.recv().expect("second waiter")["error"]["message"],
+            "closed"
+        );
+    }
 
     #[test]
     fn handshake_session_new_and_kill() {

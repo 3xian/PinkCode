@@ -38,6 +38,9 @@ export function FileTree({ root, refreshKey = 0 }: Props) {
   const [ctx, setCtx] = useState<CtxMenu | null>(null);
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
+  const rootRef = useRef(root);
+  rootRef.current = root;
+  const loadSeqRef = useRef(0);
   /** Paths the user has expanded — preserved + re-fetched on silent refresh. */
   const expandedPathsRef = useRef<Set<string>>(new Set());
   /** Ignore the opening right-click when wiring global dismiss listeners. */
@@ -115,6 +118,7 @@ export function FileTree({ root, refreshKey = 0 }: Props) {
 
   const loadRoot = useCallback(
     async (cwd: string, silent = false) => {
+      const seq = ++loadSeqRef.current;
       if (!silent) setLoadingRoot(true);
       setError(null);
       try {
@@ -124,12 +128,16 @@ export function FileTree({ root, refreshKey = 0 }: Props) {
           nodesRef.current,
           /* refreshExpanded */ silent,
         );
+        if (seq !== loadSeqRef.current || rootRef.current !== cwd) return;
         setNodes(next);
       } catch (e) {
+        if (seq !== loadSeqRef.current || rootRef.current !== cwd) return;
         setNodes([]);
         setError(e instanceof Error ? e.message : String(e));
       } finally {
-        if (!silent) setLoadingRoot(false);
+        if (seq === loadSeqRef.current && rootRef.current === cwd) {
+          setLoadingRoot(false);
+        }
       }
     },
     [buildLevel],
@@ -137,6 +145,7 @@ export function FileTree({ root, refreshKey = 0 }: Props) {
 
   useEffect(() => {
     if (!root) {
+      loadSeqRef.current += 1;
       setNodes([]);
       setError(null);
       expandedPathsRef.current = new Set();
@@ -232,6 +241,7 @@ export function FileTree({ root, refreshKey = 0 }: Props) {
     );
     try {
       const children = await listProjectDir(root, path);
+      if (rootRef.current !== root) return;
       expandedPathsRef.current.add(path);
       setNodes((prev) =>
         updateNode(prev, path, (n) => ({
@@ -247,6 +257,7 @@ export function FileTree({ root, refreshKey = 0 }: Props) {
         })),
       );
     } catch (e) {
+      if (rootRef.current !== root) return;
       setError(e instanceof Error ? e.message : String(e));
       setNodes((prev) =>
         updateNode(prev, path, (n) => ({ ...n, loading: false })),

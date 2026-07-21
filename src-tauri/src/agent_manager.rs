@@ -243,6 +243,15 @@ impl AgentManager {
             let has_id = msg.get("id").is_some();
             let is_response_shape = msg.get("result").is_some() || msg.get("error").is_some();
 
+            if method == "_marsbuild/transport_closed" {
+                let reason = msg
+                    .pointer("/params/reason")
+                    .and_then(Value::as_str)
+                    .unwrap_or("ACP transport closed");
+                Self::handle_transport_closed(&inner, &handle_id, reason);
+                return;
+            }
+
             // Server → client request
             if has_id && !method.is_empty() && !is_response_shape {
                 Self::handle_server_request(&inner, &handle_id, &msg);
@@ -271,6 +280,55 @@ impl AgentManager {
                 Self::emit(&inner, "agent-notification", payload);
             }
         })
+    }
+
+    fn handle_transport_closed(inner: &Arc<Inner>, handle_id: &str, reason: &str) {
+        inner.shell_stream.clear_handle(handle_id);
+        let cancelled: Vec<PendingPermission> = {
+            let mut pending = inner.pending.lock();
+            let keys: Vec<String> = pending
+                .iter()
+                .filter(|(_, item)| item.handle_id == handle_id)
+                .map(|(key, _)| key.clone())
+                .collect();
+            keys.into_iter()
+                .filter_map(|key| pending.remove(&key))
+                .collect()
+        };
+
+        for item in cancelled {
+            if let Ok(value) = serde_json::to_value(&item) {
+                Self::emit(
+                    inner,
+                    "agent-permission-resolved",
+                    json!({
+                        "pending": value,
+                        "optionId": "transport-closed",
+                        "allowed": false,
+                    }),
+                );
+            }
+        }
+
+        let updated = {
+            let mut agents = inner.agents.lock();
+            agents.get_mut(handle_id).and_then(|agent| {
+                if matches!(
+                    agent.info.status,
+                    ManagedStatus::Stopped | ManagedStatus::Error
+                ) {
+                    return None;
+                }
+                agent.info.status = ManagedStatus::Error;
+                agent.info.pid = None;
+                agent.info.pending_permission_count = 0;
+                agent.info.last_error = Some(reason.to_string());
+                Some(agent.info.clone())
+            })
+        };
+        if let Some(info) = updated {
+            Self::emit_status(inner, &info);
+        }
     }
 
     fn maybe_emit_shell(
@@ -648,10 +706,10 @@ impl AgentManager {
 
         let allow = is_allow_option(&req.option_id, &pending.options);
 
-        match pending.kind {
+        let delivery = match pending.kind {
             PermissionKind::ToolPermission => {
                 if allow {
-                    let _ = client.respond_result(
+                    client.respond_result(
                         &pending.request_id,
                         json!({
                             "outcome": {
@@ -659,11 +717,11 @@ impl AgentManager {
                                 "optionId": req.option_id,
                             }
                         }),
-                    );
+                    )
                 } else {
                     // Prefer reject option id from request; fall back
                     let reject_id = pick_reject_option(&pending.options, &req.option_id);
-                    let _ = client.respond_result(
+                    client.respond_result(
                         &pending.request_id,
                         json!({
                             "outcome": {
@@ -671,7 +729,7 @@ impl AgentManager {
                                 "optionId": reject_id,
                             }
                         }),
-                    );
+                    )
                 }
             }
             PermissionKind::FsWrite => {
@@ -687,19 +745,15 @@ impl AgentManager {
                         .and_then(|c| c.as_str())
                         .unwrap_or("");
                     match write_text_file(path, content) {
-                        Ok(()) => {
-                            let _ = client.respond_result(&pending.request_id, Value::Null);
-                        }
-                        Err(e) => {
-                            let _ = client.respond_error(&pending.request_id, -32000, &e);
-                        }
+                        Ok(()) => client.respond_result(&pending.request_id, Value::Null),
+                        Err(e) => client.respond_error(&pending.request_id, -32000, &e),
                     }
                 } else {
-                    let _ = client.respond_error(
+                    client.respond_error(
                         &pending.request_id,
                         -32000,
                         "User denied file write in MarsBuild",
-                    );
+                    )
                 }
             }
             PermissionKind::FsRead => {
@@ -714,33 +768,63 @@ impl AgentManager {
                         pending.raw_params.get("line"),
                         pending.raw_params.get("limit"),
                     ) {
-                        Ok(content) => {
-                            let _ = client
-                                .respond_result(&pending.request_id, json!({ "content": content }));
-                        }
-                        Err(e) => {
-                            let _ = client.respond_error(&pending.request_id, -32000, &e);
-                        }
+                        Ok(content) => client
+                            .respond_result(&pending.request_id, json!({ "content": content })),
+                        Err(e) => client.respond_error(&pending.request_id, -32000, &e),
                     }
                 } else {
-                    let _ = client.respond_error(
+                    client.respond_error(
                         &pending.request_id,
                         -32000,
                         "User denied file read in MarsBuild",
-                    );
+                    )
                 }
             }
             PermissionKind::Other => {
                 if allow {
-                    let _ = client.respond_result(&pending.request_id, Value::Null);
+                    client.respond_result(&pending.request_id, Value::Null)
                 } else {
-                    let _ = client.respond_error(
+                    client.respond_error(
                         &pending.request_id,
                         -32000,
                         "User denied request in MarsBuild",
-                    );
+                    )
                 }
             }
+        };
+
+        if let Err(error) = delivery {
+            let agent_can_retry = self
+                .inner
+                .agents
+                .lock()
+                .get(&req.handle_id)
+                .map(|agent| {
+                    !matches!(
+                        agent.info.status,
+                        ManagedStatus::Stopped | ManagedStatus::Error
+                    )
+                })
+                .unwrap_or(false);
+            if agent_can_retry {
+                self.inner
+                    .pending
+                    .lock()
+                    .insert(req.request_key.clone(), pending);
+            } else if let Ok(value) = serde_json::to_value(&pending) {
+                // Transport shutdown may race this response after the request was
+                // temporarily removed from the map, so explicitly clear the UI.
+                Self::emit(
+                    &self.inner,
+                    "agent-permission-resolved",
+                    json!({
+                        "pending": value,
+                        "optionId": "transport-closed",
+                        "allowed": false,
+                    }),
+                );
+            }
+            return Err(format!("failed to deliver permission response: {error}"));
         }
 
         // Update counts / status (recompute under agents lock to avoid stale counts)
@@ -1030,7 +1114,9 @@ impl AgentManager {
                         );
                     }
                     Err(e) => {
-                        if a.info.pending_permission_count == 0 {
+                        if a.info.pending_permission_count == 0
+                            && a.info.status != ManagedStatus::Error
+                        {
                             a.info.status = ManagedStatus::Ready;
                         }
                         a.info.last_error = Some(e.to_string());

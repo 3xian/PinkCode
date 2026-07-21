@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { gitStatus } from "../api";
 import type { GitChange } from "../types";
 
@@ -12,25 +12,35 @@ export function GitChanges({ cwd, refreshKey = 0 }: Props) {
   const [changes, setChanges] = useState<GitChange[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const requestSeq = useRef(0);
+  const cwdRef = useRef(cwd);
+  cwdRef.current = cwd;
 
   const refresh = useCallback(async (dir: string) => {
+    const seq = ++requestSeq.current;
     setLoading(true);
     setError(null);
     try {
       const list = await gitStatus(dir);
+      if (seq !== requestSeq.current || cwdRef.current !== dir) return;
       setChanges(list);
     } catch (e) {
+      if (seq !== requestSeq.current || cwdRef.current !== dir) return;
       setChanges([]);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current && cwdRef.current === dir) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     if (!cwd) {
+      requestSeq.current += 1;
       setChanges([]);
       setError(null);
+      setLoading(false);
       return;
     }
     void refresh(cwd);

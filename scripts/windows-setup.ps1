@@ -11,8 +11,9 @@ function Bad($msg) { Write-Host "[NO]  $msg" -ForegroundColor Red }
 # Node
 try {
   $nv = node --version 2>$null
-  if ($nv) { Ok "Node $nv" } else { Bad "Node not found (need 20+)" }
-} catch { Bad "Node not found (need 20+)" }
+  $nodeMajor = if ($nv) { [int](($nv -replace '^v', '').Split('.')[0]) } else { 0 }
+  if ($nodeMajor -ge 24) { Ok "Node $nv" } else { Bad "Node $nv found (need 24+)" }
+} catch { Bad "Node not found (need 24+)" }
 
 # Rust
 try {

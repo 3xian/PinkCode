@@ -32,33 +32,54 @@ fn get_grok_home() -> String {
 }
 
 #[tauri::command]
-fn list_active_sessions() -> Result<Vec<ActiveSession>, String> {
-    sessions::read_active_sessions().map_err(|e| e.to_string())
+async fn list_active_sessions() -> Result<Vec<ActiveSession>, String> {
+    tauri::async_runtime::spawn_blocking(sessions::read_active_sessions)
+        .await
+        .map_err(|e| format!("session scan task failed: {e}"))?
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>, String> {
-    sessions::list_sessions(limit).map_err(|e| e.to_string())
+async fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>, String> {
+    tauri::async_runtime::spawn_blocking(move || sessions::list_sessions(limit))
+        .await
+        .map_err(|e| format!("session scan task failed: {e}"))?
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn get_session_detail(session_id: String) -> Result<SessionDetail, String> {
-    sessions::get_session_detail(&session_id).map_err(|e| e.to_string())
+async fn get_session_detail(session_id: String) -> Result<SessionDetail, String> {
+    tauri::async_runtime::spawn_blocking(move || sessions::get_session_detail(&session_id))
+        .await
+        .map_err(|e| format!("session detail task failed: {e}"))?
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn list_session_hunks(session_id: String, limit: Option<usize>) -> Result<Vec<HunkRecord>, String> {
-    sessions::list_hunks(&session_id, limit).map_err(|e| e.to_string())
+async fn list_session_hunks(
+    session_id: String,
+    limit: Option<usize>,
+) -> Result<Vec<HunkRecord>, String> {
+    tauri::async_runtime::spawn_blocking(move || sessions::list_hunks(&session_id, limit))
+        .await
+        .map_err(|e| format!("hunk scan task failed: {e}"))?
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn get_dashboard_stats() -> Result<DashboardStats, String> {
-    sessions::dashboard_stats().map_err(|e| e.to_string())
+async fn get_dashboard_stats() -> Result<DashboardStats, String> {
+    tauri::async_runtime::spawn_blocking(sessions::dashboard_stats)
+        .await
+        .map_err(|e| format!("dashboard scan task failed: {e}"))?
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn get_token_usage_series(days: Option<u32>) -> Result<TokenUsageSeries, String> {
-    sessions::token_usage_series(days.unwrap_or(7)).map_err(|e| e.to_string())
+async fn get_token_usage_series(days: Option<u32>) -> Result<TokenUsageSeries, String> {
+    tauri::async_runtime::spawn_blocking(move || sessions::token_usage_series(days.unwrap_or(7)))
+        .await
+        .map_err(|e| format!("token scan task failed: {e}"))?
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -201,18 +222,24 @@ fn get_last_spawn_permission_mode() -> PermissionMode {
 }
 
 #[tauri::command]
-fn list_project_dir(root: String, path: Option<String>) -> Result<Vec<DirEntry>, String> {
-    project_fs::list_dir(&root, path.as_deref())
+async fn list_project_dir(root: String, path: Option<String>) -> Result<Vec<DirEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || project_fs::list_dir(&root, path.as_deref()))
+        .await
+        .map_err(|e| format!("directory scan task failed: {e}"))?
 }
 
 #[tauri::command]
-fn open_project_path(root: String, path: String) -> Result<(), String> {
-    project_fs::open_path(&root, &path)
+async fn open_project_path(root: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || project_fs::open_path(&root, &path))
+        .await
+        .map_err(|e| format!("open path task failed: {e}"))?
 }
 
 #[tauri::command]
-fn git_status(cwd: String) -> Result<Vec<GitChange>, String> {
-    project_fs::git_status(&cwd)
+async fn git_status(cwd: String) -> Result<Vec<GitChange>, String> {
+    tauri::async_runtime::spawn_blocking(move || project_fs::git_status(&cwd))
+        .await
+        .map_err(|e| format!("git status task failed: {e}"))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -110,6 +110,36 @@ fn load_json_value(path: &Path) -> Result<Option<Value>> {
     Ok(Some(value))
 }
 
+/// Load the files needed for a session card without letting one corrupt session
+/// make the entire dashboard unavailable. Summary is required; signals are optional.
+fn load_session_metadata(dir: &Path) -> Option<(Value, Option<Value>)> {
+    let summary_path = dir.join("summary.json");
+    let summary = match load_json_value(&summary_path) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => {
+            eprintln!(
+                "[sessions] skipping invalid {}: {error}",
+                summary_path.display()
+            );
+            return None;
+        }
+    };
+
+    let signals_path = dir.join("signals.json");
+    let signals = match load_json_value(&signals_path) {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!(
+                "[sessions] ignoring invalid {}: {error}",
+                signals_path.display()
+            );
+            None
+        }
+    };
+    Some((summary, signals))
+}
+
 fn u64_field(v: &Value, keys: &[&str]) -> u64 {
     for key in keys {
         if let Some(n) = v.get(*key).and_then(|x| x.as_u64()) {
@@ -299,12 +329,9 @@ pub fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>> {
                 continue;
             }
             let id = entry.file_name().to_string_lossy().to_string();
-            let summary_path = entry.path().join("summary.json");
-            let summary = match load_json_value(&summary_path)? {
-                Some(v) => v,
-                None => continue,
+            let Some((summary, signals)) = load_session_metadata(&entry.path()) else {
+                continue;
             };
-            let signals = load_json_value(&entry.path().join("signals.json"))?;
             let card = build_card(&id, &cwd, &summary, signals.as_ref(), active_map.get(&id));
             session_dir_cache()
                 .lock()
@@ -602,35 +629,14 @@ fn summary_activity_unix(summary: &Value) -> Option<u64> {
     None
 }
 
-/// Best-effort ISO-8601 → unix seconds (handles trailing Z and fractional seconds).
+/// Best-effort ISO-8601 → unix seconds (handles Z, numeric offsets, and fractions).
 fn parse_iso_ish_to_unix(s: &str) -> Option<u64> {
     // Fast path: pure unix seconds / millis as string.
     if let Ok(n) = s.parse::<u64>() {
         return Some(if n > 10_000_000_000 { n / 1000 } else { n });
     }
     let s = s.trim();
-    let s = s.strip_suffix('Z').unwrap_or(s);
-    // Drop timezone offset +HH:MM / -HH:MM (use as UTC approx).
-    let s = if let Some(idx) = s.rfind('+') {
-        if idx > 10 {
-            &s[..idx]
-        } else {
-            s
-        }
-    } else if let Some(idx) = s.rfind('-') {
-        // Distinguish date separator from timezone: timezone appears after time 'T'
-        if let Some(tpos) = s.find('T') {
-            if idx > tpos {
-                &s[..idx]
-            } else {
-                s
-            }
-        } else {
-            s
-        }
-    } else {
-        s
-    };
+    let (s, offset_seconds) = split_iso_offset(s)?;
     let (date, time) = if let Some((d, t)) = s.split_once('T') {
         (d, t)
     } else {
@@ -645,7 +651,41 @@ fn parse_iso_ish_to_unix(s: &str) -> Option<u64> {
     let h: u32 = tp.next()?.parse().ok()?;
     let mi: u32 = tp.next()?.parse().ok()?;
     let sec: u32 = tp.next().unwrap_or("0").parse().ok()?;
-    Some(utc_ymd_hms_to_unix(y, mo, d, h, mi, sec))
+    let local_as_utc = utc_ymd_hms_to_unix(y, mo, d, h, mi, sec) as i64;
+    Some(local_as_utc.saturating_sub(offset_seconds).max(0) as u64)
+}
+
+fn split_iso_offset(s: &str) -> Option<(&str, i64)> {
+    if let Some(base) = s.strip_suffix('Z').or_else(|| s.strip_suffix('z')) {
+        return Some((base, 0));
+    }
+    let tpos = s.find('T')?;
+    let offset_index = s
+        .char_indices()
+        .rev()
+        .find(|(index, ch)| *index > tpos && (*ch == '+' || *ch == '-'))
+        .map(|(index, _)| index);
+    let Some(index) = offset_index else {
+        // Preserve the previous behavior for timestamps without an explicit zone.
+        return Some((s, 0));
+    };
+
+    let offset = &s[index..];
+    let sign = if offset.starts_with('-') { -1i64 } else { 1i64 };
+    let digits = &offset[1..];
+    let (hours, minutes) = if let Some((h, m)) = digits.split_once(':') {
+        (h, m)
+    } else if digits.len() == 4 {
+        (&digits[..2], &digits[2..])
+    } else {
+        return None;
+    };
+    let hours: i64 = hours.parse().ok()?;
+    let minutes: i64 = minutes.parse().ok()?;
+    if hours > 23 || minutes > 59 {
+        return None;
+    }
+    Some((&s[..index], sign * (hours * 3600 + minutes * 60)))
 }
 
 fn utc_ymd_hms_to_unix(y: i32, mo: u32, d: u32, h: u32, mi: u32, sec: u32) -> u64 {
@@ -773,6 +813,44 @@ mod tests {
             "totalTokens": 1050
         });
         assert_eq!(turn_consumed_tokens(&usage), 250);
+    }
+
+    #[test]
+    fn iso_offsets_are_converted_to_utc() {
+        assert_eq!(
+            parse_iso_ish_to_unix("2026-07-21T00:30:00+08:00"),
+            parse_iso_ish_to_unix("2026-07-20T16:30:00Z")
+        );
+        assert_eq!(
+            parse_iso_ish_to_unix("2026-07-20T23:30:00-01:00"),
+            parse_iso_ish_to_unix("2026-07-21T00:30:00Z")
+        );
+        assert_eq!(
+            parse_iso_ish_to_unix("2026-07-21T00:30:00+0800"),
+            parse_iso_ish_to_unix("2026-07-20T16:30:00Z")
+        );
+    }
+
+    #[test]
+    fn corrupt_session_metadata_is_isolated() {
+        let dir = std::env::temp_dir().join(format!(
+            "marsbuild-session-metadata-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).expect("fixture dir");
+        fs::write(dir.join("summary.json"), "{").expect("bad summary");
+        assert!(load_session_metadata(&dir).is_none());
+
+        fs::write(dir.join("summary.json"), r#"{"title":"valid"}"#).expect("summary");
+        fs::write(dir.join("signals.json"), "{").expect("bad signals");
+        let (summary, signals) = load_session_metadata(&dir).expect("valid summary remains usable");
+        assert_eq!(summary["title"], "valid");
+        assert!(signals.is_none());
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

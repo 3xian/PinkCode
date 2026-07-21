@@ -86,7 +86,7 @@ We stay a **control plane**: attach what Grok already is, make multi-task ops sa
 
 | | macOS | Windows 11 | Linux |
 |---|---|---|---|
-| Node | 20+ | 20+ | 20+ |
+| Node | 24+ | 24+ | 24+ |
 | Rust | stable | stable (`x86_64-pc-windows-msvc`) | stable |
 | Platform tools | Xcode CLT | **MSVC Build Tools** + [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) (usually preinstalled on Win11) | webkit2gtk / similar (see Tauri docs) |
 | Grok Build | `~/.grok` | `%USERPROFILE%\.grok` or `GROK_HOME` (binary: `grok.exe`) | `~/.grok` |

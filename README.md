@@ -31,18 +31,18 @@
 
 **Grok thinks. MarsBuild keeps you in command.**
 
-A desktop console for [Grok Build](https://x.ai) — multi-task attach, live ACP streams, workspace radar, and usage in one place. Not another agent. Not another chat window. The control tower for the agents you already run.
+A desktop console for [Grok Build](https://x.ai) — multi-task attach, ACP timelines, workspace radar, and usage in one place. Not another agent. Not another chat window. The control tower for the agents you already run.
 
 Built with **Tauri 2 · React · TypeScript · Rust**.
 
 ## Screenshot
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="MarsBuild desktop UI — task board, Live stream, workspace files and Git" width="100%" />
+  <img src="docs/screenshot.png" alt="MarsBuild desktop UI — task board, Timeline, workspace files and Git" width="100%" />
 </p>
 
 <p align="center">
-  <em>Task board · Live ACP stream · context metrics · workspace tree &amp; Git — one window for every Grok agent.</em>
+  <em>Task board · Timeline (ACP + disk) · context metrics · workspace tree &amp; Git — one window for every Grok agent.</em>
 </p>
 
 ---
@@ -68,19 +68,23 @@ You need to see **every Grok session at once** — without juggling a stack of t
 
 ### 1. One board for every task
 
-Spawn, attach, prompt, stop. A switch on each card takes over or detaches a live agent. Active, waiting on permission, idle, error — at a glance.
+Spawn, attach, prompt, stop. A switch on each card takes over or detaches a live agent. Attached, active on disk, or idle — at a glance.
 
-### 2. White box, not black box
+### 2. One Timeline, not two tabs
 
-Live stream of thought, agent text, tools, shell, plan, and session events — terminal-style, filterable, stick-to-bottom. Follow-up prompts and Grok slash commands (`/compact`, `/plan`, …) in the same surface. History and raw ACP when you need the record.
+Thought, agent text, tools (friendly titles, completed as ☑️), shell, plan, and session events — terminal-style, filterable, stick-to-bottom. Live ACP when attached; otherwise MarsBuild mirrors `updates.jsonl` from disk. Follow-up prompts and Grok slash commands (`/compact`, `/plan`, …) in the same surface. **Raw** tab for the wire record; **File changes** for agent hunks.
 
 ### 3. Changes on the ground
 
-Project file tree and Git status on the side; Diff tab for agent hunks. Right-click to copy paths or open in the system. Usage bar so you know how much fuel is left — control is seeing, not guessing.
+Project file tree and Git status on the side (silent refresh, no flicker). Diff tab for agent hunks. Right-click to copy paths or open in the system. Usage bar and day-token chart so you know how much fuel is left.
 
 ### 4. Brakes that match Grok
 
 Permission modes aligned with Grok Build (ask · accept edits · always approve · don’t ask), per-task persistence, and an in-app gate when the agent needs a decision. MarsBuild is an ACP host — it does not invent a second safety religion.
+
+### 5. In-app updates
+
+On startup, MarsBuild checks GitHub Releases for a newer signed build and can download + install without leaving the app. Window title shows the running version (e.g. `MarsBuild 0.1.3`).
 
 **What we deliberately are not**
 
@@ -139,13 +143,15 @@ macOS DMGs for Apple Silicon and Intel, plus signed updater artifacts and
 `latest.json` for in-app updates:
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.3
+git push origin v0.1.3
 ```
 
 The tag must match the version in `package.json`. Before creating a new release,
 keep the versions in `package.json`, `src-tauri/Cargo.toml`, and
 `src-tauri/tauri.conf.json` in sync.
+
+Asset names look like `MarsBuild_0.1.3_windows_x64.exe` / `…_darwin_aarch64.dmg`.
 
 #### In-app updates
 
@@ -212,7 +218,7 @@ Grok-native by design: reads `~/.grok/sessions`, speaks ACP over `grok agent std
 
 ## Status
 
-Early **0.1.1** — usable for daily Grok multi-task ops; APIs and UI still moving.
+**0.1.3** — usable for daily Grok multi-task ops; APIs and UI still moving.
 
 Product roadmap and backlog: **[docs/TODO.md](docs/TODO.md)**.
 
@@ -224,15 +230,18 @@ Product roadmap and backlog: **[docs/TODO.md](docs/TODO.md)**.
 | Scan `~/.grok/sessions` + `active_sessions.json` | ✅ |
 | Task board + attach / detach switch | ✅ |
 | Spawn / attach (`grok agent stdio`, `session/load`) | ✅ |
-| Live stream (thought / agent / tool / shell / plan / events) | ✅ |
+| Timeline (thought / agent / tool / shell / plan / events) | ✅ |
+| Friendly tool titles (no raw `call-…` ids) | ✅ |
 | Slash-command autocomplete in prompt | ✅ |
 | Follow-up prompt + stop | ✅ |
 | Permission gate + Grok-aligned permission modes | ✅ |
 | Token / tools / diff metrics + week usage bar | ✅ |
-| History + raw ACP stream | ✅ |
-| File tree + Git status (workspace panel) | ✅ |
+| Raw ACP stream | ✅ |
+| File tree + Git status (silent refresh) | ✅ |
 | File change radar (`hunk_records.jsonl`) | ✅ |
 | FS watch (debounced) | ✅ |
+| In-app update (GitHub `latest.json` + signed bundles) | ✅ |
+| Window title with app version | ✅ |
 
 </details>
 

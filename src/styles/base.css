@@ -17,7 +17,7 @@
   --danger: #ff6b7a;
   --danger-dim: rgba(255, 107, 122, 0.14);
   --warn: #f0b429;
-  /* Live / History kind accents (cards + filter chips) */
+  /* Timeline kind accents (cards + filter chips) */
   --kind-user: #c4a5ff;
   --kind-user-dim: rgba(196, 165, 255, 0.16);
   --kind-agent: #3dd68c;

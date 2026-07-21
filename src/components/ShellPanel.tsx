@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from "react";
-import type { LiveShellPayload } from "../types";
+import type { TimelineShellPayload } from "../types";
 
 /** Collapse when longer than this many lines (show tail by default). */
 const COLLAPSE_LINES = 40;
@@ -64,7 +64,7 @@ function collapsedDisplay(output: string): {
 export const ShellCard = memo(function ShellCard({
   shell,
 }: {
-  shell: LiveShellPayload;
+  shell: TimelineShellPayload;
 }) {
   const [expanded, setExpanded] = useState(false);
   const output = shell.output || "";

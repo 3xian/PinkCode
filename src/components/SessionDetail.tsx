@@ -9,8 +9,8 @@ import {
 } from "react";
 import type {
   AvailableCommand,
-  LiveFilterKind,
-  LiveStreamItem,
+  TimelineFilterKind,
+  TimelineItem,
   MainTab,
   ManagedAgentInfo,
   PendingPermission,
@@ -19,8 +19,6 @@ import type {
 } from "../types";
 import {
   contextPct,
-  describeUpdate,
-  extractUpdateTsMs,
   formatDuration,
   formatRelative,
   formatTokens,
@@ -39,7 +37,7 @@ interface Props {
   error: string | null;
   tab: MainTab;
   onTab: (t: MainTab) => void;
-  liveItems: LiveStreamItem[];
+  timelineItems: TimelineItem[];
   managed: ManagedAgentInfo | null;
   permissions: PendingPermission[];
   permBusyKey: string | null;
@@ -48,13 +46,13 @@ interface Props {
   onPermissionModeChange: (mode: PermissionMode) => void;
   onSendPrompt: (text: string) => void;
   onResolvePermission: (item: PendingPermission, optionId: string) => void;
-  /** Bump after attach/spawn to force Live stream to the bottom. */
-  pinLiveBottomSeq?: number;
+  /** Bump after attach/spawn to pin Timeline to the bottom. */
+  pinTimelineBottomSeq?: number;
   /** Agent-advertised slash commands for the prompt autocomplete. */
   availableCommands?: AvailableCommand[];
 }
 
-const LIVE_FILTER_LABELS: Record<string, string> = {
+const TIMELINE_FILTER_LABELS: Record<string, string> = {
   all: "All",
   user: "User",
   agent: "Agent",
@@ -66,7 +64,7 @@ const LIVE_FILTER_LABELS: Record<string, string> = {
   unknown: "Other",
 };
 
-const LIVE_FILTER_ORDER: LiveFilterKind[] = [
+const TIMELINE_FILTER_ORDER: TimelineFilterKind[] = [
   "all",
   "user",
   "agent",
@@ -84,7 +82,7 @@ export function SessionDetailView({
   error,
   tab,
   onTab,
-  liveItems,
+  timelineItems,
   managed,
   permissions,
   permBusyKey,
@@ -93,16 +91,15 @@ export function SessionDetailView({
   onPermissionModeChange,
   onSendPrompt,
   onResolvePermission,
-  pinLiveBottomSeq = 0,
+  pinTimelineBottomSeq = 0,
   availableCommands = [],
 }: Props) {
   const tabBodyRef = useRef<HTMLDivElement>(null);
 
-  // Live pins to bottom; History / Diff / Raw expect top. Shared .tab-body
-  // scroll container otherwise keeps Live's scrollTop and hides content.
-  // useLayoutEffect: reset before paint so History is not blank for a frame.
+  // Timeline pins to bottom; Diff / Raw expect top. Shared .tab-body
+  // scroll container otherwise keeps Timeline scrollTop and hides content.
   useLayoutEffect(() => {
-    if (tab === "live") return;
+    if (tab === "timeline") return;
     const el = tabBodyRef.current;
     if (!el) return;
     el.scrollTop = 0;
@@ -216,8 +213,7 @@ export function SessionDetailView({
       <div className="tabs">
         {(
           [
-            ["live", "Live"],
-            ["timeline", "History"],
+            ["timeline", "Timeline"],
             ["diff", "File changes"],
             ["raw", "Raw stream"],
           ] as const
@@ -228,8 +224,8 @@ export function SessionDetailView({
             onClick={() => onTab(id)}
           >
             {label}
-            {id === "live" && liveItems.length > 0 && (
-              <span className="tab-count">{liveItems.length}</span>
+            {id === "timeline" && timelineItems.length > 0 && (
+              <span className="tab-count">{timelineItems.length}</span>
             )}
             {id === "diff" && detail.hunks.length > 0 && (
               <span className="tab-count">{detail.hunks.length}</span>
@@ -239,17 +235,16 @@ export function SessionDetailView({
       </div>
 
       <div
-        className={`tab-body${tab === "live" ? " tab-body-live" : ""}`}
+        className={`tab-body${tab === "timeline" ? " tab-body-timeline" : ""}`}
         ref={tabBodyRef}
       >
-        {tab === "live" && (
-          <LiveTimeline
-            items={liveItems}
+        {tab === "timeline" && (
+          <TimelinePanel
+            items={timelineItems}
             managed={managed}
-            pinToBottomSeq={pinLiveBottomSeq}
+            pinBottomSeq={pinTimelineBottomSeq}
           />
         )}
-        {tab === "timeline" && <HistoryTimeline detail={detail} />}
         {tab === "diff" && <DiffPanel hunks={detail.hunks} />}
         {tab === "raw" && <RawStream detail={detail} />}
       </div>
@@ -296,20 +291,20 @@ function Metric({
   );
 }
 
-function LiveTimeline({
+function TimelinePanel({
   items,
   managed,
-  pinToBottomSeq = 0,
+  pinBottomSeq = 0,
 }: {
-  items: LiveStreamItem[];
+  items: TimelineItem[];
   managed: ManagedAgentInfo | null;
-  pinToBottomSeq?: number;
+  pinBottomSeq?: number;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const scrollParentRef = useRef<HTMLElement | null>(null);
-  const [filter, setFilter] = useState<LiveFilterKind>("all");
+  const [filter, setFilter] = useState<TimelineFilterKind>("all");
 
   const kindCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -321,13 +316,13 @@ function LiveTimeline({
   }, [items]);
 
   const filterChips = useMemo(() => {
-    const present = LIVE_FILTER_ORDER.filter(
+    const present = TIMELINE_FILTER_ORDER.filter(
       (k) => k === "all" || (kindCounts.get(k) ?? 0) > 0,
     );
     // Any unexpected kinds (not in order list)
     for (const k of kindCounts.keys()) {
-      if (!present.includes(k as LiveFilterKind)) {
-        present.push(k as LiveFilterKind);
+      if (!present.includes(k as TimelineFilterKind)) {
+        present.push(k as TimelineFilterKind);
       }
     }
     return present;
@@ -384,7 +379,7 @@ function LiveTimeline({
 
   // Attach / spawn: always jump to bottom (even if user had scrolled up earlier).
   useEffect(() => {
-    if (!pinToBottomSeq) return;
+    if (!pinBottomSeq) return;
     stickToBottom.current = true;
     // Wait for tab switch + first paint, then again after stream content may land.
     const t0 = window.requestAnimationFrame(() => scrollToEnd("smooth"));
@@ -395,37 +390,37 @@ function LiveTimeline({
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
-  }, [pinToBottomSeq]);
+  }, [pinBottomSeq]);
 
   if (items.length === 0) {
     return (
       <div className="empty-hint">
         {managed
           ? "Waiting for ACP stream… send a prompt or wait for the agent."
-          : "No stream yet. Work in Grok Build on this task (Live mirrors disk), or flip the switch to attach for real-time ACP."}
+          : "No stream yet. Work in Grok Build on this task (Timeline mirrors disk), or flip the switch to attach for real-time ACP."}
       </div>
     );
   }
 
   // Chronological (oldest → newest), like a terminal tail
   return (
-    <div className="live-timeline-wrap">
-      <div className="live-filters" role="toolbar" aria-label="Live content filter">
+    <div className="timeline-panel-wrap">
+      <div className="timeline-filters" role="toolbar" aria-label="Timeline content filter">
         {filterChips.map((k) => {
           const count = k === "all" ? items.length : (kindCounts.get(k) ?? 0);
-          const label = LIVE_FILTER_LABELS[k] ?? k;
+          const label = TIMELINE_FILTER_LABELS[k] ?? k;
           return (
             <button
               key={k}
               type="button"
-              className={`live-filter-chip filter-${k}${
+              className={`timeline-filter-chip filter-${k}${
                 filter === k ? " active" : ""
               }`}
               onClick={() => setFilter(k)}
               aria-pressed={filter === k}
             >
               {label}
-              <span className="live-filter-count">{count}</span>
+              <span className="timeline-filter-count">{count}</span>
             </button>
           );
         })}
@@ -433,11 +428,11 @@ function LiveTimeline({
 
       {filtered.length === 0 ? (
         <div className="empty-hint">
-          No <strong>{LIVE_FILTER_LABELS[filter] ?? filter}</strong> items in
+          No <strong>{TIMELINE_FILTER_LABELS[filter] ?? filter}</strong> items in
           this stream.
         </div>
       ) : (
-        <div className="timeline live-timeline" ref={rootRef}>
+        <div className="timeline stream-timeline" ref={rootRef}>
           {filtered.map((item, i) => (
             <LiveItemRow
               key={item.id}
@@ -449,7 +444,7 @@ function LiveTimeline({
               )}
             />
           ))}
-          <div ref={endRef} className="live-timeline-end" aria-hidden />
+          <div ref={endRef} className="timeline-panel-end" aria-hidden />
         </div>
       )}
     </div>
@@ -457,14 +452,14 @@ function LiveTimeline({
 }
 
 /**
- * One Live timeline row. Memoized so streaming updates to the tail card do not
+ * One Timeline row. Memoized so streaming updates to the tail card do not
  * re-parse Markdown / re-layout every prior item.
  */
 const LiveItemRow = memo(function LiveItemRow({
   item,
   stackClass,
 }: {
-  item: LiveStreamItem;
+  item: TimelineItem;
   stackClass: string;
 }) {
   const isMdKind =
@@ -495,50 +490,6 @@ const LiveItemRow = memo(function LiveItemRow({
     </TimelineRowChrome>
   );
 });
-
-function HistoryTimeline({ detail }: { detail: Detail }) {
-  const source =
-    detail.recentUpdates.length > 0
-      ? detail.recentUpdates
-      : detail.recentEvents;
-
-  const items = source
-    .map((u, i) => ({
-      ...describeUpdate(u),
-      key: i,
-      ts: extractUpdateTsMs(u),
-    }))
-    .filter((x) => x.kind !== "thought" || (x.detail && x.detail.length > 8));
-
-  const ordered = [...items].reverse();
-
-  if (ordered.length === 0) {
-    return <div className="empty-hint">No stream events recorded on disk yet.</div>;
-  }
-
-  return (
-    <div className="timeline">
-      {ordered.map((item, i) => {
-        const stackClass = timelineStackClass(
-          ordered[i - 1]?.kind,
-          item.kind,
-          ordered[i + 1]?.kind,
-        );
-        return (
-          <TimelineRowChrome
-            key={item.key}
-            kind={item.kind}
-            ts={item.ts}
-            stackClass={stackClass}
-          >
-            <div className="tl-title">{item.title}</div>
-            {item.detail && <div className="tl-detail">{item.detail}</div>}
-          </TimelineRowChrome>
-        );
-      })}
-    </div>
-  );
-}
 
 function RawStream({ detail }: { detail: Detail }) {
   const sample = detail.recentUpdates.slice(-5);

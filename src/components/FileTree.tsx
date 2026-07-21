@@ -7,6 +7,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { listProjectDir, openProjectPath } from "../api";
+import { useKeyedSilentRefresh } from "../hooks/useKeyedSilentRefresh";
 import type { DirEntry } from "../types";
 import { projectName, shortPath } from "../utils/format";
 
@@ -45,15 +46,6 @@ export function FileTree({ root, refreshKey = 0 }: Props) {
   const expandedPathsRef = useRef<Set<string>>(new Set());
   /** Ignore the opening right-click when wiring global dismiss listeners. */
   const ignoreDismissUntilRef = useRef(0);
-  /**
-   * Track which (root, refreshKey) silent loads already ran so we don't double
-   * load on first mount (root effect owns the initial fetch).
-   */
-  const lastSilentRef = useRef<{ root: string | null; key: number }>({
-    root: null,
-    key: -1,
-  });
-
   /**
    * Build a tree level. When `refreshExpanded` is true, every path in
    * `expandedPathsRef` is re-listed so agent-created files appear without a
@@ -143,40 +135,32 @@ export function FileTree({ root, refreshKey = 0 }: Props) {
     [buildLevel],
   );
 
-  useEffect(() => {
-    if (!root) {
-      loadSeqRef.current += 1;
-      setNodes([]);
-      setError(null);
-      expandedPathsRef.current = new Set();
-      lastSilentRef.current = { root: null, key: -1 };
-      setCtx(null);
-      return;
-    }
-    // New project path → drop expand state from the previous tree.
-    if (lastSilentRef.current.root !== root) {
-      expandedPathsRef.current = new Set();
-    }
-    // Root effect owns the initial (and root-change) load.
-    // Capture current refreshKey so the silent effect does not double-fetch.
-    lastSilentRef.current = { root, key: refreshKey };
-    void loadRoot(root, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshKey handled by silent effect
-  }, [root, loadRoot]);
+  const prevRootRef = useRef<string | null>(null);
 
-  // Silent refresh when FS / turn events bump refreshKey (same root).
-  useEffect(() => {
-    if (!root) return;
-    const last = lastSilentRef.current;
-    if (last.root !== root) {
-      // Root effect is about to / already did the load for this root.
-      lastSilentRef.current = { root, key: refreshKey };
-      return;
-    }
-    if (last.key === refreshKey) return;
-    lastSilentRef.current = { root, key: refreshKey };
-    void loadRoot(root, true);
-  }, [refreshKey, root, loadRoot]);
+  useKeyedSilentRefresh({
+    identity: root,
+    refreshKey,
+    onIdentityChange: (id) => {
+      loadSeqRef.current += 1;
+      setCtx(null);
+      if (!id) {
+        setNodes([]);
+        setError(null);
+        expandedPathsRef.current = new Set();
+        prevRootRef.current = null;
+        return;
+      }
+      // New project path → drop expand state from the previous tree.
+      if (prevRootRef.current !== id) {
+        expandedPathsRef.current = new Set();
+        prevRootRef.current = id;
+      }
+      void loadRoot(id, false);
+    },
+    onSilentRefresh: (id) => {
+      void loadRoot(id, true);
+    },
+  });
 
   // Dismiss menu: next click / Esc / scroll / blur (portal lives on body)
   useEffect(() => {

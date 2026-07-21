@@ -1,32 +1,38 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { gitStatus } from "../api";
+import { useKeyedSilentRefresh } from "../hooks/useKeyedSilentRefresh";
 import type { GitChange } from "../types";
 
 interface Props {
   cwd: string | null;
-  /** Bump to force a refresh (e.g. after FS events). */
+  /** Bump to force a refresh (e.g. after FS events). Debounce in parent. */
   refreshKey?: number;
 }
 
 export function GitChanges({ cwd, refreshKey = 0 }: Props) {
   const [changes, setChanges] = useState<GitChange[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** Only for first load of a cwd when the list is empty. */
   const [loading, setLoading] = useState(false);
   const requestSeq = useRef(0);
   const cwdRef = useRef(cwd);
   cwdRef.current = cwd;
+  const changesRef = useRef(changes);
+  changesRef.current = changes;
 
-  const refresh = useCallback(async (dir: string) => {
+  const refresh = useCallback(async (dir: string, silent: boolean) => {
     const seq = ++requestSeq.current;
-    setLoading(true);
-    setError(null);
+    if (!silent && changesRef.current.length === 0) {
+      setLoading(true);
+    }
     try {
       const list = await gitStatus(dir);
       if (seq !== requestSeq.current || cwdRef.current !== dir) return;
-      setChanges(list);
+      setChanges((prev) => (sameGitChanges(prev, list) ? prev : list));
+      setError(null);
     } catch (e) {
       if (seq !== requestSeq.current || cwdRef.current !== dir) return;
-      setChanges([]);
+      // Keep previous list on transient failures so the panel does not blink empty.
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       if (seq === requestSeq.current && cwdRef.current === dir) {
@@ -35,21 +41,28 @@ export function GitChanges({ cwd, refreshKey = 0 }: Props) {
     }
   }, []);
 
-  useEffect(() => {
-    if (!cwd) {
+  useKeyedSilentRefresh({
+    identity: cwd,
+    refreshKey,
+    onIdentityChange: (id) => {
       requestSeq.current += 1;
       setChanges([]);
       setError(null);
-      setLoading(false);
-      return;
-    }
-    void refresh(cwd);
-  }, [cwd, refreshKey, refresh]);
+      if (!id) {
+        setLoading(false);
+        return;
+      }
+      void refresh(id, false);
+    },
+    onSilentRefresh: (id) => {
+      void refresh(id, true);
+    },
+  });
 
-  // Light poll while a project is selected (git status is cheap).
+  // Slow safety poll (silent). Parent FS events cover the hot path.
   useEffect(() => {
     if (!cwd) return;
-    const id = window.setInterval(() => void refresh(cwd), 8_000);
+    const id = window.setInterval(() => void refresh(cwd, true), 12_000);
     return () => window.clearInterval(id);
   }, [cwd, refresh]);
 
@@ -85,7 +98,7 @@ export function GitChanges({ cwd, refreshKey = 0 }: Props) {
       ) : (
         <ul className="git-change-list">
           {changes.map((c) => (
-            <li key={`${c.status}:${c.path}`} className={`git-change kind-${c.kind}`}>
+            <li key={c.path} className={`git-change kind-${c.kind}`}>
               <span className={`git-badge kind-${c.kind}`} title={c.status}>
                 {statusLetter(c)}
               </span>
@@ -99,6 +112,21 @@ export function GitChanges({ cwd, refreshKey = 0 }: Props) {
       )}
     </div>
   );
+}
+
+function sameGitChanges(a: GitChange[], b: GitChange[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].path !== b[i].path ||
+      a[i].status !== b[i].status ||
+      a[i].kind !== b[i].kind
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function statusLetter(c: GitChange): string {

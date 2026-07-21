@@ -1,5 +1,5 @@
 import type {
-  LiveStreamItem,
+  TimelineItem,
   ManagedAgentInfo,
   ShellEntry,
 } from "../types";
@@ -36,9 +36,9 @@ export function capShellOutput(output: string): string {
 }
 
 export function settleStreamingItems(
-  map: Map<string, LiveStreamItem[]>,
+  map: Map<string, TimelineItem[]>,
   match?: { handleId?: string; key?: string },
-): Map<string, LiveStreamItem[]> {
+): Map<string, TimelineItem[]> {
   let changed = false;
   const next = new Map(map);
   for (const [key, list] of next) {
@@ -60,7 +60,7 @@ export function settleStreamingItems(
 
 /** Enforce the per-session memory bound and invalidate derived shell indexes. */
 export function trimLiveList(
-  list: LiveStreamItem[],
+  list: TimelineItem[],
   key: string,
   shellIndexByKey: Map<string, Map<string, number>>,
 ): void {
@@ -121,7 +121,7 @@ export function shellCardTitle(
 }
 
 export function reduceAgentUpdate(
-  previous: Map<string, LiveStreamItem[]>,
+  previous: Map<string, TimelineItem[]>,
   input: {
     handleId: string;
     sessionId?: string | null;
@@ -132,7 +132,7 @@ export function reduceAgentUpdate(
     streaming?: boolean;
   },
   shellIndexes: ShellIndexes,
-): Map<string, LiveStreamItem[]> {
+): Map<string, TimelineItem[]> {
   const { handleId, sessionId, description, now, nextId } = input;
   const key = sessionId || handleId;
   const textUpdate = isTextUpdate(description);
@@ -246,10 +246,10 @@ export function reduceAgentUpdate(
 export function hydrateLiveFromDiskUpdates(
   updates: unknown[],
   sessionId: string,
-): LiveStreamItem[] {
+): TimelineItem[] {
   if (!updates.length || !sessionId) return [];
 
-  let map = new Map<string, LiveStreamItem[]>();
+  let map = new Map<string, TimelineItem[]>();
   const shellIndexes: ShellIndexes = new Map();
   let seq = 0;
 
@@ -364,10 +364,10 @@ export function shellEntryFromDiskUpdate(
 }
 
 export function reduceShellUpdate(
-  previous: Map<string, LiveStreamItem[]>,
+  previous: Map<string, TimelineItem[]>,
   raw: ShellEntry,
   shellIndexes: ShellIndexes,
-): Map<string, LiveStreamItem[]> {
+): Map<string, TimelineItem[]> {
   const handleId = raw.handleId;
   const sessionId = raw.sessionId ?? null;
   const toolCallId = raw.toolCallId;
@@ -468,10 +468,10 @@ export function reduceShellUpdate(
  * Returns the previous map reference when nothing changed.
  */
 export function mergeDiskLiveIntoMap(
-  previous: Map<string, LiveStreamItem[]>,
+  previous: Map<string, TimelineItem[]>,
   sessionId: string,
-  diskItems: LiveStreamItem[],
-): Map<string, LiveStreamItem[]> {
+  diskItems: TimelineItem[],
+): Map<string, TimelineItem[]> {
   const existing = previous.get(sessionId) ?? [];
   const keep = existing.filter((item) => item.handleId !== DISK_HANDLE_ID);
   const nextList =
@@ -492,8 +492,8 @@ export function mergeDiskLiveIntoMap(
 }
 
 function listsShallowEqual(
-  left: LiveStreamItem[],
-  right: LiveStreamItem[],
+  left: TimelineItem[],
+  right: TimelineItem[],
 ): boolean {
   if (left.length !== right.length) return false;
   for (let i = 0; i < left.length; i++) {

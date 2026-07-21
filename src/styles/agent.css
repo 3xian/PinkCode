@@ -571,11 +571,11 @@
   min-width: 72px;
 }
 
-.live-timeline .tl-item {
+.stream-timeline .tl-item {
   animation: fade-in 0.15s ease-out;
 }
 
-.live-timeline-end {
+.timeline-panel-end {
   height: 1px;
   width: 100%;
   flex-shrink: 0;

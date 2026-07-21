@@ -10,7 +10,7 @@ import {
   settleStreamingItems,
   type ShellIndexes,
 } from "./liveTimeline";
-import type { LiveStreamItem } from "../types";
+import type { TimelineItem } from "../types";
 
 describe("live timeline reducer", () => {
   it("hydrates disk live items via shared reducers and coalesces chunks", () => {
@@ -119,14 +119,14 @@ describe("live timeline reducer", () => {
     );
     expect(items[0].toolStatus).toBe("completed");
     expect(items[0].title).toBe(
-      "Read `D:\\code\\MarsBuild\\src\\utils\\format.ts` · completed",
+      "Read `D:\\code\\MarsBuild\\src\\utils\\format.ts` ☑️",
     );
     expect(items[0].title).not.toMatch(/call-f8b05138/);
     expect(items[0].detail ?? "").not.toMatch(/^call-/);
   });
 
   it("merges disk hydrate without dropping local slash cards", () => {
-    const local: LiveStreamItem = {
+    const local: TimelineItem = {
       id: "local-1",
       handleId: LOCAL_HANDLE_ID,
       sessionId: "sess-1",
@@ -135,7 +135,7 @@ describe("live timeline reducer", () => {
       detail: "50%",
       ts: 9_999,
     };
-    const prev = new Map<string, LiveStreamItem[]>([["sess-1", [local]]]);
+    const prev = new Map<string, TimelineItem[]>([["sess-1", [local]]]);
     const disk = hydrateLiveFromDiskUpdates(
       [
         {

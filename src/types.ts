@@ -100,10 +100,11 @@ export interface WeekUsage {
   error?: string | null;
 }
 
-export type MainTab = "live" | "timeline" | "diff" | "raw";
+/** Center panel tabs. Timeline = ACP stream + disk hydrate. */
+export type MainTab = "timeline" | "diff" | "raw";
 
-/** Live stream filter chip (plus `"all"`). */
-export type LiveFilterKind =
+/** Timeline filter chip (plus `"all"`). */
+export type TimelineFilterKind =
   | "all"
   | "user"
   | "agent"
@@ -255,7 +256,7 @@ export interface AttachRequest {
 }
 
 /** Rich payload when `kind === "shell"` (from agent-shell events). */
-export interface LiveShellPayload {
+export interface TimelineShellPayload {
   toolCallId: string;
   command: string;
   description?: string;
@@ -264,7 +265,7 @@ export interface LiveShellPayload {
   exitCode?: number | null;
 }
 
-export interface LiveStreamItem {
+export interface TimelineItem {
   id: string;
   handleId: string;
   sessionId?: string | null;
@@ -284,7 +285,7 @@ export interface LiveStreamItem {
   /** Tool card ACP status (pending / completed / …). */
   toolStatus?: string;
   /** Present when kind is `"shell"`. */
-  shell?: LiveShellPayload;
+  shell?: TimelineShellPayload;
 }
 
 export interface AgentUpdateEvent {

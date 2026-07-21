@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AgentUpdateEvent,
   AvailableCommand,
-  LiveStreamItem,
+  TimelineItem,
   ManagedAgentInfo,
   PendingPermission,
   ShellEntry,
@@ -31,7 +31,7 @@ export function useAgentEvents(selectedSessionId: string | null) {
     () => new Map(),
   );
   const [liveBySession, setLiveBySession] = useState<
-    Map<string, LiveStreamItem[]>
+    Map<string, TimelineItem[]>
   >(() => new Map());
   /** Slash commands advertised by the agent, keyed by sessionId or handleId. */
   const [commandsByKey, setCommandsByKey] = useState<
@@ -154,7 +154,7 @@ export function useAgentEvents(selectedSessionId: string | null) {
     let cancelled = false;
     // Batch live stream into one React commit per animation frame — critical for
     // smooth window drag on Windows when agents stream many tiny chunks.
-    let liveBuf: Map<string, LiveStreamItem[]> | null = null;
+    let liveBuf: Map<string, TimelineItem[]> | null = null;
     let liveRaf = 0;
     /** Per-handle settle timers so concurrent agents do not block each other. */
     const settleTimers = new Map<string, number>();
@@ -171,7 +171,7 @@ export function useAgentEvents(selectedSessionId: string | null) {
       setLiveBySession(snapshot);
     };
     const scheduleLive = (
-      mutator: (prev: Map<string, LiveStreamItem[]>) => Map<string, LiveStreamItem[]>,
+      mutator: (prev: Map<string, TimelineItem[]>) => Map<string, TimelineItem[]>,
     ) => {
       const src = liveBuf ?? liveRef.current;
       const out = mutator(src);
@@ -334,16 +334,16 @@ export function useAgentEvents(selectedSessionId: string | null) {
     );
   }, [managedList, selectedSessionId]);
 
-  const liveItems = useMemo(() => {
-    if (!selectedSessionId) return [] as LiveStreamItem[];
+  const timelineItems = useMemo(() => {
+    if (!selectedSessionId) return [] as TimelineItem[];
     const bySession = liveBySession.get(selectedSessionId) ?? [];
     const handle = managedForSession?.handleId;
     const byHandle = handle ? (liveBySession.get(handle) ?? []) : [];
-    let merged: LiveStreamItem[];
+    let merged: TimelineItem[];
     if (!byHandle.length) {
       merged = bySession;
     } else {
-      const map = new Map<string, LiveStreamItem>();
+      const map = new Map<string, TimelineItem>();
       [...byHandle, ...bySession].forEach((i) => map.set(i.id, i));
       merged = Array.from(map.values()).sort((a, b) => a.ts - b.ts);
     }
@@ -393,7 +393,7 @@ export function useAgentEvents(selectedSessionId: string | null) {
     managed,
     managedList,
     managedForSession,
-    liveItems,
+    timelineItems,
     availableCommands,
     permissions: allPermissions,
     permissionsForSession,

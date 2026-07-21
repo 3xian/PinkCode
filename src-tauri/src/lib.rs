@@ -256,6 +256,16 @@ pub fn run() {
                 app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
             }
+            // Version only at runtime so conf/html stay product name (no version drift).
+            if let Some(window) = app.get_webview_window("main") {
+                let name = app
+                    .config()
+                    .product_name
+                    .clone()
+                    .unwrap_or_else(|| app.package_info().name.clone());
+                let version = app.package_info().version.to_string();
+                let _ = window.set_title(&format!("{name} {version}"));
+            }
             let manager = app.state::<AgentManager>();
             manager.set_app(app.handle().clone());
             // Disk-driven session index: FS events + debounce (no fixed 4s poll).

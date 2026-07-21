@@ -64,7 +64,7 @@ describe("friendly tool titles", () => {
     });
     expect(parts.baseTitle).toBe("Tool call");
     expect(parts.status).toBe("completed");
-    expect(parts.title).toBe("Tool call · completed");
+    expect(parts.title).toBe("Tool call ☑️");
     expect(parts.title).not.toContain("call-ba1b17dc");
   });
 
@@ -77,12 +77,12 @@ describe("friendly tool titles", () => {
       {
         baseTitle: "Tool call",
         status: "completed",
-        title: "Tool call · completed",
+        title: "Tool call ☑️",
       },
     );
     expect(merged.baseTitle).toBe("Read `…/imagine/SKILL.md`");
     expect(merged.status).toBe("completed");
-    expect(merged.title).toBe("Read `…/imagine/SKILL.md` · completed");
+    expect(merged.title).toBe("Read `…/imagine/SKILL.md` ☑️");
   });
 
   it("merge upgrades wire name to human title", () => {
@@ -113,7 +113,7 @@ describe("friendly tool titles", () => {
       },
     });
     expect(desc.kind).toBe("tool");
-    expect(desc.title).toBe("Tool call · completed");
+    expect(desc.title).toBe("Tool call ☑️");
     expect(desc.toolBase).toBe("Tool call");
     expect(desc.toolStatus).toBe("completed");
     expect(desc.toolCallId).toBe(
@@ -135,6 +135,6 @@ describe("friendly tool titles", () => {
     });
     expect(desc.toolBase).toBe("Read `src/utils/format.ts`");
     expect(desc.toolStatus).toBe("completed");
-    expect(desc.title).toBe("Read `src/utils/format.ts` · completed");
+    expect(desc.title).toBe("Read `src/utils/format.ts` ☑️");
   });
 });

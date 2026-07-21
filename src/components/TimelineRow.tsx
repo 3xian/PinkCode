@@ -136,7 +136,7 @@ function KindGutter({
 }
 
 /**
- * Shared chrome for Live + History timeline rows: clock, kind icon, body slot.
+ * Shared chrome for Timeline rows: clock, kind icon, body slot.
  */
 export function TimelineRowChrome({
   kind,

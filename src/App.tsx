@@ -40,7 +40,10 @@ import {
 } from "./utils/localSlash";
 import "./App.css";
 
-/** Min gap between disk-driven refreshes (extra frontend coalesce). */
+/**
+ * Sole debounce for disk-driven UI refresh (session list, detail, workspace
+ * FileTree / GitChanges via gitRefreshKey). Children do not re-debounce.
+ */
 const FS_REFRESH_MIN_MS = 400;
 /** Slow safety net if FSEvents miss a write (rare). */
 const SAFETY_POLL_MS = 90_000;
@@ -66,7 +69,7 @@ function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<MainTab>("live");
+  const [tab, setTab] = useState<MainTab>("timeline");
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -77,8 +80,8 @@ function App() {
     sessionId: string;
     title: string;
   } | null>(null);
-  /** Bumped after attach/spawn so Live timeline pins to bottom. */
-  const [pinLiveBottomSeq, setPinLiveBottomSeq] = useState(0);
+  /** Bumped after attach/spawn so Timeline pins to bottom. */
+  const [pinTimelineBottomSeq, setPinTimelineBottomSeq] = useState(0);
   const [controlBusy, setControlBusy] = useState(false);
   /** Session whose attach switch was flipped on; switch breathes until settle. */
   const [attachingSessionId, setAttachingSessionId] = useState<string | null>(
@@ -98,7 +101,7 @@ function App() {
   const {
     managedList,
     managedForSession,
-    liveItems,
+    timelineItems,
     availableCommands,
     permissionsForSession,
     lastError,
@@ -155,7 +158,7 @@ function App() {
     })();
   }, []);
 
-  /** Mode shown/edited for the selected task. Live agent wins when attached. */
+  /** Mode shown/edited for the selected task. Attached agent wins when present. */
   const effectivePermissionMode: PermissionMode = useMemo(() => {
     if (
       managedForSession &&
@@ -189,7 +192,7 @@ function App() {
         }
         setDetail(d);
         setDetailError(null);
-        // Mirror Grok Build disk stream into Live (keeps local slash cards).
+        // Mirror Grok Build disk stream into Timeline (keeps local slash cards).
         hydrateDiskLive(id, d.recentUpdates ?? []);
       } catch (e) {
         if (seq !== detailReqSeq.current || selectedIdRef.current !== id) {
@@ -323,8 +326,8 @@ function App() {
         }));
         focusOnceSessionRef.current = info.sessionId;
         setSelectedId(info.sessionId);
-        setTab("live");
-        setPinLiveBottomSeq((n) => n + 1);
+        setTab("timeline");
+        setPinTimelineBottomSeq((n) => n + 1);
       } else if (info.status === "error") {
         // Failed after process start — still surface in managed list until Stop.
         setError(info.lastError ?? "Agent failed to start");
@@ -375,8 +378,8 @@ function App() {
           [info.sessionId!]: info.permissionMode,
         }));
       }
-      setTab("live");
-      setPinLiveBottomSeq((n) => n + 1);
+      setTab("timeline");
+      setPinTimelineBottomSeq((n) => n + 1);
       // Hydrate any already-queued permissions (usually empty right after attach)
       const queued = await listPendingPermissions(info.handleId);
       hydratePermissions(queued);
@@ -416,7 +419,7 @@ function App() {
     setError(null);
     try {
       if (managedForSession && managedForSession.status !== "stopped") {
-        // Live agent path also persists to disk in Rust.
+        // Attached agent path also persists to disk in Rust.
         const info = await setPermissionMode(
           managedForSession.handleId,
           mode,
@@ -450,10 +453,10 @@ function App() {
     if (!trimmed) return;
     setControlBusy(true);
     setError(null);
-    setTab("live");
+    setTab("timeline");
     try {
       // Pager builtins (/usage, /context, …) are TUI-local in Grok Build —
-      // ACP session/prompt does not render them. Handle here and show in Live.
+      // ACP session/prompt does not render them. Handle here and show in Timeline.
       if (isLocalSlashCommand(trimmed)) {
         const result = await runLocalSlash(trimmed, {
           detail,
@@ -462,7 +465,7 @@ function App() {
         if (result) {
           const targetId = selectedId ?? sessions[0]?.id ?? null;
           if (!targetId) {
-            // No task to hang Live cards on — surface text as a banner.
+            // No task to hang Timeline cards on — surface text as a banner.
             const body = result.items
               .map((i) =>
                 [i.title, i.detail].filter(Boolean).join("\n"),
@@ -472,7 +475,7 @@ function App() {
           } else {
             if (!selectedId) setSelectedId(targetId);
             appendLocalLive(result.items, targetId);
-            setPinLiveBottomSeq((n) => n + 1);
+            setPinTimelineBottomSeq((n) => n + 1);
           }
           if (result.refreshWeekUsage) {
             void refreshWeekUsage({ force: true });
@@ -488,7 +491,7 @@ function App() {
         return;
       }
       await promptAgent(managedForSession.handleId, trimmed);
-      setPinLiveBottomSeq((n) => n + 1);
+      setPinTimelineBottomSeq((n) => n + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -629,7 +632,7 @@ function App() {
           error={detailError}
           tab={tab}
           onTab={setTab}
-          liveItems={liveItems}
+          timelineItems={timelineItems}
           managed={managedForSession}
           permissions={permissionsForSession}
           permBusyKey={permBusyKey}
@@ -640,7 +643,7 @@ function App() {
           onResolvePermission={(item, opt) =>
             void handleResolvePermission(item, opt)
           }
-          pinLiveBottomSeq={pinLiveBottomSeq}
+          pinTimelineBottomSeq={pinTimelineBottomSeq}
           availableCommands={availableCommands}
         />
 

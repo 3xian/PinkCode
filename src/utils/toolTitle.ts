@@ -19,14 +19,22 @@ export interface ToolCardParts {
   status?: string;
   /** Optional secondary line (path etc.). */
   detail?: string;
-  /** Display title: `base · status` or base alone. */
+  /** Display title: base + status suffix (completed → ☑️). */
   title: string;
+}
+
+/** Map ACP status to a short title suffix. */
+export function formatToolStatusSuffix(status?: string): string {
+  const st = status?.trim();
+  if (!st) return "";
+  if (st.toLowerCase() === "completed") return "☑️";
+  return `· ${st}`;
 }
 
 export function composeToolTitle(baseTitle: string, status?: string): string {
   const base = baseTitle.trim() || "Tool call";
-  const st = status?.trim();
-  return st ? `${base} · ${st}` : base;
+  const suffix = formatToolStatusSuffix(status);
+  return suffix ? `${base} ${suffix}` : base;
 }
 
 /**

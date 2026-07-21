@@ -52,7 +52,8 @@ export function SessionList({
         )
       : sessions.slice();
 
-    // Attached (ACP / managed) sessions first; keep relative order within groups.
+    // Confirmed attached (ACP) sessions first; keep relative order within groups.
+    // Caller excludes mid-attach `starting` so the list only jumps after success.
     list.sort((a, b) => {
       const am = managedSessionIds?.has(a.id) ? 0 : 1;
       const bm = managedSessionIds?.has(b.id) ? 0 : 1;

@@ -574,6 +574,11 @@ function App() {
 
   const defaultCwd = detail?.card.cwd ?? sessions[0]?.cwd ?? "";
 
+  /**
+   * Sessions confirmed attached (ready/running/awaitingPermission).
+   * Exclude `starting` so the task list only reorders after attach succeeds —
+   * mid-attach agent-status events must not jump the card to the top yet.
+   */
   const managedSessionIds = useMemo(
     () =>
       new Set(
@@ -582,7 +587,8 @@ function App() {
             (m) =>
               m.sessionId &&
               m.status !== "stopped" &&
-              m.status !== "error",
+              m.status !== "error" &&
+              m.status !== "starting",
           )
           .map((m) => m.sessionId as string),
       ),

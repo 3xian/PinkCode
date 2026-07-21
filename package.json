@@ -1,6 +1,6 @@
 {
   "name": "marsbuild",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Desktop mission control for Grok agents.",
   "type": "module",
   "keywords": [

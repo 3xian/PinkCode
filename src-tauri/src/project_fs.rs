@@ -73,9 +73,21 @@ pub fn list_dir(root: &str, path: Option<&str>) -> Result<Vec<DirEntry>, String>
 /// Returns an empty list when the directory is not a git work tree.
 pub fn git_status(cwd: &str) -> Result<Vec<GitChange>, String> {
     let root = resolve_root(cwd)?;
-    let output = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .args(["status", "--porcelain=v1", "-uall"])
-        .current_dir(&root)
+        .current_dir(&root);
+
+    // A GUI application has no parent console on Windows. Without this flag,
+    // every background Git refresh briefly creates a visible console window.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = command
         .output()
         .map_err(|e| format!("git status failed to start: {e}"))?;
 

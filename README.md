@@ -138,8 +138,8 @@ Pushing a version tag builds and publishes Windows x64 MSI/NSIS installers and
 macOS DMGs for Apple Silicon and Intel:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 The tag must match the version in `package.json`. Before creating a new release,
@@ -188,7 +188,7 @@ Grok-native by design: reads `~/.grok/sessions`, speaks ACP over `grok agent std
 
 ## Status
 
-Early **0.1.0** — usable for daily Grok multi-task ops; APIs and UI still moving.
+Early **0.1.1** — usable for daily Grok multi-task ops; APIs and UI still moving.
 
 Product roadmap and backlog: **[docs/TODO.md](docs/TODO.md)**.
 

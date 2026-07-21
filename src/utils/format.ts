@@ -1,9 +1,17 @@
 import type { AvailableCommand } from "../types";
 
-export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
+/** Compact token counts. Pass `decimals: false` for integer units (e.g. Context). */
+export function formatTokens(n: number, opts?: { decimals?: boolean }): string {
+  const decimals = opts?.decimals !== false;
+  if (n >= 1_000_000) {
+    const v = n / 1_000_000;
+    return `${decimals ? v.toFixed(1) : String(Math.round(v))}M`;
+  }
+  if (n >= 1_000) {
+    const v = n / 1_000;
+    return `${decimals ? v.toFixed(1) : String(Math.round(v))}k`;
+  }
+  return String(Math.round(n));
 }
 
 export function formatDuration(seconds: number): string {
@@ -29,6 +37,57 @@ export function formatRelative(iso?: string | null): string {
   if (hr < 48) return `${hr}h ago`;
   const day = Math.floor(hr / 24);
   return `${day}d ago`;
+}
+
+/** Local wall-clock for timeline cards (HH:mm:ss). Accepts ms or unix seconds. */
+export function formatClockTime(ts?: number | null): string {
+  if (ts == null || !Number.isFinite(ts) || ts <= 0) return "";
+  const ms = ts > 1e12 ? ts : ts * 1000;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/**
+ * Best-effort timestamp (ms) from an on-disk updates.jsonl / events record.
+ * Mirrors Rust `extract_update_unix_secs` fields when present.
+ */
+export function extractUpdateTsMs(update: unknown): number | null {
+  if (!update || typeof update !== "object") return null;
+  const u = update as Record<string, unknown>;
+  const params = (u.params ?? null) as Record<string, unknown> | null;
+  const inner =
+    (params?.update as Record<string, unknown> | undefined) ??
+    (u.update as Record<string, unknown> | undefined) ??
+    null;
+
+  const metaCandidates: unknown[] = [
+    (inner?._meta as Record<string, unknown> | undefined)?.agentTimestampMs,
+    ((inner?._meta as Record<string, unknown> | undefined)?.["x.ai"] as
+      | Record<string, unknown>
+      | undefined)?.agentTimestampMs,
+    (params?._meta as Record<string, unknown> | undefined)?.agentTimestampMs,
+    (u._meta as Record<string, unknown> | undefined)?.agentTimestampMs,
+  ];
+  for (const raw of metaCandidates) {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) {
+      return n > 1e12 ? n : n * 1000;
+    }
+  }
+
+  const ts = u.timestamp ?? params?.timestamp ?? inner?.timestamp;
+  if (typeof ts === "number" && Number.isFinite(ts) && ts > 0) {
+    return ts > 1e12 ? ts : ts * 1000;
+  }
+  if (typeof ts === "string" && ts.trim()) {
+    const parsed = Date.parse(ts);
+    if (!Number.isNaN(parsed)) return parsed;
+    const n = Number(ts);
+    if (Number.isFinite(n) && n > 0) return n > 1e12 ? n : n * 1000;
+  }
+  return null;
 }
 
 /** Split on `/` or `\` so Windows and Unix paths display correctly. */
@@ -382,56 +441,8 @@ function parseAvailableCommands(raw: unknown): AvailableCommand[] {
   return out;
 }
 
-/**
- * Built-in Grok Build slash commands (shell + common pager).
- * Merged with agent-advertised commands via {@link mergeSlashCommands}.
- */
-export const GROK_BUILTIN_SLASH_COMMANDS: AvailableCommand[] = [
-  { name: "new", description: "Start a new session" },
-  { name: "compact", description: "Compress conversation history", inputHint: "optional context to keep" },
-  { name: "context", description: "Show context window usage" },
-  { name: "session-info", description: "Show session details" },
-  { name: "fork", description: "Branch session into a new agent" },
-  { name: "rewind", description: "Rewind to an earlier turn" },
-  { name: "copy", description: "Copy recent response", inputHint: "N or file path" },
-  { name: "export", description: "Export conversation" },
-  { name: "model", description: "Switch model", inputHint: "model name" },
-  { name: "effort", description: "Set reasoning effort", inputHint: "low|medium|high|xhigh" },
-  { name: "always-approve", description: "Toggle always-approve permissions" },
-  { name: "auto", description: "Toggle auto permission mode" },
-  { name: "plan", description: "Enter plan mode", inputHint: "description" },
-  { name: "view-plan", description: "Open saved plan preview" },
-  { name: "memory", description: "Browse or toggle memory", inputHint: "on|off" },
-  { name: "remember", description: "Save a note to memory", inputHint: "note" },
-  { name: "skills", description: "Open skills modal" },
-  { name: "hooks", description: "Open hooks modal" },
-  { name: "plugins", description: "Open plugins modal" },
-  { name: "mcps", description: "Open MCP servers modal" },
-  { name: "settings", description: "Open settings" },
-  { name: "usage", description: "View credit usage / billing" },
-  { name: "login", description: "Log in or re-authenticate" },
-  { name: "logout", description: "Log out" },
-  { name: "imagine", description: "Generate an image", inputHint: "description" },
-  { name: "loop", description: "Run a prompt on an interval", inputHint: "interval prompt" },
-  { name: "goal", description: "Set or manage an autonomous goal", inputHint: "objective|status|…" },
-  { name: "btw", description: "Aside question without interrupting", inputHint: "question" },
-  { name: "docs", description: "Browse how-to guides", inputHint: "title or web" },
-  { name: "feedback", description: "Send feedback", inputHint: "message" },
-];
-
-/**
- * Merge agent-advertised slash commands with builtins.
- * Agent entries win on name collision; builtins not advertised remain available.
- */
-export function mergeSlashCommands(
-  agent: AvailableCommand[],
-  builtins: AvailableCommand[] = GROK_BUILTIN_SLASH_COMMANDS,
-): AvailableCommand[] {
-  if (!agent.length) return builtins;
-  const agentNames = new Set(agent.map((c) => c.name.toLowerCase()));
-  const out: AvailableCommand[] = [...agent];
-  for (const b of builtins) {
-    if (!agentNames.has(b.name.toLowerCase())) out.push(b);
-  }
-  return out;
-}
+// Slash registry lives in slashCommands.ts (single source for local vs agent).
+export {
+  GROK_BUILTIN_SLASH_COMMANDS,
+  mergeSlashCommands,
+} from "./slashCommands";

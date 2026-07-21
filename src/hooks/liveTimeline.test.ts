@@ -1,13 +1,98 @@
 import { describe, expect, it } from "vitest";
 import {
+  DISK_HANDLE_ID,
+  LOCAL_HANDLE_ID,
   capShellOutput,
+  hydrateLiveFromDiskUpdates,
+  mergeDiskLiveIntoMap,
   reduceAgentUpdate,
   reduceShellUpdate,
   settleStreamingItems,
   type ShellIndexes,
 } from "./liveTimeline";
+import type { LiveStreamItem } from "../types";
 
 describe("live timeline reducer", () => {
+  it("hydrates disk live items via shared reducers and coalesces chunks", () => {
+    const updates = [
+      {
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "Hello " },
+          },
+        },
+        timestamp: "2026-07-21T12:00:00Z",
+      },
+      {
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "world" },
+          },
+        },
+        timestamp: "2026-07-21T12:00:01Z",
+      },
+      {
+        method: "session/update",
+        params: {
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "t1",
+            title: "Read file",
+            status: "completed",
+          },
+        },
+        timestamp: "2026-07-21T12:00:02Z",
+      },
+    ];
+    const items = hydrateLiveFromDiskUpdates(updates, "sess-1");
+    expect(items).toHaveLength(2);
+    expect(items[0].kind).toBe("agent");
+    expect(items[0].detail).toBe("Hello world");
+    expect(items[0].handleId).toBe(DISK_HANDLE_ID);
+    expect(items[0].streaming).toBe(false);
+    expect(items[1].kind).toBe("tool");
+    expect(items[1].title).toContain("Read file");
+  });
+
+  it("merges disk hydrate without dropping local slash cards", () => {
+    const local: LiveStreamItem = {
+      id: "local-1",
+      handleId: LOCAL_HANDLE_ID,
+      sessionId: "sess-1",
+      kind: "event",
+      title: "Usage",
+      detail: "50%",
+      ts: 9_999,
+    };
+    const prev = new Map<string, LiveStreamItem[]>([["sess-1", [local]]]);
+    const disk = hydrateLiveFromDiskUpdates(
+      [
+        {
+          method: "session/update",
+          params: {
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text: "from disk" },
+            },
+          },
+          timestamp: "2026-07-21T12:00:00Z",
+        },
+      ],
+      "sess-1",
+    );
+    const next = mergeDiskLiveIntoMap(prev, "sess-1", disk);
+    const list = next.get("sess-1") ?? [];
+    expect(list.some((i) => i.handleId === LOCAL_HANDLE_ID)).toBe(true);
+    expect(list.some((i) => i.handleId === DISK_HANDLE_ID)).toBe(true);
+    expect(list.find((i) => i.handleId === LOCAL_HANDLE_ID)?.detail).toBe(
+      "50%",
+    );
+  });
+
   it("coalesces text chunks and settles them", () => {
     const indexes: ShellIndexes = new Map();
     let state = reduceAgentUpdate(

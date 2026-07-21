@@ -12,3 +12,13 @@ ReactDOM.createRoot(rootEl).render(
     <App />
   </React.StrictMode>,
 );
+
+// Drop the HTML boot splash once React has painted the shell.
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
+    const splash = document.getElementById("boot-splash");
+    if (!splash) return;
+    splash.classList.add("done");
+    window.setTimeout(() => splash.remove(), 220);
+  });
+});

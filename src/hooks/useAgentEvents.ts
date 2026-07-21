@@ -8,13 +8,19 @@ import type {
   PendingPermission,
   ShellEntry,
 } from "../types";
+import type { LocalSlashItem } from "../utils/localSlash";
 import { describeUpdate } from "../utils/format";
 import {
+  DISK_HANDLE_ID,
+  LOCAL_HANDLE_ID,
+  hydrateLiveFromDiskUpdates,
   isTextUpdate,
+  mergeDiskLiveIntoMap,
   reduceAgentUpdate,
   reduceShellUpdate,
   sameManagedAgent,
   settleStreamingItems,
+  shouldDropUpdate,
 } from "./liveTimeline";
 
 /** After last text chunk for a handle, mark its streaming cards settled. */
@@ -95,6 +101,53 @@ export function useAgentEvents(selectedSessionId: string | null) {
       return next;
     });
   }, []);
+
+  /**
+   * Append host-side Live cards (local slash commands like `/usage`).
+   * Prefer `sessionId`; falls back to selected session when omitted.
+   * Disk history is preserved (local cards use a different handleId).
+   */
+  const appendLocalLive = useCallback(
+    (items: LocalSlashItem[], sessionId?: string | null) => {
+      const key = sessionId || selectedSessionId;
+      if (!key || !items.length) return;
+      const now = Date.now();
+      setLiveBySession((prev) => {
+        const list = [...(prev.get(key) ?? [])];
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          list.push({
+            id: `local-${now}-${seq.current++}`,
+            handleId: LOCAL_HANDLE_ID,
+            sessionId: key,
+            kind: item.kind,
+            title: item.title,
+            detail: item.detail,
+            ts: now + i,
+          });
+        }
+        const next = new Map(prev);
+        next.set(key, list);
+        return next;
+      });
+    },
+    [selectedSessionId],
+  );
+
+  /**
+   * Fold on-disk updates.jsonl into Live via the shared reducers.
+   * Replaces only disk-sourced cards; keeps ACP + local slash cards.
+   */
+  const hydrateDiskLive = useCallback(
+    (sessionId: string, updates: unknown[]) => {
+      if (!sessionId) return;
+      const diskItems = hydrateLiveFromDiskUpdates(updates, sessionId);
+      setLiveBySession((prev) =>
+        mergeDiskLiveIntoMap(prev, sessionId, diskItems),
+      );
+    },
+    [],
+  );
 
   useEffect(() => {
     const unsubs: UnlistenFn[] = [];
@@ -178,15 +231,7 @@ export function useAgentEvents(selectedSessionId: string | null) {
           return;
         }
 
-        // Drop pure noise (empty / unlabeled events)
-        if (
-          desc.kind === "event" &&
-          (!desc.title || desc.title === "event")
-        ) {
-          return;
-        }
-        // Skip empty text chunks
-        if (desc.coalesce && !(desc.detail && desc.detail.length > 0)) {
+        if (shouldDropUpdate(desc)) {
           return;
         }
         // Shell cards come from agent-shell only (aligned with Rust maybe_emit_shell).
@@ -294,10 +339,22 @@ export function useAgentEvents(selectedSessionId: string | null) {
     const bySession = liveBySession.get(selectedSessionId) ?? [];
     const handle = managedForSession?.handleId;
     const byHandle = handle ? (liveBySession.get(handle) ?? []) : [];
-    if (!byHandle.length) return bySession;
-    const map = new Map<string, LiveStreamItem>();
-    [...byHandle, ...bySession].forEach((i) => map.set(i.id, i));
-    return Array.from(map.values()).sort((a, b) => a.ts - b.ts);
+    let merged: LiveStreamItem[];
+    if (!byHandle.length) {
+      merged = bySession;
+    } else {
+      const map = new Map<string, LiveStreamItem>();
+      [...byHandle, ...bySession].forEach((i) => map.set(i.id, i));
+      merged = Array.from(map.values()).sort((a, b) => a.ts - b.ts);
+    }
+    // Once a real ACP stream is present, hide disk mirror to avoid duplicates.
+    const hasAcp = merged.some(
+      (i) => i.handleId !== DISK_HANDLE_ID && i.handleId !== LOCAL_HANDLE_ID,
+    );
+    if (hasAcp) {
+      return merged.filter((i) => i.handleId !== DISK_HANDLE_ID);
+    }
+    return merged;
   }, [selectedSessionId, liveBySession, managedForSession]);
 
   /** Agent-advertised slash commands for the selected session (may be empty). */
@@ -346,5 +403,7 @@ export function useAgentEvents(selectedSessionId: string | null) {
     removeManaged,
     removePermission,
     hydratePermissions,
+    appendLocalLive,
+    hydrateDiskLive,
   };
 }

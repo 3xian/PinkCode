@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
 import type {
   AvailableCommand,
@@ -18,17 +19,19 @@ import type {
 } from "../types";
 import {
   contextPct,
+  describeUpdate,
+  extractUpdateTsMs,
   formatDuration,
   formatRelative,
   formatTokens,
   shortPath,
-  describeUpdate,
 } from "../utils/format";
 import { DiffPanel } from "./DiffPanel";
 import { Markdown } from "./Markdown";
 import { PermissionGate } from "./PermissionGate";
 import { PromptBar } from "./PromptBar";
 import { ShellCard } from "./ShellPanel";
+import { TimelineRowChrome, timelineStackClass } from "./TimelineRow";
 
 interface Props {
   detail: Detail | null;
@@ -128,7 +131,8 @@ export function SessionDetailView({
           <h2>Select a task</h2>
           <p>
             Pick a session from the left, or spawn a new agent with{" "}
-            <strong>New task</strong>. Live ACP streams appear in the Live tab.
+            <strong>New task</strong>. Live mirrors Grok Build on disk, or
+            attach for real-time ACP.
           </p>
         </div>
       </section>
@@ -192,8 +196,8 @@ export function SessionDetailView({
         <div className="metric-grid">
           <Metric
             label="Context"
-            value={`${formatTokens(card.contextTokensUsed)} / ${formatTokens(card.contextWindowTokens)}`}
-            bar={pct}
+            value={`${formatTokens(card.contextTokensUsed, { decimals: false })} / ${formatTokens(card.contextWindowTokens, { decimals: false })}`}
+            bar={Math.round(pct)}
           />
           <Metric label="Turns" value={String(card.turnCount)} />
           <Metric label="Tools" value={String(card.toolCallCount)} />
@@ -234,7 +238,10 @@ export function SessionDetailView({
         ))}
       </div>
 
-      <div className="tab-body" ref={tabBodyRef}>
+      <div
+        className={`tab-body${tab === "live" ? " tab-body-live" : ""}`}
+        ref={tabBodyRef}
+      >
         {tab === "live" && (
           <LiveTimeline
             items={liveItems}
@@ -266,17 +273,25 @@ function Metric({
 }: {
   label: string;
   value: string;
+  /** 0–100: fill the whole block as a progress background (no inner bar). */
   bar?: number;
 }) {
+  const fill =
+    typeof bar === "number"
+      ? Math.max(0, Math.min(100, Math.round(bar)))
+      : null;
   return (
-    <div className="metric">
+    <div
+      className={`metric${fill != null ? " metric-progress" : ""}`}
+      style={
+        fill != null
+          ? ({ "--metric-pct": `${fill}%` } as CSSProperties)
+          : undefined
+      }
+      title={fill != null ? `${fill}% context used` : undefined}
+    >
       <div className="metric-label">{label}</div>
       <div className="metric-value">{value}</div>
-      {typeof bar === "number" && (
-        <div className="meter">
-          <div className="meter-fill" style={{ width: `${bar}%` }} />
-        </div>
-      )}
     </div>
   );
 }
@@ -387,7 +402,7 @@ function LiveTimeline({
       <div className="empty-hint">
         {managed
           ? "Waiting for ACP stream… send a prompt or wait for the agent."
-          : "Flip the task card switch to attach, or spawn a new task, to stream thought / tool / shell / message chunks."}
+          : "No stream yet. Work in Grok Build on this task (Live mirrors disk), or flip the switch to attach for real-time ACP."}
       </div>
     );
   }
@@ -403,7 +418,9 @@ function LiveTimeline({
             <button
               key={k}
               type="button"
-              className={`live-filter-chip ${filter === k ? "active" : ""}`}
+              className={`live-filter-chip filter-${k}${
+                filter === k ? " active" : ""
+              }`}
               onClick={() => setFilter(k)}
               aria-pressed={filter === k}
             >
@@ -421,8 +438,16 @@ function LiveTimeline({
         </div>
       ) : (
         <div className="timeline live-timeline" ref={rootRef}>
-          {filtered.map((item) => (
-            <LiveItemRow key={item.id} item={item} />
+          {filtered.map((item, i) => (
+            <LiveItemRow
+              key={item.id}
+              item={item}
+              stackClass={timelineStackClass(
+                filtered[i - 1]?.kind,
+                item.kind,
+                filtered[i + 1]?.kind,
+              )}
+            />
           ))}
           <div ref={endRef} className="live-timeline-end" aria-hidden />
         </div>
@@ -437,8 +462,10 @@ function LiveTimeline({
  */
 const LiveItemRow = memo(function LiveItemRow({
   item,
+  stackClass,
 }: {
   item: LiveStreamItem;
+  stackClass: string;
 }) {
   const isMdKind =
     item.kind === "agent" || item.kind === "user" || item.kind === "thought";
@@ -446,32 +473,28 @@ const LiveItemRow = memo(function LiveItemRow({
   const useMarkdown = isMdKind && Boolean(item.detail) && !item.streaming;
 
   return (
-    <div className={`tl-item kind-${item.kind}`}>
-      <div className="tl-kind">{item.kind}</div>
-      <div className="tl-body">
-        {item.kind === "shell" && item.shell ? (
-          <ShellCard shell={item.shell} />
-        ) : (
-          <>
-            <div className="tl-title">{item.title}</div>
-            {item.detail && (
-              <div className="tl-detail">
-                {useMarkdown ? (
-                  <Markdown>{item.detail}</Markdown>
-                ) : isMdKind ? (
-                  <pre className="tl-stream-plain">{item.detail}</pre>
-                ) : (
-                  item.detail
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
+    <TimelineRowChrome kind={item.kind} ts={item.ts} stackClass={stackClass}>
+      {item.kind === "shell" && item.shell ? (
+        <ShellCard shell={item.shell} />
+      ) : (
+        <>
+          <div className="tl-title">{item.title}</div>
+          {item.detail && (
+            <div className="tl-detail">
+              {useMarkdown ? (
+                <Markdown>{item.detail}</Markdown>
+              ) : isMdKind ? (
+                <pre className="tl-stream-plain">{item.detail}</pre>
+              ) : (
+                item.detail
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </TimelineRowChrome>
   );
 });
-
 
 function HistoryTimeline({ detail }: { detail: Detail }) {
   const source =
@@ -480,7 +503,11 @@ function HistoryTimeline({ detail }: { detail: Detail }) {
       : detail.recentEvents;
 
   const items = source
-    .map((u, i) => ({ ...describeUpdate(u), key: i }))
+    .map((u, i) => ({
+      ...describeUpdate(u),
+      key: i,
+      ts: extractUpdateTsMs(u),
+    }))
     .filter((x) => x.kind !== "thought" || (x.detail && x.detail.length > 8));
 
   const ordered = [...items].reverse();
@@ -491,15 +518,24 @@ function HistoryTimeline({ detail }: { detail: Detail }) {
 
   return (
     <div className="timeline">
-      {ordered.map((item) => (
-        <div key={item.key} className={`tl-item kind-${item.kind}`}>
-          <div className="tl-kind">{item.kind}</div>
-          <div className="tl-body">
+      {ordered.map((item, i) => {
+        const stackClass = timelineStackClass(
+          ordered[i - 1]?.kind,
+          item.kind,
+          ordered[i + 1]?.kind,
+        );
+        return (
+          <TimelineRowChrome
+            key={item.key}
+            kind={item.kind}
+            ts={item.ts}
+            stackClass={stackClass}
+          >
             <div className="tl-title">{item.title}</div>
             {item.detail && <div className="tl-detail">{item.detail}</div>}
-          </div>
-        </div>
-      ))}
+          </TimelineRowChrome>
+        );
+      })}
     </div>
   );
 }

@@ -324,27 +324,28 @@
 .session-card {
   position: relative;
   text-align: left;
-  border: 1px solid transparent;
-  border-right: none;
+  border: none;
   background: transparent;
-  border-radius: 10px 0 0 10px;
+  border-radius: 0;
   padding: 10px 11px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition:
+    background 0.12s ease,
+    box-shadow 0.14s ease;
 }
 
 .session-card:hover {
   background: transparent;
-  border-color: var(--border-strong);
-  border-right-color: transparent;
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.38),
+    0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 /* Selected: soft wash only — no border (left edge reserved for run-state bar) */
 .session-card.selected {
-  border-color: transparent;
   background: linear-gradient(
     90deg,
     rgba(110, 168, 255, 0.16) 0%,
@@ -355,7 +356,6 @@
 }
 
 .session-card.selected:hover {
-  border-color: transparent;
   background: linear-gradient(
     90deg,
     rgba(110, 168, 255, 0.2) 0%,
@@ -363,6 +363,9 @@
     rgba(110, 168, 255, 0.03) 80%,
     transparent 100%
   );
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(110, 168, 255, 0.08);
 }
 
 /*

@@ -147,9 +147,10 @@ fn proxy_from_env() -> Option<ureq::Proxy> {
 }
 
 fn http_agent() -> ureq::Agent {
+    // Short timeouts so a slow/offline billing endpoint never freezes startup.
     let mut builder = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(15))
-        .timeout_read(Duration::from_secs(20));
+        .timeout_connect(Duration::from_secs(3))
+        .timeout_read(Duration::from_secs(5));
     if let Some(proxy) = proxy_from_env() {
         builder = builder.proxy(proxy);
     }

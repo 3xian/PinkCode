@@ -17,6 +17,24 @@
   --danger: #ff6b7a;
   --danger-dim: rgba(255, 107, 122, 0.14);
   --warn: #f0b429;
+  /* Live / History kind accents (cards + filter chips) */
+  --kind-user: #c4a5ff;
+  --kind-user-dim: rgba(196, 165, 255, 0.16);
+  --kind-agent: #3dd68c;
+  --kind-agent-dim: rgba(61, 214, 140, 0.14);
+  --kind-thought: #9aa3b8;
+  --kind-thought-dim: rgba(90, 98, 117, 0.28);
+  --kind-tool: #6ea8ff;
+  --kind-tool-dim: rgba(110, 168, 255, 0.16);
+  /* Shell = teal (terminal); Event = amber — keep distinct */
+  --kind-shell: #2dd4bf;
+  --kind-shell-dim: rgba(45, 212, 191, 0.14);
+  --kind-event: #f0b429;
+  --kind-event-dim: rgba(240, 180, 41, 0.16);
+  --kind-plan: #a78bfa;
+  --kind-plan-dim: rgba(167, 139, 250, 0.16);
+  --kind-unknown: #8b93a7;
+  --kind-unknown-dim: rgba(139, 147, 167, 0.12);
   --add: #3dd68c;
   --del: #ff6b7a;
   --radius: 0;

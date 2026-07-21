@@ -6,9 +6,61 @@
     <link rel="apple-touch-icon" href="/logo-512.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MarsBuild</title>
+    <!-- Paint immediately so cold start is not a pure black window -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b0d12;
+        color: #8b93a7;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      #root {
+        height: 100%;
+      }
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        background: #0b0d12;
+        z-index: 9999;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+      }
+      #boot-splash.done {
+        opacity: 0;
+      }
+      #boot-splash .mark {
+        width: 28px;
+        height: 28px;
+        border: 2px solid #2e3545;
+        border-top-color: #6ea8ff;
+        border-radius: 50%;
+        animation: boot-spin 0.7s linear infinite;
+      }
+      #boot-splash .label {
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      @keyframes boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
   </head>
 
   <body>
+    <div id="boot-splash" aria-hidden="true">
+      <div class="mark"></div>
+      <div class="label">MarsBuild</div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

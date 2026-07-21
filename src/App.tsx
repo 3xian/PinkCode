@@ -26,17 +26,39 @@ import { useAgentEvents } from "./hooks/useAgentEvents";
 import { useUsageMetrics } from "./hooks/useUsageMetrics";
 import type {
   MainTab,
+  ManagedAgentInfo,
   PendingPermission,
   PermissionMode,
   SessionCard,
   SessionDetail,
 } from "./types";
+import {
+  isLocalSlashCommand,
+  runLocalSlash,
+} from "./utils/localSlash";
 import "./App.css";
 
 /** Min gap between disk-driven refreshes (extra frontend coalesce). */
-const FS_REFRESH_MIN_MS = 750;
+const FS_REFRESH_MIN_MS = 400;
 /** Slow safety net if FSEvents miss a write (rare). */
 const SAFETY_POLL_MS = 90_000;
+
+/** Single selection policy for staged list → managed load. */
+function pickSelectedId(
+  list: SessionCard[],
+  prev: string | null,
+  managed?: ManagedAgentInfo[],
+): string | null {
+  if (prev && list.some((s) => s.id === prev)) return prev;
+  if (managed?.length) {
+    const managedSid = managed.find((m) => m.sessionId)?.sessionId;
+    if (managedSid && list.some((s) => s.id === managedSid)) {
+      return managedSid;
+    }
+  }
+  const live = list.find((s) => s.isActive);
+  return live?.id ?? list[0]?.id ?? null;
+}
 function App() {
   const [sessions, setSessions] = useState<SessionCard[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -83,6 +105,8 @@ function App() {
     removeManaged,
     removePermission,
     hydratePermissions,
+    appendLocalLive,
+    hydrateDiskLive,
   } = useAgentEvents(selectedId);
 
   const projectCwd = detail?.card.cwd ?? null;
@@ -93,24 +117,20 @@ function App() {
       return;
     }
     try {
-      const [list, managed] = await Promise.all([
-        listSessions(200),
-        listManagedAgents().catch(() => [] as Awaited<
-          ReturnType<typeof listManagedAgents>
-        >),
-      ]);
+      // List first so the shell paints; managed agents are cheap but optional.
+      const list = await listSessions(80);
       setSessions(list);
-      for (const m of managed) {
-        upsertManaged(m);
-      }
       setError(null);
-      setSelectedId((prev) => {
-        if (prev && list.some((s) => s.id === prev)) return prev;
-        const managedSid = managed.find((m) => m.sessionId)?.sessionId;
-        if (managedSid && list.some((s) => s.id === managedSid)) return managedSid;
-        const live = list.find((s) => s.isActive);
-        return live?.id ?? list[0]?.id ?? null;
-      });
+      setSelectedId((prev) => pickSelectedId(list, prev));
+      try {
+        const managed = await listManagedAgents();
+        for (const m of managed) {
+          upsertManaged(m);
+        }
+        setSelectedId((prev) => pickSelectedId(list, prev, managed));
+      } catch {
+        /* ignore */
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -154,28 +174,33 @@ function App() {
   /** Session id we intentionally focused (spawn); ignore auto-steal otherwise. */
   const focusOnceSessionRef = useRef<string | null>(null);
 
-  const refreshDetail = useCallback(async (id: string, silent = false) => {
-    const seq = ++detailReqSeq.current;
-    if (!silent) setDetailLoading(true);
-    try {
-      const d = await getSessionDetail(id);
-      // Ignore stale responses if the user switched sessions mid-flight.
-      if (seq !== detailReqSeq.current || selectedIdRef.current !== id) {
-        return;
+  const refreshDetail = useCallback(
+    async (id: string, silent = false) => {
+      const seq = ++detailReqSeq.current;
+      if (!silent) setDetailLoading(true);
+      try {
+        const d = await getSessionDetail(id);
+        // Ignore stale responses if the user switched sessions mid-flight.
+        if (seq !== detailReqSeq.current || selectedIdRef.current !== id) {
+          return;
+        }
+        setDetail(d);
+        setDetailError(null);
+        // Mirror Grok Build disk stream into Live (keeps local slash cards).
+        hydrateDiskLive(id, d.recentUpdates ?? []);
+      } catch (e) {
+        if (seq !== detailReqSeq.current || selectedIdRef.current !== id) {
+          return;
+        }
+        setDetailError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!silent && seq === detailReqSeq.current) {
+          setDetailLoading(false);
+        }
       }
-      setDetail(d);
-      setDetailError(null);
-    } catch (e) {
-      if (seq !== detailReqSeq.current || selectedIdRef.current !== id) {
-        return;
-      }
-      setDetailError(e instanceof Error ? e.message : String(e));
-    } finally {
-      if (!silent && seq === detailReqSeq.current) {
-        setDetailLoading(false);
-      }
-    }
-  }, []);
+    },
+    [hydrateDiskLive],
+  );
 
   const refreshFromDisk = useCallback(() => {
     const now = Date.now();
@@ -418,12 +443,49 @@ function App() {
   }
 
   async function handleSend(text: string) {
-    if (!managedForSession) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
     setControlBusy(true);
     setError(null);
+    setTab("live");
     try {
-      await promptAgent(managedForSession.handleId, text);
-      setTab("live");
+      // Pager builtins (/usage, /context, …) are TUI-local in Grok Build —
+      // ACP session/prompt does not render them. Handle here and show in Live.
+      if (isLocalSlashCommand(trimmed)) {
+        const result = await runLocalSlash(trimmed, {
+          detail,
+          weekUsage,
+        });
+        if (result) {
+          const targetId = selectedId ?? sessions[0]?.id ?? null;
+          if (!targetId) {
+            // No task to hang Live cards on — surface text as a banner.
+            const body = result.items
+              .map((i) =>
+                [i.title, i.detail].filter(Boolean).join("\n"),
+              )
+              .join("\n\n");
+            setError(body || "Command completed.");
+          } else {
+            if (!selectedId) setSelectedId(targetId);
+            appendLocalLive(result.items, targetId);
+            setPinLiveBottomSeq((n) => n + 1);
+          }
+          if (result.refreshWeekUsage) {
+            void refreshWeekUsage({ force: true });
+          }
+          return;
+        }
+      }
+
+      if (!managedForSession) {
+        setError(
+          "Attach a task (flip the switch) to send agent prompts. Local /usage /context /session-info /help work without attach.",
+        );
+        return;
+      }
+      await promptAgent(managedForSession.handleId, trimmed);
+      setPinLiveBottomSeq((n) => n + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

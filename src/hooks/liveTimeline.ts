@@ -3,13 +3,20 @@ import type {
   ManagedAgentInfo,
   ShellEntry,
 } from "../types";
-import { COALESCE_LIVE_KINDS, describeUpdate } from "../utils/format";
+import {
+  COALESCE_LIVE_KINDS,
+  describeUpdate,
+  extractUpdateTsMs,
+} from "../utils/format";
 
 export type UpdateDescription = ReturnType<typeof describeUpdate>;
 export type ShellIndexes = Map<string, Map<string, number>>;
 
 export const MAX_LIVE_ITEMS = 400;
 export const MAX_SHELL_OUTPUT_CHARS = 200_000;
+/** Synthetic handle for on-disk Grok Build updates (vs ACP / local slash). */
+export const DISK_HANDLE_ID = "disk";
+export const LOCAL_HANDLE_ID = "local";
 
 export function capShellOutput(output: string): string {
   if (output.length <= MAX_SHELL_OUTPUT_CHARS) return output;
@@ -85,6 +92,33 @@ export function isTextUpdate(description: UpdateDescription): boolean {
   );
 }
 
+/** Shared noise filter for ACP stream and disk hydrate. */
+export function shouldDropUpdate(description: UpdateDescription): boolean {
+  if (description.kind === "commands") return true;
+  if (
+    description.kind === "event" &&
+    (!description.title || description.title === "event")
+  ) {
+    return true;
+  }
+  if (description.coalesce && !(description.detail && description.detail.length > 0)) {
+    return true;
+  }
+  return false;
+}
+
+export function shellCardTitle(
+  command: string,
+  status: string,
+  exitCode?: number | null,
+): string {
+  const cmd = command || "shell";
+  if (status === "completed" || status === "failed") {
+    return `$ ${cmd}${exitCode != null ? ` · exit ${exitCode}` : ""}`;
+  }
+  return `$ ${cmd} · ${status || "in_progress"}`;
+}
+
 export function reduceAgentUpdate(
   previous: Map<string, LiveStreamItem[]>,
   input: {
@@ -93,6 +127,8 @@ export function reduceAgentUpdate(
     description: UpdateDescription;
     now: number;
     nextId: () => string;
+    /** Disk hydrate: never leave cards in streaming state. */
+    streaming?: boolean;
   },
   shellIndexes: ShellIndexes,
 ): Map<string, LiveStreamItem[]> {
@@ -101,6 +137,8 @@ export function reduceAgentUpdate(
   const textUpdate = isTextUpdate(description);
   const next = new Map(previous);
   const list = [...(next.get(key) ?? [])];
+  const markStreaming =
+    input.streaming !== undefined ? input.streaming : textUpdate ? true : undefined;
 
   if (!textUpdate) {
     for (let index = 0; index < list.length; index++) {
@@ -121,7 +159,10 @@ export function reduceAgentUpdate(
         ...last,
         detail: (last.detail ?? "") + (description.detail ?? ""),
         ts: now,
-        streaming: last.streaming === true,
+        streaming:
+          markStreaming === undefined
+            ? last.streaming === true
+            : markStreaming,
       };
       next.set(key, list);
       return next;
@@ -171,11 +212,135 @@ export function reduceAgentUpdate(
     title: description.title,
     detail: description.detail,
     ts: now,
-    streaming: textUpdate ? true : undefined,
+    streaming: markStreaming,
   });
   trimLiveList(list, key, shellIndexes);
   next.set(key, list);
   return next;
+}
+
+/**
+ * Build Live cards from on-disk `updates.jsonl` by driving the same reducers
+ * used for the live ACP stream (no parallel state machine).
+ */
+export function hydrateLiveFromDiskUpdates(
+  updates: unknown[],
+  sessionId: string,
+): LiveStreamItem[] {
+  if (!updates.length || !sessionId) return [];
+
+  let map = new Map<string, LiveStreamItem[]>();
+  const shellIndexes: ShellIndexes = new Map();
+  let seq = 0;
+
+  for (const raw of updates) {
+    const desc = describeUpdate(raw);
+    if (shouldDropUpdate(desc)) continue;
+
+    const ts = extractUpdateTsMs(raw) ?? seq;
+
+    if (desc.isShell) {
+      const entry = shellEntryFromDiskUpdate(
+        raw,
+        sessionId,
+        desc.toolCallId,
+        ts,
+      );
+      if (entry) {
+        map = reduceShellUpdate(map, entry, shellIndexes);
+        seq += 1;
+        continue;
+      }
+      // Incomplete shell payload → fall through as a normal tool card.
+    }
+
+    // Live ACP path skips shells here; disk has no agent-shell channel.
+    map = reduceAgentUpdate(
+      map,
+      {
+        handleId: DISK_HANDLE_ID,
+        sessionId,
+        description: desc,
+        now: ts,
+        nextId: () => `disk-${sessionId}-${seq++}`,
+        streaming: false,
+      },
+      shellIndexes,
+    );
+  }
+
+  return map.get(sessionId) ?? [];
+}
+
+/** Best-effort ShellEntry from a disk ACP update (for reduceShellUpdate). */
+export function shellEntryFromDiskUpdate(
+  raw: unknown,
+  sessionId: string,
+  toolCallId?: string,
+  ts?: number,
+): ShellEntry | null {
+  if (!raw || typeof raw !== "object") return null;
+  const u = raw as Record<string, unknown>;
+  const params = (u.params ?? u) as Record<string, unknown>;
+  const inner =
+    (params.update as Record<string, unknown> | undefined) ??
+    (u.update as Record<string, unknown> | undefined) ??
+    (u.sessionUpdate ? u : params);
+
+  const id =
+    toolCallId ||
+    (typeof inner.toolCallId === "string" ? inner.toolCallId : "") ||
+    "";
+  if (!id) return null;
+
+  const rawInput = inner.rawInput as Record<string, unknown> | undefined;
+  const rawOutput = inner.rawOutput as Record<string, unknown> | undefined;
+  const command =
+    (typeof rawInput?.command === "string" && rawInput.command) ||
+    (typeof rawInput?.cmd === "string" && rawInput.cmd) ||
+    "";
+  const description =
+    (typeof inner.title === "string" && inner.title) ||
+    (typeof rawInput?.description === "string" && rawInput.description) ||
+    undefined;
+  const status =
+    (typeof inner.status === "string" && inner.status) || "in_progress";
+
+  let output = "";
+  if (rawOutput) {
+    if (typeof rawOutput.output === "string") output = rawOutput.output;
+    else if (typeof rawOutput.stdout === "string") output = rawOutput.stdout;
+    else if (typeof rawOutput.text === "string") output = rawOutput.text;
+    else if (Array.isArray(rawOutput.content)) {
+      output = rawOutput.content
+        .map((c) =>
+          c && typeof c === "object" && "text" in c
+            ? String((c as { text?: string }).text ?? "")
+            : "",
+        )
+        .join("");
+    }
+  }
+
+  const exitCode =
+    typeof rawOutput?.exitCode === "number"
+      ? rawOutput.exitCode
+      : typeof rawOutput?.exit_code === "number"
+        ? rawOutput.exit_code
+        : null;
+
+  return {
+    id: `disk-shell-${id}`,
+    handleId: DISK_HANDLE_ID,
+    sessionId,
+    toolCallId: id,
+    command,
+    description,
+    status,
+    output: capShellOutput(output),
+    exitCode,
+    ts: ts ?? Date.now(),
+  };
 }
 
 export function reduceShellUpdate(
@@ -193,10 +358,7 @@ export function reduceShellUpdate(
   const exitCode = raw.exitCode;
   const now = raw.ts || Date.now();
   const key = sessionId || handleId;
-  const title =
-    status === "completed" || status === "failed"
-      ? `$ ${command || "shell"}${exitCode != null ? ` · exit ${exitCode}` : ""}`
-      : `$ ${command || "shell"} · ${status}`;
+  const title = shellCardTitle(command, status, exitCode);
   const next = new Map(previous);
   const list = [...(next.get(key) ?? [])];
   let index = -1;
@@ -279,4 +441,55 @@ export function reduceShellUpdate(
   }
   next.set(key, list);
   return next;
+}
+
+/**
+ * Replace disk-sourced cards for a session; keep ACP + local slash cards.
+ * Returns the previous map reference when nothing changed.
+ */
+export function mergeDiskLiveIntoMap(
+  previous: Map<string, LiveStreamItem[]>,
+  sessionId: string,
+  diskItems: LiveStreamItem[],
+): Map<string, LiveStreamItem[]> {
+  const existing = previous.get(sessionId) ?? [];
+  const keep = existing.filter((item) => item.handleId !== DISK_HANDLE_ID);
+  const nextList =
+    keep.length === 0
+      ? diskItems
+      : [...diskItems, ...keep].sort((a, b) => a.ts - b.ts);
+
+  if (listsShallowEqual(existing, nextList)) {
+    return previous;
+  }
+  const next = new Map(previous);
+  if (nextList.length === 0) {
+    next.delete(sessionId);
+  } else {
+    next.set(sessionId, nextList);
+  }
+  return next;
+}
+
+function listsShallowEqual(
+  left: LiveStreamItem[],
+  right: LiveStreamItem[],
+): boolean {
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i++) {
+    const a = left[i];
+    const b = right[i];
+    if (
+      a.id !== b.id ||
+      a.ts !== b.ts ||
+      a.kind !== b.kind ||
+      a.title !== b.title ||
+      a.detail !== b.detail ||
+      a.handleId !== b.handleId ||
+      a.streaming !== b.streaming
+    ) {
+      return false;
+    }
+  }
+  return true;
 }

@@ -12,6 +12,8 @@
 </p>
 
 <p align="center">
+  <a href="#screenshot">Screenshot</a>
+  ·
   <a href="#why">Why</a>
   ·
   <a href="#what-you-get">What you get</a>
@@ -32,6 +34,16 @@
 A desktop console for [Grok Build](https://x.ai) — multi-task attach, live ACP streams, workspace radar, and usage in one place. Not another agent. Not another chat window. The control tower for the agents you already run.
 
 Built with **Tauri 2 · React · TypeScript · Rust**.
+
+## Screenshot
+
+<p align="center">
+  <img src="docs/screenshot.png" alt="MarsBuild desktop UI — task board, Live stream, workspace files and Git" width="100%" />
+</p>
+
+<p align="center">
+  <em>Task board · Live ACP stream · context metrics · workspace tree &amp; Git — one window for every Grok agent.</em>
+</p>
 
 ---
 

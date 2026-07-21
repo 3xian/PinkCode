@@ -68,6 +68,20 @@
   border-radius: 0;
   padding: 8px 10px;
   background: var(--bg-elevated);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Whole-block progress: filled portion of background = usage */
+.metric.metric-progress {
+  --metric-pct: 0%;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 32%, var(--bg-elevated)) 0%,
+    color-mix(in srgb, var(--accent) 32%, var(--bg-elevated)) var(--metric-pct),
+    var(--bg-elevated) var(--metric-pct),
+    var(--bg-elevated) 100%
+  );
 }
 
 .metric-label {
@@ -75,6 +89,8 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
+  position: relative;
+  z-index: 1;
 }
 
 .metric-value {
@@ -82,20 +98,8 @@
   font-variant-numeric: tabular-nums;
   margin-top: 2px;
   font-size: 13px;
-}
-
-.meter {
-  margin-top: 6px;
-  height: 4px;
-  border-radius: 999px;
-  background: #1e2430;
-  overflow: hidden;
-}
-
-.meter-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent), #9b7bff);
-  border-radius: inherit;
+  position: relative;
+  z-index: 1;
 }
 
 .tabs {
@@ -138,6 +142,11 @@
   padding: 12px 18px 18px;
 }
 
+/* Live: filters sit flush under the tab row, same surface as the panel top */
+.tab-body.tab-body-live {
+  padding-top: 0;
+}
+
 /* Live stream type filters (replaces standalone Shell tab) */
 .live-timeline-wrap {
   display: flex;
@@ -153,51 +162,102 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  padding: 2px 0 8px;
-  background: linear-gradient(
-    180deg,
-    var(--bg-panel, var(--bg)) 70%,
-    transparent
-  );
+  margin: 0 -18px;
+  padding: 8px 18px 10px;
+  background: var(--bg-panel, var(--bg));
 }
 
 .live-filter-chip {
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
-  background: transparent;
-  color: var(--text-muted);
+  --chip-fg: var(--text-muted);
+  --chip-bg: transparent;
+  --chip-bg-active: rgba(255, 255, 255, 0.12);
+  --chip-fg-active: var(--text);
+  border: none;
+  background: var(--chip-bg);
+  color: var(--chip-fg);
   font-size: 11px;
-  padding: 2px 8px;
+  padding: 4px 10px;
   border-radius: 999px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   line-height: 1.2;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .live-filter-chip:hover {
-  color: var(--text);
-  border-color: rgba(255, 255, 255, 0.16);
+  background: color-mix(in srgb, var(--chip-fg) 14%, transparent);
+  color: var(--chip-fg);
 }
 
 .live-filter-chip.active {
-  color: var(--text);
-  background: var(--accent-dim, rgba(120, 160, 255, 0.16));
-  border-color: var(--accent);
-  font-weight: 600;
+  color: var(--chip-fg-active);
+  background: var(--chip-bg-active);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chip-fg-active) 45%, transparent);
 }
 
 .live-filter-count {
-  font-family: var(--mono);
-  font-size: 10px;
+  font-family: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
   opacity: 0.75;
   min-width: 1ch;
 }
 
 .live-filter-chip.active .live-filter-count {
   opacity: 1;
-  color: var(--accent);
+  color: inherit;
+  font-weight: 700;
+}
+
+/* Kind-colored filter chips (match timeline cards); no border */
+.live-filter-chip.filter-user {
+  --chip-fg: var(--kind-user);
+  --chip-bg-active: color-mix(in srgb, var(--kind-user) 38%, transparent);
+  --chip-fg-active: #f3ebff;
+}
+.live-filter-chip.filter-agent {
+  --chip-fg: var(--kind-agent);
+  --chip-bg-active: color-mix(in srgb, var(--kind-agent) 36%, transparent);
+  --chip-fg-active: #e8fff3;
+}
+.live-filter-chip.filter-thought {
+  --chip-fg: var(--kind-thought);
+  --chip-bg-active: color-mix(in srgb, var(--kind-thought) 34%, transparent);
+  --chip-fg-active: #e8ebf2;
+}
+.live-filter-chip.filter-tool {
+  --chip-fg: var(--kind-tool);
+  --chip-bg-active: color-mix(in srgb, var(--kind-tool) 38%, transparent);
+  --chip-fg-active: #eaf3ff;
+}
+.live-filter-chip.filter-shell {
+  --chip-fg: var(--kind-shell);
+  --chip-bg-active: color-mix(in srgb, var(--kind-shell) 36%, transparent);
+  --chip-fg-active: #e6fffb;
+}
+.live-filter-chip.filter-event {
+  --chip-fg: var(--kind-event);
+  --chip-bg-active: color-mix(in srgb, var(--kind-event) 38%, transparent);
+  --chip-fg-active: #fff6db;
+}
+.live-filter-chip.filter-plan {
+  --chip-fg: var(--kind-plan);
+  --chip-bg-active: color-mix(in srgb, var(--kind-plan) 38%, transparent);
+  --chip-fg-active: #f3edff;
+}
+.live-filter-chip.filter-unknown {
+  --chip-fg: var(--kind-unknown);
+  --chip-bg-active: color-mix(in srgb, var(--kind-unknown) 32%, transparent);
+  --chip-fg-active: #eef0f5;
+}
+.live-filter-chip.filter-all {
+  --chip-fg: var(--text-muted);
+  --chip-bg-active: rgba(255, 255, 255, 0.16);
+  --chip-fg-active: var(--text);
 }
 
 .tl-item.kind-shell .tl-body {
@@ -232,33 +292,151 @@
   color: var(--danger);
 }
 
-/* Timeline */
+/* Timeline — same-kind runs form one rounded group with a single outer shadow */
 .timeline {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
+  isolation: isolate;
 }
 
 .tl-item {
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: 22px 1fr;
   gap: 10px;
-  padding: 8px 10px;
+  padding: 9px 14px 9px 12px;
   border: none;
   border-radius: 0;
   background: var(--bg-elevated);
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  /* Side edges of the group (1px hairline via box-shadow) */
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.05),
+    inset -1px 0 0 rgba(255, 255, 255, 0.05);
+}
+
+/* —— Group start (first of a kind run, or single card) —— */
+.tl-item:not(.tl-stack-continue) {
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+  padding-top: 11px;
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.05),
+    inset -1px 0 0 rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* —— Group end (last of a kind run, or single card) —— */
+.tl-item:not(.tl-stack-has-next) {
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+  padding-bottom: 11px;
+  margin-bottom: 12px;
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.05),
+    inset -1px 0 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    0 6px 18px rgba(0, 0, 0, 0.34),
+    0 1px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* Single card: full radius + full chrome (start + end rules both match) */
+.tl-item:not(.tl-stack-continue):not(.tl-stack-has-next) {
+  border-radius: 12px;
+  padding-top: 11px;
+  padding-bottom: 11px;
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* —— Middle / continue rows: soft seam, tighter padding —— */
+.tl-item.tl-stack-continue {
+  padding-top: 7px;
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.05),
+    inset -1px 0 0 rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.tl-item.tl-stack-has-next {
+  padding-bottom: 7px;
+}
+
+/* Group start that continues: top chrome without drop shadow (shadow lives on end) */
+.tl-item:not(.tl-stack-continue).tl-stack-has-next {
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.05),
+    inset -1px 0 0 rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Continue + end: seam + outer bottom shadow */
+.tl-item.tl-stack-continue:not(.tl-stack-has-next) {
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.05),
+    inset -1px 0 0 rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    0 6px 18px rgba(0, 0, 0, 0.34),
+    0 1px 0 rgba(0, 0, 0, 0.2);
 }
 
 .tl-kind {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
   padding-top: 2px;
+  color: var(--text-muted);
+  opacity: 0.95;
+  line-height: 0;
+  min-height: 16px;
+}
+
+.tl-kind svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* Keep column width when icon is omitted (continue rows) */
+.tl-kind-spacer {
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
+.tl-body {
+  min-width: 0;
+  /* room for absolute clock in the card corner */
+  padding-right: 58px;
+}
+
+.tl-time {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  opacity: 0.72;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.tl-item.tl-stack-continue .tl-time {
+  top: 6px;
 }
 
 .tl-title {
   font-weight: 600;
+  padding-right: 4px;
 }
 
 .tl-detail {
@@ -395,31 +573,105 @@
   font-weight: 600;
 }
 
-.kind-tool {
-  box-shadow: inset 3px 0 0 var(--accent);
+/* Kind tint: full card background (uses --kind-* tokens shared with filters) */
+.tl-item.kind-tool {
+  background: linear-gradient(
+    135deg,
+    var(--kind-tool-dim),
+    rgba(18, 21, 28, 0.92)
+  );
+  color: var(--text);
 }
 
-.kind-user {
-  box-shadow: inset 3px 0 0 #c4a5ff;
+.tl-item.kind-tool .tl-kind {
+  color: var(--kind-tool);
 }
 
-.kind-agent {
-  box-shadow: inset 3px 0 0 var(--live);
+.tl-item.kind-user {
+  background: linear-gradient(
+    135deg,
+    var(--kind-user-dim),
+    rgba(18, 21, 28, 0.92)
+  );
 }
 
-.kind-thought {
-  box-shadow: inset 3px 0 0 #5a6275;
-  opacity: 0.85;
+.tl-item.kind-user .tl-kind {
+  color: var(--kind-user);
 }
 
-.kind-event {
-  box-shadow: inset 3px 0 0 var(--warn);
+.tl-item.kind-agent {
+  background: linear-gradient(
+    135deg,
+    var(--kind-agent-dim),
+    rgba(18, 21, 28, 0.92)
+  );
 }
 
-.kind-plan {
-  box-shadow: inset 3px 0 0 #a78bfa;
+.tl-item.kind-agent .tl-kind {
+  color: var(--kind-agent);
 }
 
+.tl-item.kind-thought {
+  background: linear-gradient(
+    135deg,
+    var(--kind-thought-dim),
+    rgba(18, 21, 28, 0.9)
+  );
+  opacity: 0.92;
+}
+
+.tl-item.kind-thought .tl-kind {
+  color: var(--kind-thought);
+}
+
+/* Shell: teal / terminal — distinct from Event amber */
+.tl-item.kind-shell {
+  background: linear-gradient(
+    135deg,
+    var(--kind-shell-dim),
+    rgba(18, 21, 28, 0.92)
+  );
+}
+
+.tl-item.kind-shell .tl-kind {
+  color: var(--kind-shell);
+}
+
+.tl-item.kind-event {
+  background: linear-gradient(
+    135deg,
+    var(--kind-event-dim),
+    rgba(18, 21, 28, 0.92)
+  );
+}
+
+.tl-item.kind-event .tl-kind {
+  color: var(--kind-event);
+}
+
+.tl-item.kind-plan {
+  background: linear-gradient(
+    135deg,
+    var(--kind-plan-dim),
+    rgba(18, 21, 28, 0.92)
+  );
+}
+
+.tl-item.kind-plan .tl-kind {
+  color: var(--kind-plan);
+}
+
+.tl-item.kind-unknown {
+  background: linear-gradient(
+    135deg,
+    var(--kind-unknown-dim),
+    rgba(18, 21, 28, 0.92)
+  );
+}
+
+.tl-item.kind-unknown .tl-kind {
+  color: var(--kind-unknown);
+}
 .tl-item.kind-plan .tl-detail,
 .tl-item.kind-event .tl-detail {
   white-space: pre-wrap;

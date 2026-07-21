@@ -181,7 +181,17 @@ fn build_card(
     active: Option<&ActiveSession>,
 ) -> SessionCard {
     let title = str_field(summary, &["generated_title", "session_summary", "title"])
-        .unwrap_or_else(|| id.chars().take(8).collect::<String>());
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| {
+            // Suffix is more distinctive than UUID prefix (UUIDs share version/variant bits).
+            let n = id.chars().count();
+            let suffix: String = if n <= 6 {
+                id.to_string()
+            } else {
+                id.chars().skip(n - 6).collect()
+            };
+            format!("Session: {suffix}")
+        });
 
     let error_count = signals.map(|s| u64_field(s, &["errorCount"])).unwrap_or(0);
     let status = if active.is_some() {
@@ -333,6 +343,10 @@ pub fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>> {
                 continue;
             };
             let card = build_card(&id, &cwd, &summary, signals.as_ref(), active_map.get(&id));
+            // Drop empty system-temp sessions (ACP tests, handshake probes, etc.).
+            if crate::session_noise::is_noise_session(&card) {
+                continue;
+            }
             session_dir_cache()
                 .lock()
                 .insert(id.clone(), (entry.path(), cwd.clone()));
@@ -465,9 +479,10 @@ pub fn get_session_detail(session_id: &str) -> Result<SessionDetail> {
         active.as_ref(),
     );
 
-    let recent_events = read_jsonl_tail(&dir.join("events.jsonl"), 40)?;
-    let recent_updates = read_jsonl_tail(&dir.join("updates.jsonl"), 60)?;
-    let hunks = list_hunks(session_id, Some(100))?;
+    // Keep tails modest so first detail paint stays fast (huge sessions exist).
+    let recent_events = read_jsonl_tail(&dir.join("events.jsonl"), 30)?;
+    let recent_updates = read_jsonl_tail(&dir.join("updates.jsonl"), 120)?;
+    let hunks = list_hunks(session_id, Some(50))?;
 
     Ok(SessionDetail {
         card,
@@ -701,13 +716,27 @@ fn utc_ymd_hms_to_unix(y: i32, mo: u32, d: u32, h: u32, mi: u32, sec: u32) -> u6
     secs.max(0) as u64
 }
 
+/// Cap per-file scan: full-file reads of multi‑MB `updates.jsonl` freeze startup.
+const TOKEN_JSONL_MAX_BYTES: u64 = 1_500_000;
+
 fn accumulate_turn_usage_from_jsonl(
     path: &Path,
     start_secs: u64,
     by_day: &mut HashMap<u64, (u64, u64)>,
 ) -> Result<()> {
-    let file = fs::File::open(path)?;
-    let reader = BufReader::new(file);
+    let mut file = fs::File::open(path)?;
+    let len = file.metadata()?.len();
+    // Large session logs: only the tail matters for a short usage window.
+    if len > TOKEN_JSONL_MAX_BYTES {
+        let start = len - TOKEN_JSONL_MAX_BYTES;
+        file.seek(SeekFrom::Start(start))?;
+    }
+    let mut reader = BufReader::new(file);
+    // If we seeked mid-file, drop the first partial line.
+    if len > TOKEN_JSONL_MAX_BYTES {
+        let mut discard = String::new();
+        let _ = reader.read_line(&mut discard);
+    }
     for line in reader.lines() {
         let line = match line {
             Ok(l) => l,
@@ -886,6 +915,24 @@ mod tests {
         assert!(stats.total_sessions >= cards.len());
         if let Some(first) = cards.first() {
             assert!(!first.id.is_empty());
+        }
+    }
+
+    #[test]
+    fn list_sessions_hides_empty_system_temp() {
+        let cards = list_sessions(None).expect("list");
+        for c in &cards {
+            if crate::session_noise::is_system_temp_cwd(&c.cwd) {
+                assert!(
+                    c.is_active
+                        || c.num_messages > 0
+                        || c.tool_call_count > 0
+                        || c.context_tokens_used > 0,
+                    "empty temp session should be filtered: {} {}",
+                    c.id,
+                    c.cwd
+                );
+            }
         }
     }
 

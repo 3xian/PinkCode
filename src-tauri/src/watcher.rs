@@ -13,8 +13,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
-// Longer debounce: session dir is chatty; 500ms still floods React during agent turns.
-const DEBOUNCE: Duration = Duration::from_millis(900);
+// Debounce FS storms; keep short enough that Live can mirror Grok Build promptly.
+const DEBOUNCE: Duration = Duration::from_millis(450);
 const EVENT_NAME: &str = "sessions-changed";
 
 /// Start a background thread that watches Grok home for session index changes.

@@ -5,6 +5,7 @@ import {
   GROK_BUILTIN_SLASH_COMMANDS,
   mergeSlashCommands,
 } from "../utils/format";
+import { isLocalSlashCommand } from "../utils/localSlash";
 
 interface Props {
   managed: ManagedAgentInfo | null;
@@ -40,8 +41,15 @@ export function PromptBar({
     managed && managed.status !== "stopped" && managed.status !== "error";
   const running = managed?.status === "running";
   const awaiting = managed?.status === "awaitingPermission";
+  const trimmedText = text.trim();
+  // /usage /context /session-info /help run in MarsBuild without ACP attach.
+  const localSlash = isLocalSlashCommand(trimmedText);
   const canSend = Boolean(
-    connected && !running && !awaiting && !busy && text.trim(),
+    trimmedText &&
+      !busy &&
+      !running &&
+      !awaiting &&
+      (connected || localSlash),
   );
 
   const modeHint =
@@ -72,7 +80,7 @@ export function PromptBar({
   // the user types again (cleared in onChange / when leaving slash mode).
   const showMenu =
     menuOpen &&
-    Boolean(connected && !running && !awaiting && !busy) &&
+    Boolean(!running && !awaiting && !busy) &&
     Boolean(slashQuery) &&
     filteredCommands.length > 0;
 
@@ -116,7 +124,8 @@ export function PromptBar({
 
   function sendIfReady() {
     const trimmed = text.trim();
-    if (!trimmed || !connected || running || awaiting || busy) return;
+    if (!trimmed || running || awaiting || busy) return;
+    if (!connected && !isLocalSlashCommand(trimmed)) return;
     onSend(trimmed);
     setText("");
     setMenuOpen(false);
@@ -188,10 +197,10 @@ export function PromptBar({
                 : running
                   ? "Agent is working… you can queue another message after it finishes"
                   : "Message the agent… / for commands · Enter to send · Ctrl+Enter for newline"
-              : "Flip the task card switch to attach, then send prompts"
+              : "/usage /context /session-info work without attach · flip switch for agent prompts"
           }
           value={text}
-          disabled={!connected || running || awaiting || busy}
+          disabled={running || awaiting || busy}
           onChange={(e) => {
             const next = e.target.value;
             // User is typing → lift suppress; only auto-open while completing

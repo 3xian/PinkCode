@@ -7,6 +7,7 @@ mod billing;
 mod models;
 mod permission_policy;
 mod project_fs;
+mod session_noise;
 mod sessions;
 mod shell_stream;
 mod task_prefs;

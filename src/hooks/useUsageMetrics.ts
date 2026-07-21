@@ -57,18 +57,40 @@ export function useUsageMetrics(
     }, WEEK_USAGE_AFTER_TURN_MS);
   }, [refreshWeekUsage]);
 
+  // Defer heavy disk/network metrics until after first paint — they used to
+  // block startup (full updates.jsonl scans + billing) and leave a black shell.
   useEffect(() => {
-    void refreshTokenSeries();
-    const id = window.setInterval(refreshTokenSeries, TOKEN_SERIES_POLL_MS);
-    return () => window.clearInterval(id);
+    let cancelled = false;
+    let intervalId: number | null = null;
+    const start = window.setTimeout(() => {
+      if (cancelled) return;
+      void refreshTokenSeries();
+      intervalId = window.setInterval(refreshTokenSeries, TOKEN_SERIES_POLL_MS);
+    }, 1200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(start);
+      if (intervalId != null) window.clearInterval(intervalId);
+    };
   }, [refreshTokenSeries]);
 
   useEffect(() => {
-    void refreshWeekUsage({ force: true });
-    const interval =
-      liveManagedCount > 0 ? WEEK_USAGE_ACTIVE_POLL_MS : WEEK_USAGE_IDLE_POLL_MS;
-    const id = window.setInterval(refreshWeekUsage, interval);
-    return () => window.clearInterval(id);
+    let cancelled = false;
+    let intervalId: number | null = null;
+    const start = window.setTimeout(() => {
+      if (cancelled) return;
+      void refreshWeekUsage({ force: true });
+      const interval =
+        liveManagedCount > 0
+          ? WEEK_USAGE_ACTIVE_POLL_MS
+          : WEEK_USAGE_IDLE_POLL_MS;
+      intervalId = window.setInterval(refreshWeekUsage, interval);
+    }, 800);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(start);
+      if (intervalId != null) window.clearInterval(intervalId);
+    };
   }, [refreshWeekUsage, liveManagedCount]);
 
   useEffect(() => {

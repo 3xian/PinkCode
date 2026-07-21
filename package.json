@@ -1,8 +1,41 @@
 {
   "name": "marsbuild",
-  "private": true,
   "version": "0.1.0",
+  "description": "Desktop mission control for Grok agents.",
   "type": "module",
+  "keywords": [
+    "grok",
+    "agent",
+    "tauri",
+    "desktop"
+  ],
+  "author": "david <david@gplab.cn>",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/3xian/MarsBuild#readme",
+  "bugs": {
+    "url": "https://github.com/3xian/MarsBuild/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/3xian/MarsBuild.git"
+  },
+  "files": [
+    ".nvmrc",
+    "contracts",
+    "docs/logo.png",
+    "docs/screenshot.png",
+    "index.html",
+    "public",
+    "scripts",
+    "src",
+    "src-tauri",
+    "tsconfig.json",
+    "tsconfig.node.json",
+    "vite.config.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=24"
   },
@@ -11,6 +44,7 @@
     "build": "tsc && vite build",
     "test": "vitest run",
     "check": "npm run test && npm run build",
+    "prepublishOnly": "npm run check",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

@@ -132,6 +132,20 @@ npm run tauri:build
 
 On Windows this produces NSIS/MSI installers under `src-tauri/target/release/bundle/`.
 
+### GitHub Releases
+
+Pushing a version tag builds and publishes Windows x64 MSI/NSIS installers and
+macOS DMGs for Apple Silicon and Intel:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The tag must match the version in `package.json`. Before creating a new release,
+keep the versions in `package.json`, `src-tauri/Cargo.toml`, and
+`src-tauri/tauri.conf.json` in sync.
+
 Rust tests:
 
 ```bash
@@ -202,4 +216,4 @@ Product roadmap and backlog: **[docs/TODO.md](docs/TODO.md)**.
 
 ## License
 
-Private / TBD.
+Copyright (c) 2026 david. All rights reserved. This package is published without an open-source license.

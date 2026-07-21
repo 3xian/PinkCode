@@ -1,5 +1,4 @@
-<!-- Relative path (same-repo) so GitHub does NOT rewrite via camo.githubusercontent.com,
-     which often fails in CN even when the original CDN URL opens fine. -->
+<!-- Relative path so GitHub does not rewrite via camo (often broken in CN). -->
 <p align="center">
   <img src="docs/logo.png" alt="MarsBuild" width="128" />
 </p>
@@ -7,117 +6,60 @@
 <h1 align="center">MarsBuild</h1>
 
 <p align="center">
-  <strong>Desktop mission control for Grok agents.</strong><br/>
-  Stop babysitting terminals. Start commanding agents.
+  <strong>Desktop mission control for Grok agents.</strong>
 </p>
 
 <p align="center">
   <a href="#screenshot">Screenshot</a>
   ·
-  <a href="#why">Why</a>
-  ·
-  <a href="#what-you-get">What you get</a>
+  <a href="#what-it-does">What it does</a>
   ·
   <a href="#quick-start">Quick start</a>
   ·
   <a href="#architecture">Architecture</a>
   ·
-  <a href="#status">Status</a>
-  ·
   <a href="docs/TODO.md">Roadmap</a>
 </p>
 
-<br/>
+A desktop console for [Grok Build](https://x.ai): multi-task board, ACP timeline, workspace files/Git, permissions, and usage. It attaches to `grok` over ACP — it does not run its own agent loop.
 
-**Grok thinks. MarsBuild keeps you in command.**
-
-A desktop console for [Grok Build](https://x.ai) — multi-task attach, ACP timelines, workspace radar, and usage in one place. Not another agent. Not another chat window. The control tower for the agents you already run.
-
-Built with **Tauri 2 · React · TypeScript · Rust**.
+**Tauri 2 · React · TypeScript · Rust** · current version **0.1.3**
 
 ## Screenshot
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="MarsBuild desktop UI — task board, Timeline, workspace files and Git" width="100%" />
+  <img src="docs/screenshot.png" alt="MarsBuild — tasks, Timeline, workspace" width="100%" />
 </p>
 
-<p align="center">
-  <em>Task board · Timeline (ACP + disk) · context metrics · workspace tree &amp; Git — one window for every Grok agent.</em>
-</p>
+## What it does
 
----
+| Area | Behavior |
+|------|----------|
+| **Tasks** | Lists sessions under `~/.grok` / `%USERPROFILE%\.grok`. Spawn, attach, prompt, stop. Per-card switch attach/detach. |
+| **Timeline** | One stream: user / agent / thought / tool / shell / plan / events. Live ACP when attached; otherwise hydrate from session `updates.jsonl`. Filters + stick-to-bottom. |
+| **File changes** | Agent hunks from `hunk_records.jsonl`. |
+| **Raw** | Tail of on-disk ACP `session/update` records. |
+| **Workspace** | Project file tree + Git porcelain status (right rail). |
+| **Permissions** | Modes: Default, Accept edits, Always approve, Don't ask — persisted per task under `~/.marsbuild`. |
+| **Usage** | Week remaining (Grok billing API) + recent day token series from local sessions. |
+| **Updates** | Checks GitHub Releases on startup; optional download & install. Title bar shows `MarsBuild <version>`. |
 
-## Why
-
-You do not need a smarter agent.
-
-You need to see **every Grok session at once** — without juggling a stack of terminals, grepping logs for file edits, or hunting the right window to approve a tool call.
-
-| Without MarsBuild | With MarsBuild |
-|---|---|
-| One terminal per task | One board for every task |
-| Black-box progress | Thought · tool · shell · message, live |
-| “What did it change?” | Files, Git, and agent hunks in view |
-| Blind on quota | Week usage + context metrics in the chrome |
-
-**Engine is Grok. MarsBuild is the hand on the wheel.**
-
----
-
-## What you get
-
-### 1. One board for every task
-
-Spawn, attach, prompt, stop. A switch on each card takes over or detaches a live agent. Attached, active on disk, or idle — at a glance.
-
-### 2. One Timeline, not two tabs
-
-Thought, agent text, tools (friendly titles, completed as ☑️), shell, plan, and session events — terminal-style, filterable, stick-to-bottom. Live ACP when attached; otherwise MarsBuild mirrors `updates.jsonl` from disk. Follow-up prompts and Grok slash commands (`/compact`, `/plan`, …) in the same surface. **Raw** tab for the wire record; **File changes** for agent hunks.
-
-### 3. Changes on the ground
-
-Project file tree and Git status on the side (silent refresh, no flicker). Diff tab for agent hunks. Right-click to copy paths or open in the system. Usage bar and day-token chart so you know how much fuel is left.
-
-### 4. Brakes that match Grok
-
-Permission modes aligned with Grok Build (ask · accept edits · always approve · don’t ask), per-task persistence, and an in-app gate when the agent needs a decision. MarsBuild is an ACP host — it does not invent a second safety religion.
-
-### 5. In-app updates
-
-On startup, MarsBuild checks GitHub Releases for a newer signed build and can download + install without leaving the app. Window title shows the running version (e.g. `MarsBuild 0.1.3`).
-
-**What we deliberately are not**
-
-- A reimplementation of the Grok (or any) agent loop  
-- A multi-provider coding agent platform  
-- A replacement for the Grok TUI  
-
-We stay a **control plane**: attach what Grok already is, make multi-task ops sane.
-
----
+Prebuilt installers: **[Releases](https://github.com/3xian/MarsBuild/releases)** (Windows x64 NSIS, macOS Apple Silicon & Intel). Linux: build from source (no CI installer yet).
 
 ## Quick start
-
-**Prerequisites**
 
 | | macOS | Windows 11 | Linux |
 |---|---|---|---|
 | Node | 24+ | 24+ | 24+ |
 | Rust | stable | stable (`x86_64-pc-windows-msvc`) | stable |
-| Platform tools | Xcode CLT | **MSVC Build Tools** + [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) (usually preinstalled on Win11) | webkit2gtk / similar (see Tauri docs) |
-| Grok Build | `~/.grok` | `%USERPROFILE%\.grok` or `GROK_HOME` (binary: `grok.exe`) | `~/.grok` |
+| Platform | Xcode CLT | MSVC Build Tools + [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) | webkit2gtk (see Tauri docs) |
+| Grok Build | `~/.grok` | `%USERPROFILE%\.grok` or `GROK_HOME` | `~/.grok` |
 
-Windows 11 — install the C++ toolchain once (required for `cargo` / Tauri link):
+Windows toolchain (once):
 
 ```powershell
 winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
 ```
-
-Optional: put Build Tools on another drive with `--installPath D:\path\to\BuildTools` in the override string.
-
-Then open a **new** terminal (so the MSVC tools are discoverable), or use *x64 Native Tools Command Prompt for VS 2022*.
-
-Quick environment check:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/windows-setup.ps1
@@ -125,128 +67,33 @@ powershell -ExecutionPolicy Bypass -File scripts/windows-setup.ps1
 
 ```bash
 npm install
-npm run tauri:dev
+npm run tauri:dev          # development
+npm run tauri:build        # local installer under src-tauri/target/release/bundle/
+npm run check              # frontend tests + production build
+cd src-tauri && cargo test # Rust tests
 ```
 
-Release build:
-
-```bash
-npm run tauri:build
-```
-
-On Windows this produces an NSIS installer under `src-tauri/target/release/bundle/`.
-
-### GitHub Releases
-
-Pushing a version tag builds and publishes a Windows x64 NSIS installer and
-macOS DMGs for Apple Silicon and Intel, plus signed updater artifacts and
-`latest.json` for in-app updates:
-
-```bash
-git tag v0.1.3
-git push origin v0.1.3
-```
-
-The tag must match the version in `package.json`. Before creating a new release,
-keep the versions in `package.json`, `src-tauri/Cargo.toml`, and
-`src-tauri/tauri.conf.json` in sync.
-
-Asset names look like `MarsBuild_0.1.3_windows_x64.exe` / `…_darwin_aarch64.dmg`.
-
-#### In-app updates
-
-On startup, MarsBuild checks
-`https://github.com/3xian/MarsBuild/releases/latest/download/latest.json`.
-If a newer signed build exists, a modal offers **Download & install** (progress,
-then relaunch). Failures in dev or offline are silent.
-
-Release CI needs the signing private key that matches the `plugins.updater.pubkey`
-in `src-tauri/tauri.conf.json`:
-
-| GitHub Actions secret | Value |
-|---|---|
-| `TAURI_SIGNING_PRIVATE_KEY` | Contents of the private key file (minisign) |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Optional; empty if the key has no password |
-
-Generate a keypair once (do not commit the private key):
-
-```bash
-npx tauri signer generate -w ~/.tauri/marsbuild.key --ci -p ""
-# Public key → plugins.updater.pubkey in tauri.conf.json
-# Private key → TAURI_SIGNING_PRIVATE_KEY secret
-```
-
-Rust tests:
-
-```bash
-cd src-tauri && cargo test
-```
-
-Frontend tests and production type/build check:
-
-```bash
-npm run check
-```
-
-**Env (optional):**
+**Env (optional)**
 
 | Variable | Meaning |
 |----------|---------|
-| `GROK_BIN` | Full path to `grok` / `grok.exe` (else `PATH`, `GROK_HOME/bin`, or `~/.grok/bin`) |
-| `GROK_HOME` | Grok data root (default `~/.grok` / `%USERPROFILE%\.grok`) |
-| `MARSBUILD_HOME` | MarsBuild data root (default `~/.marsbuild`; e.g. task permission prefs) |
-
----
+| `GROK_BIN` | Path to `grok` / `grok.exe` |
+| `GROK_HOME` | Grok data root (default `~/.grok`) |
+| `MARSBUILD_HOME` | MarsBuild prefs root (default `~/.marsbuild`) |
 
 ## Architecture
 
 ```
 UI (React)
-  ├─ invoke()  →  sessions / spawn / attach / prompt / stop / permission / week usage / FS / git
+  ├─ invoke()  →  sessions, spawn/attach/prompt/stop, permissions,
+  │               week usage, token series, project FS, git status
   └─ listen()  ←  agent-update | agent-status | agent-permission
                     | agent-shell | agent-prompt-complete | sessions-changed
         │
-        ├─► AgentManager (Rust) — N × ACP lifecycle + request coordination
-        │     ├─ agent_types / permission_policy / agent_fs
-        │     └─ shell_stream / agent_runtime
-        └─► Session index (Rust) — FS watch, mtime cache, stats, hunks
+        ├─► AgentManager — N × `grok agent stdio` (ACP) + permission gate
+        └─► Session index — FS watch on ~/.grok/sessions, cards, hunks, stats
 ```
-
-Grok-native by design: reads `~/.grok/sessions`, speaks ACP over `grok agent stdio`, keeps light prefs under `~/.marsbuild`.
-
----
-
-## Status
-
-**0.1.3** — usable for daily Grok multi-task ops; APIs and UI still moving.
-
-Product roadmap and backlog: **[docs/TODO.md](docs/TODO.md)**.
-
-<details>
-<summary><strong>Feature checklist</strong></summary>
-
-| Area | Status |
-|------|--------|
-| Scan `~/.grok/sessions` + `active_sessions.json` | ✅ |
-| Task board + attach / detach switch | ✅ |
-| Spawn / attach (`grok agent stdio`, `session/load`) | ✅ |
-| Timeline (thought / agent / tool / shell / plan / events) | ✅ |
-| Friendly tool titles (no raw `call-…` ids) | ✅ |
-| Slash-command autocomplete in prompt | ✅ |
-| Follow-up prompt + stop | ✅ |
-| Permission gate + Grok-aligned permission modes | ✅ |
-| Token / tools / diff metrics + week usage bar | ✅ |
-| Raw ACP stream | ✅ |
-| File tree + Git status (silent refresh) | ✅ |
-| File change radar (`hunk_records.jsonl`) | ✅ |
-| FS watch (debounced) | ✅ |
-| In-app update (GitHub `latest.json` + signed bundles) | ✅ |
-| Window title with app version | ✅ |
-
-</details>
-
----
 
 ## License
 
-Copyright (c) 2026 david. All rights reserved. This package is published without an open-source license.
+Copyright (c) 2026 david. All rights reserved. Published without an open-source license.

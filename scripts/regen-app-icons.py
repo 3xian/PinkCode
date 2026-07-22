@@ -1,12 +1,17 @@
 """
-Rebuild app icon masters so the glyph fills the macOS dock plate.
+Rebuild the shared desktop icon master (macOS + Windows + others).
 
-Problem: the planet logo is wider than tall and was centered with large
-transparent top/bottom margins (~44% empty height), so Dock/Finder icons
-look a size smaller than full-bleed system apps.
+One master feeds `tauri icon`, which emits icon.icns, icon.ico, and PNGs
+together — there is no separate Windows/Mac art path. Changing layout for
+one platform always affects the other.
 
-Fix: crop content, scale to ~95% of the square on a full-bleed plate
-matching the app chrome so the icon occupies the full squircle mask.
+Goals:
+  - Full-bleed opaque plate so Dock/taskbar icons fill the slot (no
+    floating transparent glyph that looks "a size smaller").
+  - Glyph ~88% of the short side of the fit box (~6% margin) for breathing
+    room under macOS squircle mask and Windows tile corners — not a hard
+    Apple percentage, but closer to common template margins than 95%.
+  - Plate color matches app chrome (tauri backgroundColor).
 """
 from __future__ import annotations
 
@@ -19,8 +24,8 @@ SRC = ROOT / "src" / "assets" / "logo.png"
 OUT_MASTER = ROOT / "src-tauri" / "icons" / "app-icon-master.png"
 # App window chrome: tauri.conf backgroundColor [11, 13, 18]
 PLATE = (11, 13, 18, 255)
-# Keep a little air so rings aren't clipped by the macOS squircle corners.
-FILL = 0.95
+# Optical fill of the logo bounding box within the square (after crop).
+FILL = 0.88
 SIZE = 1024
 
 
@@ -64,7 +69,9 @@ def main() -> None:
     canvas.save(OUT_MASTER, "PNG")
     print(f"wrote {OUT_MASTER.relative_to(ROOT)} ({SIZE}x{SIZE})")
     print(f"  source crop {box} -> glyph {gw}x{gh} scaled {nw}x{nh} fill={FILL}")
-    print(f"  pad LTRB {x},{y},{SIZE-nw-x},{SIZE-nh-y}")
+    print(f"  pad LTRB {x},{y},{SIZE - nw - x},{SIZE - nh - y}")
+    print("  next: npx tauri icon src-tauri/icons/app-icon-master.png")
+    print("  then remove any icons/ios and icons/android folders (desktop-only).")
 
 
 if __name__ == "__main__":

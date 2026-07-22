@@ -49,3 +49,6 @@ AGENTS.md
 # Local Windows probe artifacts
 _win_probe*
 
+# Reasonix
+.reasonix/
+

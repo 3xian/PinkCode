@@ -5,7 +5,6 @@ import {
   formatRelative,
   formatTokens,
   projectName,
-  shortPath,
 } from "../utils/format";
 import logo from "../assets/logo.png";
 
@@ -131,9 +130,7 @@ export function SessionList({
                   </span>
                 )}
               </div>
-              <div className="card-path muted" title={s.cwd}>
-                {shortPath(s.cwd, 40)}
-              </div>
+
             </div>
           );
         })}

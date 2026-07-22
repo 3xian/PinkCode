@@ -44,15 +44,18 @@ jobs:
           - name: Windows x64
             platform: windows-latest
             rustTarget: ""
+            # NSIS installer is also the Windows updater artifact (.exe + .sig).
             args: "--bundles nsis"
           - name: macOS Apple Silicon
             platform: macos-latest
             rustTarget: aarch64-apple-darwin
-            args: "--target aarch64-apple-darwin --bundles dmg"
+            # `app` is required for createUpdaterArtifacts (.app.tar.gz + .sig).
+            # DMG alone is only the first-install package — updater ignores it.
+            args: "--target aarch64-apple-darwin --bundles app,dmg"
           - name: macOS Intel
             platform: macos-latest
             rustTarget: x86_64-apple-darwin
-            args: "--target x86_64-apple-darwin --bundles dmg"
+            args: "--target x86_64-apple-darwin --bundles app,dmg"
 
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
@@ -81,6 +84,16 @@ jobs:
         shell: bash
         run: echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
 
+      - name: Require updater signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is empty — in-app updates cannot be signed."
+            exit 1
+          fi
+
       - name: Build and publish installers
         uses: tauri-apps/tauri-action@v1
         env:
@@ -99,4 +112,41 @@ jobs:
           args: ${{ matrix.args }}
           # Drop [bundle] so we don't get dmg.dmg / msi.msi / nsis.exe.
           # Result: MarsBuild_0.1.2_darwin_aarch64.dmg, …_windows_x64.msi, …_windows_x64.exe
+          # macOS updater: MarsBuild_…_darwin_*.app.tar.gz (+ .sig)
           releaseAssetNamePattern: "[name]_[version]_[platform]_[arch][ext]"
+
+      - name: Verify signed updater artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fail the job if this platform did not produce a minisign signature.
+          # Without .sig files, tauri-action omits the platform from latest.json
+          # and clients on that OS never see an update.
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            target="${{ matrix.rustTarget }}"
+            root="src-tauri/target/${target}/release/bundle/macos"
+            echo "Looking for updater artifacts under ${root}"
+            ls -la "${root}" || true
+            sigs=( "${root}"/*.app.tar.gz.sig )
+            if [ ! -e "${sigs[0]}" ]; then
+              echo "::error::Missing macOS updater signature (*.app.tar.gz.sig). In-app updates will not work on Mac."
+              echo "Ensure createUpdaterArtifacts is true and --bundles includes app (not only dmg)."
+              exit 1
+            fi
+            tars=( "${root}"/*.app.tar.gz )
+            if [ ! -e "${tars[0]}" ]; then
+              echo "::error::Missing macOS updater bundle (*.app.tar.gz)."
+              exit 1
+            fi
+            echo "OK: $(basename "${tars[0]}") + $(basename "${sigs[0]}")"
+          else
+            root="src-tauri/target/release/bundle/nsis"
+            echo "Looking for updater artifacts under ${root}"
+            ls -la "${root}" || true
+            sigs=( "${root}"/*.sig )
+            if [ ! -e "${sigs[0]}" ]; then
+              echo "::error::Missing Windows updater signature (*.sig)."
+              exit 1
+            fi
+            echo "OK: $(basename "${sigs[0]}")"
+          fi

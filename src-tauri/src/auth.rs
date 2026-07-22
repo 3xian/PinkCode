@@ -136,8 +136,11 @@ impl Drop for AuthLock {
 /// Exclusive lock on `auth.json.lock` (advisory, same file Grok uses).
 fn acquire_auth_lock() -> Result<AuthLock, String> {
     let path = auth_lock_path();
+    // truncate(false): open shared path without wiping another holder's marker;
+    // after we own the lock we set_len(0) and rewrite the pid marker.
     let mut file = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(&path)

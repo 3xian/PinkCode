@@ -1,32 +1,42 @@
 """
 Rebuild desktop icon masters and Windows export assets.
 
-One pipeline, two shapes
-------------------------
-  square  → macOS full-bleed plate  → app-icon-master.png
-  circle  → Windows circular plate  → app-icon-master-windows.png
-                                    → icon.ico + Square*/StoreLogo.png
+One pipeline, two platforms (IconStyle — not “shape-as-platform”)
+-----------------------------------------------------------------
+  Mac     → brand plate, contain-fit, soft shadow  → app-icon-master.png
+  Windows → black plate, height-fit, circular mask → app-icon-master-windows.png
+                                                   → icon.ico + Square*/StoreLogo.png
 
-Shared PNG sizes (32/128/…) and icon.icns are NOT written here.
-They stay on the Mac geometry path. If you refresh them with:
+Mac-only shared PNG sizes (32/128/…) and icon.icns are NOT written here.
+If you refresh them with:
 
   npx tauri icon src-tauri/icons/app-icon-master.png
 
-that overwrites icon.ico with a square plate. Always finish with this
-script (or `npm run icons:regen`) so Windows assets stay circular.
+that overwrites icon.ico with the Mac plate. Always finish with this
+script (or `npm run icons:regen`) so Windows assets stay black + circular.
+
+Windows resolution notes
+------------------------
+  1. ICO embeds real PNG frames at every common DPI size (16–256).
+  2. Each size is downscaled from a 2048 compose (never chained from 32px).
+  3. Glyph is height-fitted (logo art is wide) so taskbar pixels go to the mark.
+  4. `--windows-export` recomposes from logo.png @2048 — never upscales the
+     1024 on-disk master (avoids a silent quality cliff).
 
 Usage
 -----
-  python scripts/regen-app-icons.py              # default: both masters + Win export
-  python scripts/regen-app-icons.py --windows-export   # only re-export Win from master
+  python scripts/regen-app-icons.py                 # both platforms + Win export
+  python scripts/regen-app-icons.py --windows-export  # Windows only (recompose + ICO)
 """
 from __future__ import annotations
 
 import argparse
+import io
 import math
+import struct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
@@ -37,16 +47,18 @@ OUT_MASTER_MAC = ICONS / "app-icon-master.png"
 OUT_MASTER_WIN = ICONS / "app-icon-master-windows.png"
 OUT_ICO = ICONS / "icon.ico"
 
-FILL = 0.86
-SIZE = 1024
-Shape = Literal["square", "circle"]
+FitMode = Literal["contain", "height"]
+RimKind = Literal["squircle", "circle"]
+PlateKind = Literal["brand", "black"]
 
+# Mac Dock plate (blue → purple spherical volume).
 PLATE_A = (18, 70, 120)
 PLATE_B = (88, 36, 168)
+WIN_PLATE = (0, 0, 0, 255)
 
-ICO_SIZES = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+# Full DPI ladder. Windows shell picks nearest; missing rungs force upscales.
+ICO_SIDES = [16, 20, 24, 28, 30, 32, 36, 40, 48, 64, 72, 96, 128, 256]
 
-# Windows Store / MSIX logo sizes (same table as `tauri icon`).
 WINDOWS_PNGS: dict[str, int] = {
     "Square30x30Logo.png": 30,
     "Square44x44Logo.png": 44,
@@ -60,10 +72,48 @@ WINDOWS_PNGS: dict[str, int] = {
     "StoreLogo.png": 50,
 }
 
-# Rim: (inset, radius_or_none, outline_rgba, width)
-# radius_or_none is only used for square (squircle); circle uses ellipse.
-RIM_SQUARE = (3, int(SIZE * 0.22), (255, 255, 255, 28), 2)
-RIM_CIRCLE = (4, None, (255, 255, 255, 32), 3)
+
+@dataclass(frozen=True)
+class IconStyle:
+    """Platform look: plate, fit, shadow, rim, mask — not overloaded geometry names."""
+
+    name: str
+    compose_size: int
+    master_size: int
+    fill: float
+    fit: FitMode
+    plate: PlateKind
+    soft_shadow: bool
+    rim: RimKind
+    circular_mask: bool
+    master_path: Path
+
+
+MAC = IconStyle(
+    name="mac",
+    compose_size=1024,
+    master_size=1024,
+    fill=0.86,
+    fit="contain",
+    plate="brand",
+    soft_shadow=True,
+    rim="squircle",
+    circular_mask=False,
+    master_path=OUT_MASTER_MAC,
+)
+
+WINDOWS = IconStyle(
+    name="windows",
+    compose_size=2048,
+    master_size=1024,
+    fill=0.72,  # height fill — logo is wide; spends taskbar budget on the mark
+    fit="height",
+    plate="black",
+    soft_shadow=False,
+    rim="circle",
+    circular_mask=True,
+    master_path=OUT_MASTER_WIN,
+)
 
 
 @dataclass(frozen=True)
@@ -73,6 +123,8 @@ class GlyphLayout:
     y: int
     content_box: tuple[int, int, int, int]
     content_size: tuple[int, int]
+    canvas_size: int
+    fill: float
 
 
 def content_bbox(im: Image.Image) -> tuple[int, int, int, int]:
@@ -101,7 +153,7 @@ def clamp8(v: float) -> int:
 
 
 def brand_plate(size: int) -> Image.Image:
-    """Full-bleed plate with mild spherical lighting (Dock-style volume)."""
+    """Mac full-bleed plate with mild spherical lighting (Dock-style volume)."""
     im = Image.new("RGBA", (size, size))
     px = im.load()
     ar, ag, ab = PLATE_A
@@ -146,6 +198,16 @@ def brand_plate(size: int) -> Image.Image:
     return im
 
 
+def black_plate(size: int) -> Image.Image:
+    return Image.new("RGBA", (size, size), WIN_PLATE)
+
+
+PLATES: dict[PlateKind, Callable[[int], Image.Image]] = {
+    "brand": brand_plate,
+    "black": black_plate,
+}
+
+
 def soft_drop_shadow(
     glyph: Image.Image, canvas_size: int, ox: int, oy: int
 ) -> Image.Image:
@@ -153,49 +215,67 @@ def soft_drop_shadow(
     alpha = glyph.split()[3]
     blob = Image.new("RGBA", glyph.size, (0, 0, 0, 0))
     blob.putalpha(alpha.point(lambda a: int(a * 0.45)))
-    pad = 48
+    pad = max(24, canvas_size // 20)
+    blur = max(8, canvas_size // 55)
     layer = Image.new(
         "RGBA", (glyph.size[0] + pad * 2, glyph.size[1] + pad * 2), (0, 0, 0, 0)
     )
     layer.paste(blob, (pad, pad), blob)
-    layer = layer.filter(ImageFilter.GaussianBlur(radius=18))
-    shadow.alpha_composite(layer, (ox - pad + 10, oy - pad + 16))
+    layer = layer.filter(ImageFilter.GaussianBlur(radius=blur))
+    ox_off = max(4, canvas_size // 100)
+    oy_off = max(6, canvas_size // 64)
+    shadow.alpha_composite(layer, (ox - pad + ox_off, oy - pad + oy_off))
     return shadow
 
 
-def fit_glyph(src: Image.Image) -> GlyphLayout:
+def fit_glyph(src: Image.Image, style: IconStyle) -> GlyphLayout:
+    """
+    contain — fit inside fill*canvas square (Mac).
+    height  — scale so glyph height == fill*canvas (Windows); sides may clip.
+    """
     box = content_bbox(src)
     cropped = src.crop(box)
     cw, ch = cropped.size
-    target = int(SIZE * FILL)
-    scale = min(target / cw, target / ch)
+    size = style.compose_size
+    if style.fit == "height":
+        scale = (size * style.fill) / ch
+    else:
+        target = int(size * style.fill)
+        scale = min(target / cw, target / ch)
     nw = max(1, int(round(cw * scale)))
     nh = max(1, int(round(ch * scale)))
     glyph = cropped.resize((nw, nh), Image.Resampling.LANCZOS)
     return GlyphLayout(
         glyph=glyph,
-        x=(SIZE - nw) // 2,
-        y=(SIZE - nh) // 2,
+        x=(size - nw) // 2,
+        y=(size - nh) // 2,
         content_box=box,
         content_size=(cw, ch),
+        canvas_size=size,
+        fill=style.fill,
     )
 
 
-def make_rim(shape: Shape) -> Image.Image:
-    rim = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+def make_rim(kind: RimKind, size: int) -> Image.Image:
+    rim = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(rim)
-    if shape == "square":
-        inset, radius, outline, width = RIM_SQUARE
+    if kind == "squircle":
+        inset = max(2, size // 340)
+        radius = int(size * 0.22)
+        outline = (255, 255, 255, 28)
+        width = max(1, size // 512)
         draw.rounded_rectangle(
-            [inset, inset, SIZE - 1 - inset, SIZE - 1 - inset],
+            [inset, inset, size - 1 - inset, size - 1 - inset],
             radius=radius,
             outline=outline,
             width=width,
         )
     else:
-        inset, _, outline, width = RIM_CIRCLE
+        inset = max(3, size // 256)
+        outline = (255, 255, 255, 48)
+        width = max(2, size // 340)
         draw.ellipse(
-            [inset, inset, SIZE - 1 - inset, SIZE - 1 - inset],
+            [inset, inset, size - 1 - inset, size - 1 - inset],
             outline=outline,
             width=width,
         )
@@ -203,7 +283,6 @@ def make_rim(shape: Shape) -> Image.Image:
 
 
 def circular_alpha_mask(size: int) -> Image.Image:
-    """Antialiased circular alpha via 4× supersample."""
     ss = 4
     big = size * ss
     mask = Image.new("L", (big, big), 0)
@@ -214,27 +293,150 @@ def circular_alpha_mask(size: int) -> Image.Image:
 
 def apply_circular_mask(canvas: Image.Image) -> Image.Image:
     r, g, b, a = canvas.split()
-    a = ImageChops.multiply(a, circular_alpha_mask(SIZE))
+    a = ImageChops.multiply(a, circular_alpha_mask(canvas.size[0]))
     return Image.merge("RGBA", (r, g, b, a))
 
 
-def compose_icon(layout: GlyphLayout, shape: Shape) -> Image.Image:
-    """Shared plate + glyph path; only rim and outer mask depend on shape."""
-    canvas = brand_plate(SIZE)
-    canvas.alpha_composite(soft_drop_shadow(layout.glyph, SIZE, layout.x, layout.y))
-    canvas.alpha_composite(layout.glyph, (layout.x, layout.y))
-    canvas.alpha_composite(make_rim(shape))
-    if shape == "circle":
+def paste_glyph(
+    canvas: Image.Image, glyph: Image.Image, x: int, y: int
+) -> None:
+    """Paste glyph; supports negative offsets when height-fit overflows sides."""
+    size = canvas.size[0]
+    gx, gy = 0, 0
+    gw, gh = glyph.size
+    if x < 0:
+        gx = -x
+        gw -= gx
+        x = 0
+    if y < 0:
+        gy = -y
+        gh -= gy
+        y = 0
+    if x + gw > size:
+        gw = size - x
+    if y + gh > size:
+        gh = size - y
+    if gw <= 0 or gh <= 0:
+        return
+    piece = glyph.crop((gx, gy, gx + gw, gy + gh))
+    canvas.alpha_composite(piece, (x, y))
+
+
+def compose_icon(layout: GlyphLayout, style: IconStyle) -> Image.Image:
+    size = layout.canvas_size
+    canvas = PLATES[style.plate](size)
+    if style.soft_shadow:
+        canvas.alpha_composite(
+            soft_drop_shadow(layout.glyph, size, layout.x, layout.y)
+        )
+    paste_glyph(canvas, layout.glyph, layout.x, layout.y)
+    canvas.alpha_composite(make_rim(style.rim, size))
+    if style.circular_mask:
         canvas = apply_circular_mask(canvas)
     return canvas
 
 
-def export_windows(master: Image.Image) -> None:
-    master.save(OUT_ICO, format="ICO", sizes=ICO_SIZES)
-    print(f"wrote {OUT_ICO.relative_to(ROOT)} sizes={[s[0] for s in ICO_SIZES]}")
+def flatten_on_black(im: Image.Image) -> Image.Image:
+    """Opaque black canvas for ICO entries."""
+    flat = Image.new("RGBA", im.size, WIN_PLATE)
+    flat.alpha_composite(im)
+    r, g, b, _a = flat.split()
+    return Image.merge("RGBA", (r, g, b, Image.new("L", flat.size, 255)))
+
+
+def resize_for_windows(master_flat: Image.Image, side: int) -> Image.Image:
+    out = master_flat.resize((side, side), Image.Resampling.LANCZOS)
+    if side <= 48:
+        out = out.filter(
+            ImageFilter.UnsharpMask(
+                radius=0.55 if side <= 24 else 0.75,
+                percent=110,
+                threshold=2,
+            )
+        )
+    return out
+
+
+def write_png_ico(path: Path, images: list[Image.Image]) -> None:
+    """Multi-resolution ICO with one PNG stream per size (explicit frames)."""
+    entries: list[tuple[int, int, int, int, int, int, int, int]] = []
+    blobs: list[bytes] = []
+    offset = 6 + 16 * len(images)
+    for im in images:
+        if im.mode != "RGBA":
+            im = im.convert("RGBA")
+        buf = io.BytesIO()
+        im.save(buf, format="PNG", optimize=True)
+        blob = buf.getvalue()
+        w, h = im.size
+        entries.append(
+            (
+                0 if w >= 256 else w,
+                0 if h >= 256 else h,
+                0,
+                0,
+                1,
+                32,
+                len(blob),
+                offset,
+            )
+        )
+        blobs.append(blob)
+        offset += len(blob)
+
+    with path.open("wb") as f:
+        f.write(struct.pack("<HHH", 0, 1, len(images)))
+        for e in entries:
+            f.write(struct.pack("<BBBBHHII", *e))
+        for blob in blobs:
+            f.write(blob)
+
+
+def export_windows(compose_hi: Image.Image) -> None:
+    """
+    Export ICO + Store PNGs from a high-res Windows compose (ideally 2048).
+    Flatten once, then resize each rung from that full-res flat image.
+    """
+    flat = flatten_on_black(compose_hi)
+    frames = [resize_for_windows(flat, side) for side in ICO_SIDES]
+    write_png_ico(OUT_ICO, frames)
+    print(f"wrote {OUT_ICO.relative_to(ROOT)} sizes={ICO_SIDES}")
+
+    with OUT_ICO.open("rb") as f:
+        data = f.read()
+    _res, itype, count = struct.unpack_from("<HHH", data, 0)
+    if itype != 1 or count != len(ICO_SIDES):
+        raise SystemExit(
+            f"icon.ico header invalid: type={itype} count={count} "
+            f"(expected type=1 count={len(ICO_SIDES)})"
+        )
+    print(f"  ico verified: {count} PNG frames, {len(data)} bytes")
+
     for name, side in WINDOWS_PNGS.items():
-        master.resize((side, side), Image.Resampling.LANCZOS).save(ICONS / name, "PNG")
+        resize_for_windows(flat, side).save(ICONS / name, "PNG")
         print(f"  wrote icons/{name} ({side}x{side})")
+
+
+def build_platform(src: Image.Image, style: IconStyle) -> tuple[Image.Image, GlyphLayout]:
+    """Compose at style.compose_size; return (hi-res image, layout)."""
+    layout = fit_glyph(src, style)
+    return compose_icon(layout, style), layout
+
+
+def save_master(compose_hi: Image.Image, style: IconStyle) -> None:
+    if compose_hi.size[0] == style.master_size:
+        master = compose_hi
+    else:
+        master = compose_hi.resize(
+            (style.master_size, style.master_size), Image.Resampling.LANCZOS
+        )
+    master.save(style.master_path, "PNG")
+    print(
+        f"wrote {style.master_path.relative_to(ROOT)} "
+        f"({style.master_size}x{style.master_size}) "
+        f"[{style.name} plate={style.plate} fit={style.fit} "
+        f"compose=@{style.compose_size} fill={style.fill}]"
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -243,8 +445,9 @@ def parse_args() -> argparse.Namespace:
         "--windows-export",
         action="store_true",
         help=(
-            "Only re-export icon.ico + Square/Store PNGs from "
-            "app-icon-master-windows.png (fix after `tauri icon` overwrote ico)"
+            "Windows only: recompose from logo.png @2048, refresh "
+            "app-icon-master-windows.png + icon.ico + Square/Store PNGs "
+            "(does not touch Mac masters / icon.icns)"
         ),
     )
     return p.parse_args()
@@ -254,40 +457,42 @@ def main() -> None:
     args = parse_args()
     ICONS.mkdir(parents=True, exist_ok=True)
 
-    if args.windows_export:
-        if not OUT_MASTER_WIN.is_file():
-            raise SystemExit(
-                f"missing {OUT_MASTER_WIN.relative_to(ROOT)}; "
-                "run without --windows-export first"
-            )
-        win = Image.open(OUT_MASTER_WIN).convert("RGBA")
-        export_windows(win)
-        print("  windows export only; masters unchanged; icon.icns untouched")
-        return
+    if not SRC.is_file():
+        raise SystemExit(f"missing source logo: {SRC.relative_to(ROOT)}")
 
     src = Image.open(SRC).convert("RGBA")
-    layout = fit_glyph(src)
 
-    mac = compose_icon(layout, "square")
-    mac.save(OUT_MASTER_MAC, "PNG")
-    print(f"wrote {OUT_MASTER_MAC.relative_to(ROOT)} ({SIZE}x{SIZE}) [mac square]")
+    if args.windows_export:
+        # Always recompose @2048 from logo — never upscale the 1024 disk master.
+        win_hi, win_layout = build_platform(src, WINDOWS)
+        save_master(win_hi, WINDOWS)
+        export_windows(win_hi)
+        gw, gh = win_layout.glyph.size
+        print(
+            f"  win-only: scaled glyph {gw}x{gh} @ {WINDOWS.compose_size}; "
+            "Mac masters / icon.icns untouched"
+        )
+        return
 
-    win = compose_icon(layout, "circle")
-    win.save(OUT_MASTER_WIN, "PNG")
-    print(f"wrote {OUT_MASTER_WIN.relative_to(ROOT)} ({SIZE}x{SIZE}) [win circle]")
-    export_windows(win)
+    mac_hi, _mac_layout = build_platform(src, MAC)
+    save_master(mac_hi, MAC)
 
-    gw, gh = layout.glyph.size
-    cw, ch = layout.content_size
+    win_hi, win_layout = build_platform(src, WINDOWS)
+    save_master(win_hi, WINDOWS)
+    export_windows(win_hi)
+
+    gw, gh = win_layout.glyph.size
+    cw, ch = win_layout.content_size
     print(
-        f"  crop {layout.content_box} -> {cw}x{ch} "
-        f"scaled {gw}x{gh} fill={FILL} contain"
+        f"  win crop {win_layout.content_box} -> {cw}x{ch} "
+        f"scaled {gw}x{gh} @ {WINDOWS.compose_size} height_fill={WINDOWS.fill}"
     )
     print(
-        f"  pad LTRB {layout.x},{layout.y},"
-        f"{SIZE - gw - layout.x},{SIZE - gh - layout.y}"
+        f"  win pad LTRB {win_layout.x},{win_layout.y},"
+        f"{WINDOWS.compose_size - gw - win_layout.x},"
+        f"{WINDOWS.compose_size - gh - win_layout.y}"
     )
-    print("  shape: square(mac) + circle(win); never touches icon.icns")
+    print("  never touches icon.icns or Mac 32/128 PNGs")
     print("  if you run `tauri icon` next, finish with: npm run icons:regen")
 
 

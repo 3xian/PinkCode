@@ -23,7 +23,7 @@
 
 A desktop console for [Grok Build](https://x.ai): multi-task board, ACP timeline, workspace files/Git, permissions, and usage. It attaches to `grok` over ACP — it does not run its own agent loop.
 
-**Tauri 2 · React · TypeScript · Rust** · current version **0.1.11**
+**Tauri 2 · React · TypeScript · Rust** · current version **0.1.13**
 
 ## Screenshot
 

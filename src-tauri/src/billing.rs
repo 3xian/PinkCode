@@ -5,6 +5,7 @@
 //!
 //! Auth (read / OIDC refresh / persist) lives in [`crate::auth`].
 
+use crate::agent_runtime::now_unix_secs;
 use crate::auth;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -68,19 +69,18 @@ struct RawProductUsage {
     usage_percent: Option<f64>,
 }
 
+enum BillingCallError {
+    /// HTTP status from the billing API (0 = transport / other).
+    Http(u16, String),
+}
+
 fn remaining(used: f64) -> f64 {
     (100.0 - used).clamp(0.0, 100.0)
 }
 
 /// Fetch current period usage (weekly for SuperGrok / Grok Build accounts).
 pub fn fetch_week_usage() -> WeekUsage {
-    let fetched_at = format!(
-        "{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
-    );
+    let fetched_at = now_unix_secs().to_string();
     match fetch_week_usage_inner() {
         Ok(mut u) => {
             u.fetched_at = fetched_at;
@@ -138,8 +138,7 @@ fn http_agent() -> ureq::Agent {
     builder.build()
 }
 
-/// ureq 2 maps 4xx/5xx to `Error::Status`.
-fn call_billing(agent: &ureq::Agent, token: &str) -> Result<ureq::Response, (u16, String)> {
+fn call_billing(agent: &ureq::Agent, token: &str) -> Result<ureq::Response, BillingCallError> {
     match agent
         .get(BILLING_URL)
         .set("Authorization", &format!("Bearer {token}"))
@@ -149,8 +148,10 @@ fn call_billing(agent: &ureq::Agent, token: &str) -> Result<ureq::Response, (u16
         .call()
     {
         Ok(resp) => Ok(resp),
-        Err(ureq::Error::Status(code, _resp)) => Err((code, format!("Billing HTTP {code}"))),
-        Err(e) => Err((0, format!("Billing request failed: {e}"))),
+        Err(ureq::Error::Status(code, _resp)) => {
+            Err(BillingCallError::Http(code, format!("Billing HTTP {code}")))
+        }
+        Err(e) => Err(BillingCallError::Http(0, format!("Billing request failed: {e}"))),
     }
 }
 
@@ -160,22 +161,28 @@ fn auth_failed_msg(code: u16) -> String {
 
 fn fetch_week_usage_inner() -> Result<WeekUsage, String> {
     let agent = http_agent();
-    let mut token = auth::read_access_token()?;
+    // Prefer a non-expired disk token; refresh proactively when expires_at says so.
+    let mut token = auth::ensure_access_token(&agent)?;
 
-    // One policy: use disk token; on 401 refresh once and retry.
-    for attempt in 0..2 {
-        match call_billing(&agent, &token) {
-            Ok(resp) => return parse_billing(resp),
-            Err((401, _)) if attempt == 0 => {
-                token = auth::refresh_access_token(&agent)?;
-            }
-            Err((code, _)) if code == 401 || code == 403 => {
-                return Err(auth_failed_msg(code));
-            }
-            Err((_, msg)) => return Err(msg),
+    match call_billing(&agent, &token) {
+        Ok(resp) => return parse_billing(resp),
+        Err(BillingCallError::Http(401, _)) => {
+            // Server rejected — force refresh once even if expires_at still looks fine.
+            token = auth::refresh_access_token(&agent)?;
         }
+        Err(BillingCallError::Http(code, _)) if code == 403 => {
+            return Err(auth_failed_msg(code));
+        }
+        Err(BillingCallError::Http(_, msg)) => return Err(msg),
     }
-    Err(auth_failed_msg(401))
+
+    match call_billing(&agent, &token) {
+        Ok(resp) => parse_billing(resp),
+        Err(BillingCallError::Http(code, _)) if code == 401 || code == 403 => {
+            Err(auth_failed_msg(code))
+        }
+        Err(BillingCallError::Http(_, msg)) => Err(msg),
+    }
 }
 
 fn parse_billing(resp: ureq::Response) -> Result<WeekUsage, String> {
@@ -269,7 +276,7 @@ mod tests {
         }
     }
 
-    /// Optional live check: `MARSBUILD_LIVE_BILLING=1 cargo test live_week_usage -- --ignored`
+    /// Optional live check: `cargo test live_week_usage -- --ignored`
     #[test]
     #[ignore]
     fn live_week_usage_smoke() {

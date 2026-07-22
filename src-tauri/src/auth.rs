@@ -4,6 +4,7 @@
 //! silently refreshes OIDC access tokens the same way the CLI does, so callers
 //! (billing, …) do not fail after `key` expires until the user opens `grok`.
 
+use crate::agent_runtime::{self, now_unix_secs, parse_rfc3339_z, unix_to_rfc3339_z};
 use crate::sessions;
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -11,18 +12,21 @@ use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::Write;
 use std::path::PathBuf;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
-/// Match Grok's default early-invalidation window (seconds before `exp`).
+/// Match Grok's default early-invalidation window (seconds before expiry).
 const EARLY_INVALIDATION_SECS: u64 = 300;
 const LOCK_WAIT: Duration = Duration::from_secs(2);
 const LOCK_POLL: Duration = Duration::from_millis(40);
+const DEFAULT_ACCESS_TTL_SECS: u64 = 6 * 3600;
 
 #[derive(Debug, Clone)]
 pub struct AuthEntry {
     /// Map key in `auth.json` (issuer::client_id or similar).
     pub provider_key: String,
     pub access_token: String,
+    /// From `expires_at` when present (primary freshness signal).
+    pub expires_at: Option<String>,
     /// Present only when silent OIDC refresh is possible.
     pub refresh: Option<OidcRefresh>,
 }
@@ -51,101 +55,23 @@ fn auth_lock_path() -> PathBuf {
     sessions::grok_home().join("auth.json.lock")
 }
 
-fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
-
-/// Best-effort: JWT `exp` from a compact JWS (no signature verify).
-fn jwt_exp(token: &str) -> Option<u64> {
-    let payload = token.split('.').nth(1)?;
-    let bytes = base64url_decode(payload)?;
-    let v: Value = serde_json::from_slice(&bytes).ok()?;
-    v.get("exp")?.as_u64()
-}
-
-fn access_token_fresh(token: &str) -> bool {
-    match jwt_exp(token) {
-        Some(exp) => now_unix() + EARLY_INVALIDATION_SECS < exp,
-        // No exp claim — treat as usable until the API says otherwise.
-        None => true,
-    }
-}
-
-fn base64url_decode(input: &str) -> Option<Vec<u8>> {
-    let mut s = input.replace('-', "+").replace('_', "/");
-    while s.len() % 4 != 0 {
-        s.push('=');
-    }
-    // Minimal base64 decoder (std has no public one; keep dep-free).
-    fn val(c: u8) -> Option<u8> {
-        match c {
-            b'A'..=b'Z' => Some(c - b'A'),
-            b'a'..=b'z' => Some(c - b'a' + 26),
-            b'0'..=b'9' => Some(c - b'0' + 52),
-            b'+' => Some(62),
-            b'/' => Some(63),
-            _ => None,
-        }
-    }
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
-    let mut i = 0;
-    while i + 3 < bytes.len() {
-        let (a, b, c, d) = (bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]);
-        i += 4;
-        if a == b'=' {
-            break;
-        }
-        let av = val(a)?;
-        let bv = val(b)?;
-        out.push((av << 2) | (bv >> 4));
-        if c == b'=' {
-            break;
-        }
-        let cv = val(c)?;
-        out.push(((bv & 0xf) << 4) | (cv >> 2));
-        if d == b'=' {
-            break;
-        }
-        let dv = val(d)?;
-        out.push(((cv & 0x3) << 6) | dv);
-    }
-    Some(out)
-}
-
-/// Format unix seconds as `YYYY-MM-DDTHH:MM:SSZ` (write path only).
-fn unix_to_rfc3339_z(secs: u64) -> String {
-    let days = (secs / 86400) as i64;
-    let rem = secs % 86400;
-    let (y, m, d) = civil_from_days(days);
-    let hh = rem / 3600;
-    let mm = (rem % 3600) / 60;
-    let ss = rem % 60;
-    format!("{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z")
-}
-
-/// Howard Hinnant civil_from_days (write path for `expires_at` only).
-fn civil_from_days(days: i64) -> (i32, u32, u32) {
-    let z = days + 719468;
-    let era = if z >= 0 { z } else { z - 146096 } / 146097;
-    let doe = (z - era * 146097) as u32;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = (yoe as i64) + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    (y as i32, m, d)
-}
-
 fn map_str<'a>(map: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
     map.get(key)
         .and_then(|x| x.as_str())
         .filter(|s| !s.is_empty())
+}
+
+/// Fresh when `expires_at` is more than [`EARLY_INVALIDATION_SECS`] ahead.
+/// Missing / unparsable `expires_at` → treat as usable until the API rejects it.
+pub fn access_token_fresh(entry: &AuthEntry) -> bool {
+    match entry
+        .expires_at
+        .as_deref()
+        .and_then(parse_rfc3339_z)
+    {
+        Some(exp) => now_unix_secs() + EARLY_INVALIDATION_SECS < exp,
+        None => true,
+    }
 }
 
 pub fn read_auth_entry() -> Result<AuthEntry, String> {
@@ -185,15 +111,20 @@ pub fn read_auth_entry() -> Result<AuthEntry, String> {
         return Ok(AuthEntry {
             provider_key: provider_key.clone(),
             access_token: key.to_string(),
+            expires_at: map_str(map, "expires_at").map(str::to_string),
             refresh,
         });
     }
     Err("No session token in auth.json. Run `grok login`.".to_string())
 }
 
-/// Access token from disk (no network).
-pub fn read_access_token() -> Result<String, String> {
-    Ok(read_auth_entry()?.access_token)
+/// Disk token if still fresh; otherwise OIDC refresh under lock.
+pub fn ensure_access_token(agent: &ureq::Agent) -> Result<String, String> {
+    let entry = read_auth_entry()?;
+    if access_token_fresh(&entry) {
+        return Ok(entry.access_token);
+    }
+    refresh_access_token(agent)
 }
 
 struct AuthLock {
@@ -209,20 +140,20 @@ impl Drop for AuthLock {
 /// Exclusive lock on `auth.json.lock` (advisory, same file Grok uses).
 fn acquire_auth_lock() -> Result<AuthLock, String> {
     let path = auth_lock_path();
+    let mut file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(&path)
+        .map_err(|e| format!("Cannot open auth lock: {e}"))?;
+
     let deadline = Instant::now() + LOCK_WAIT;
     loop {
-        let file = OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .open(&path)
-            .map_err(|e| format!("Cannot open auth lock: {e}"))?;
         match file.try_lock() {
             Ok(()) => {
-                // Best-effort marker for humans / older tools (pid:unix).
-                let marker = format!("{}:{}\n", std::process::id(), now_unix());
+                let marker = format!("{}:{}\n", std::process::id(), now_unix_secs());
                 let _ = file.set_len(0);
-                let _ = (&file).write_all(marker.as_bytes());
+                let _ = file.write_all(marker.as_bytes());
                 return Ok(AuthLock { file });
             }
             Err(TryLockError::WouldBlock) => {
@@ -245,40 +176,35 @@ fn token_endpoint(issuer: &str) -> String {
     format!("{}/oauth2/token", issuer.trim_end_matches('/'))
 }
 
-/// Refresh OIDC access token, persist to `auth.json`, return the new access token.
+/// Force OIDC refresh, persist to `auth.json`, return the new access token.
 ///
-/// Under lock: re-read so a concurrent `grok` refresh is adopted when possible;
-/// never clobber a fresher sibling token after our network call returns.
+/// Under lock: if a sibling already rotated credentials while we waited, adopt
+/// that token and skip the network call. After the network call, adopt a
+/// fresher sibling write if one appears (Grok may not share our lock).
 pub fn refresh_access_token(agent: &ureq::Agent) -> Result<String, String> {
-    let before = read_auth_entry()?;
-    let Some(refresh) = before.refresh.clone() else {
+    let snapshot = read_auth_entry()?;
+    if snapshot.refresh.is_none() {
         return Err(
             "Session token expired and cannot be refreshed. Run `grok login`.".into(),
         );
-    };
-
-    // Fast path: sibling already rotated credentials.
-    if let Ok(latest) = read_auth_entry() {
-        if latest.provider_key == before.provider_key
-            && latest.access_token != before.access_token
-            && access_token_fresh(&latest.access_token)
-        {
-            return Ok(latest.access_token);
-        }
     }
 
     let _lock = acquire_auth_lock()?;
 
-    // Re-read under lock — adopt if sibling finished while we waited.
     let auth = read_auth_entry()?;
-    if auth.provider_key == before.provider_key
-        && auth.access_token != before.access_token
-        && access_token_fresh(&auth.access_token)
-    {
+    // Sibling finished while we waited for the lock.
+    if auth.access_token != snapshot.access_token && access_token_fresh(&auth) {
         return Ok(auth.access_token);
     }
 
-    let refresh = auth.refresh.as_ref().unwrap_or(&refresh);
+    let refresh = auth
+        .refresh
+        .as_ref()
+        .or(snapshot.refresh.as_ref())
+        .ok_or_else(|| {
+            "Session token expired and cannot be refreshed. Run `grok login`.".to_string()
+        })?;
+
     let body = format!(
         "grant_type=refresh_token&refresh_token={}&client_id={}",
         urlencoding::encode(&refresh.refresh_token),
@@ -326,18 +252,20 @@ pub fn refresh_access_token(agent: &ureq::Agent) -> Result<String, String> {
         .ok_or_else(|| "Token refresh response missing access_token".to_string())?;
     let new_refresh = parsed.refresh_token.filter(|s| !s.is_empty());
 
-    let expires_at = parsed
-        .expires_in
-        .map(|secs| unix_to_rfc3339_z(now_unix().saturating_add(secs)))
-        .or_else(|| jwt_exp(&access_token).map(unix_to_rfc3339_z))
-        .unwrap_or_else(|| unix_to_rfc3339_z(now_unix().saturating_add(6 * 3600)));
+    let expires_at = unix_to_rfc3339_z(
+        now_unix_secs()
+            + parsed
+                .expires_in
+                .filter(|&s| s > 0)
+                .unwrap_or(DEFAULT_ACCESS_TTL_SECS),
+    );
 
-    // Adopt sibling if they wrote a fresher token while we were on the wire.
+    // Sibling wrote a different fresh token while we were on the wire.
     if let Ok(latest) = read_auth_entry() {
         if latest.provider_key == auth.provider_key
             && latest.access_token != auth.access_token
             && latest.access_token != access_token
-            && access_token_fresh(&latest.access_token)
+            && access_token_fresh(&latest)
         {
             return Ok(latest.access_token);
         }
@@ -378,8 +306,7 @@ fn persist_tokens(
         entry.insert("refresh_token".into(), Value::String(rt.to_string()));
     }
 
-    // Compact JSON preserves a stable single-line-ish write; pretty reordering
-    // fights with concurrent grok writers. Use compact + trailing newline.
+    // Compact JSON: pretty reordering fights concurrent grok writers.
     let mut out = serde_json::to_vec(&root).map_err(|e| format!("serialize auth.json: {e}"))?;
     out.push(b'\n');
 
@@ -396,64 +323,33 @@ fn persist_tokens(
 mod tests {
     use super::*;
 
-    #[test]
-    fn base64url_jwt_payload_roundtrip_shape() {
-        // {"exp":1784752931} base64url
-        let payload = "eyJleHAiOjE3ODQ3NTI5MzF9";
-        let bytes = base64url_decode(payload).expect("decode");
-        let v: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(v["exp"].as_u64(), Some(1_784_752_931));
-    }
-
-    #[test]
-    fn jwt_exp_reads_claim() {
-        // header.payload.sig — header/sig ignored
-        let token = "eyJhbGciOiJub25lIn0.eyJleHAiOjE3ODQ3NTI5MzF9.sig";
-        assert_eq!(jwt_exp(token), Some(1_784_752_931));
-        assert_eq!(jwt_exp("not-a-jwt"), None);
-    }
-
-    #[test]
-    fn unix_to_rfc3339_epoch() {
-        assert_eq!(unix_to_rfc3339_z(0), "1970-01-01T00:00:00Z");
-        // 2026-07-22T20:42:11Z
-        assert_eq!(unix_to_rfc3339_z(1_784_752_931), "2026-07-22T20:42:11Z");
-    }
-
-    #[test]
-    fn access_token_fresh_uses_early_window() {
-        let future_exp = now_unix() + 3600;
-        let payload = format!(r#"{{"exp":{future_exp}}}"#);
-        let b64 = base64url_encode_for_test(payload.as_bytes());
-        let token = format!("h.{b64}.s");
-        assert!(access_token_fresh(&token));
-
-        let soon = now_unix() + 30;
-        let payload = format!(r#"{{"exp":{soon}}}"#);
-        let b64 = base64url_encode_for_test(payload.as_bytes());
-        let token = format!("h.{b64}.s");
-        assert!(!access_token_fresh(&token));
-    }
-
-    fn base64url_encode_for_test(input: &[u8]) -> String {
-        const T: &[u8] =
-            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        let mut out = String::new();
-        let mut i = 0;
-        while i < input.len() {
-            let b0 = input[i];
-            let b1 = if i + 1 < input.len() { input[i + 1] } else { 0 };
-            let b2 = if i + 2 < input.len() { input[i + 2] } else { 0 };
-            out.push(T[(b0 >> 2) as usize] as char);
-            out.push(T[(((b0 & 3) << 4) | (b1 >> 4)) as usize] as char);
-            if i + 1 < input.len() {
-                out.push(T[(((b1 & 0xf) << 2) | (b2 >> 6)) as usize] as char);
-            }
-            if i + 2 < input.len() {
-                out.push(T[(b2 & 0x3f) as usize] as char);
-            }
-            i += 3;
+    fn entry_with_exp(expires_at: Option<&str>) -> AuthEntry {
+        AuthEntry {
+            provider_key: "test".into(),
+            access_token: "tok".into(),
+            expires_at: expires_at.map(str::to_string),
+            refresh: None,
         }
-        out.replace('+', "-").replace('/', "_")
+    }
+
+    #[test]
+    fn access_token_fresh_uses_expires_at_and_early_window() {
+        let future = unix_to_rfc3339_z(now_unix_secs() + 3600);
+        assert!(access_token_fresh(&entry_with_exp(Some(&future))));
+
+        let soon = unix_to_rfc3339_z(now_unix_secs() + 30);
+        assert!(!access_token_fresh(&entry_with_exp(Some(&soon))));
+
+        // Missing expires_at → assume usable until API rejects.
+        assert!(access_token_fresh(&entry_with_exp(None)));
+    }
+
+    #[test]
+    fn agent_runtime_rfc3339_helpers_used() {
+        // Smoke: auth depends on shared formatter (compile-time + value check).
+        assert_eq!(
+            agent_runtime::unix_to_rfc3339_z(0),
+            "1970-01-01T00:00:00Z"
+        );
     }
 }

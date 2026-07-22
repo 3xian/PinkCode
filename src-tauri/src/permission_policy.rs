@@ -304,9 +304,6 @@ mod tests {
             decide_gate(PermissionMode::Auto, &edit),
             GateDecision::Allow
         );
-        assert_eq!(
-            decide_gate(PermissionMode::Auto, &high),
-            GateDecision::Ask
-        );
+        assert_eq!(decide_gate(PermissionMode::Auto, &high), GateDecision::Ask);
     }
 }

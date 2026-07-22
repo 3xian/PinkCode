@@ -151,7 +151,10 @@ fn call_billing(agent: &ureq::Agent, token: &str) -> Result<ureq::Response, Bill
         Err(ureq::Error::Status(code, _resp)) => {
             Err(BillingCallError::Http(code, format!("Billing HTTP {code}")))
         }
-        Err(e) => Err(BillingCallError::Http(0, format!("Billing request failed: {e}"))),
+        Err(e) => Err(BillingCallError::Http(
+            0,
+            format!("Billing request failed: {e}"),
+        )),
     }
 }
 

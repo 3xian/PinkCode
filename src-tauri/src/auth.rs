@@ -4,7 +4,7 @@
 //! silently refreshes OIDC access tokens the same way the CLI does, so callers
 //! (billing, …) do not fail after `key` expires until the user opens `grok`.
 
-use crate::agent_runtime::{self, now_unix_secs, parse_rfc3339_z, unix_to_rfc3339_z};
+use crate::agent_runtime::{now_unix_secs, parse_rfc3339_z, unix_to_rfc3339_z};
 use crate::sessions;
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -64,11 +64,7 @@ fn map_str<'a>(map: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
 /// Fresh when `expires_at` is more than [`EARLY_INVALIDATION_SECS`] ahead.
 /// Missing / unparsable `expires_at` → treat as usable until the API rejects it.
 pub fn access_token_fresh(entry: &AuthEntry) -> bool {
-    match entry
-        .expires_at
-        .as_deref()
-        .and_then(parse_rfc3339_z)
-    {
+    match entry.expires_at.as_deref().and_then(parse_rfc3339_z) {
         Some(exp) => now_unix_secs() + EARLY_INVALIDATION_SECS < exp,
         None => true,
     }
@@ -184,9 +180,7 @@ fn token_endpoint(issuer: &str) -> String {
 pub fn refresh_access_token(agent: &ureq::Agent) -> Result<String, String> {
     let snapshot = read_auth_entry()?;
     if snapshot.refresh.is_none() {
-        return Err(
-            "Session token expired and cannot be refreshed. Run `grok login`.".into(),
-        );
+        return Err("Session token expired and cannot be refreshed. Run `grok login`.".into());
     }
 
     let _lock = acquire_auth_lock()?;
@@ -347,9 +341,6 @@ mod tests {
     #[test]
     fn agent_runtime_rfc3339_helpers_used() {
         // Smoke: auth depends on shared formatter (compile-time + value check).
-        assert_eq!(
-            agent_runtime::unix_to_rfc3339_z(0),
-            "1970-01-01T00:00:00Z"
-        );
+        assert_eq!(unix_to_rfc3339_z(0), "1970-01-01T00:00:00Z");
     }
 }

@@ -223,6 +223,21 @@ fn get_last_spawn_permission_mode() -> PermissionMode {
 }
 
 #[tauri::command]
+fn set_task_plan_armed(session_id: String, armed: bool) {
+    task_prefs::set_plan_armed(&session_id, armed);
+}
+
+#[tauri::command]
+fn get_task_plan_armed(session_id: String) -> bool {
+    task_prefs::get_plan_armed(&session_id)
+}
+
+#[tauri::command]
+fn list_task_plan_armed() -> HashMap<String, bool> {
+    task_prefs::all_plan_armed()
+}
+
+#[tauri::command]
 async fn list_project_dir(root: String, path: Option<String>) -> Result<Vec<DirEntry>, String> {
     tauri::async_runtime::spawn_blocking(move || project_fs::list_dir(&root, path.as_deref()))
         .await
@@ -296,6 +311,9 @@ pub fn run() {
             get_task_permission_mode,
             list_task_permission_modes,
             get_last_spawn_permission_mode,
+            set_task_plan_armed,
+            get_task_plan_armed,
+            list_task_plan_armed,
             list_project_dir,
             open_project_path,
             git_status,

@@ -1,7 +1,7 @@
 //! Per-task (Grok session) preferences persisted by MarsBuild.
 //!
-//! Stored under `~/.marsbuild/task_prefs.json` so permission mode survives
-//! restarts and re-attach, independent of Grok's own session files.
+//! Stored under `~/.marsbuild/task_prefs.json` so permission mode and Plan
+//! arming survive restarts and re-attach, independent of Grok's own session files.
 
 use crate::agent_types::PermissionMode;
 use parking_lot::Mutex;
@@ -17,6 +17,9 @@ struct TaskPrefsFile {
     /// session_id → permission mode
     #[serde(default)]
     sessions: HashMap<String, PermissionMode>,
+    /// session_id → Plan Pending (Grok Plan is orthogonal to permission).
+    #[serde(default)]
+    plan_armed: HashMap<String, bool>,
     /// Last mode chosen in the New Task modal (seed for the next create).
     #[serde(default)]
     last_spawn_mode: Option<PermissionMode>,
@@ -102,6 +105,42 @@ pub fn all_permission_modes() -> HashMap<String, PermissionMode> {
     store().data.lock().sessions.clone()
 }
 
+/// Whether Plan mode is armed (Pending) for this session.
+pub fn get_plan_armed(session_id: &str) -> bool {
+    let id = session_id.trim();
+    if id.is_empty() {
+        return false;
+    }
+    store()
+        .data
+        .lock()
+        .plan_armed
+        .get(id)
+        .copied()
+        .unwrap_or(false)
+}
+
+/// Persist Plan arming (true = Pending until next free-text `/plan …`).
+pub fn set_plan_armed(session_id: &str, armed: bool) {
+    let id = session_id.trim();
+    if id.is_empty() {
+        return;
+    }
+    let s = store();
+    let mut data = s.data.lock();
+    if armed {
+        data.plan_armed.insert(id.to_string(), true);
+    } else {
+        data.plan_armed.remove(id);
+    }
+    save_locked(&s.path, &data);
+}
+
+/// Snapshot of session → plan-armed flags (only `true` entries are stored).
+pub fn all_plan_armed() -> HashMap<String, bool> {
+    store().data.lock().plan_armed.clone()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,12 +165,25 @@ mod tests {
         let mut data = TaskPrefsFile::default();
         data.sessions
             .insert("sess-1".into(), PermissionMode::AcceptEdits);
+        data.plan_armed.insert("sess-1".into(), true);
         save_locked(&path, &data);
         let loaded = load_file(&path).expect("load");
         assert_eq!(
             loaded.sessions.get("sess-1").copied(),
             Some(PermissionMode::AcceptEdits)
         );
+        assert_eq!(loaded.plan_armed.get("sess-1").copied(), Some(true));
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn plan_armed_defaults_empty() {
+        let path = temp_store_path();
+        let _ = fs::remove_file(&path);
+        let data = TaskPrefsFile::default();
+        save_locked(&path, &data);
+        let loaded = load_file(&path).expect("load");
+        assert!(loaded.plan_armed.is_empty());
         let _ = fs::remove_file(&path);
     }
 }

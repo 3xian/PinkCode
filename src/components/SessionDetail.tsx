@@ -14,7 +14,7 @@ import type {
   MainTab,
   ManagedAgentInfo,
   PendingPermission,
-  PermissionMode,
+  SessionMode,
   SessionDetail as Detail,
 } from "../types";
 import {
@@ -42,8 +42,8 @@ interface Props {
   permissions: PendingPermission[];
   permBusyKey: string | null;
   controlBusy: boolean;
-  permissionMode: PermissionMode;
-  onPermissionModeChange: (mode: PermissionMode) => void;
+  sessionMode: SessionMode;
+  onSessionModeChange: (mode: SessionMode) => void;
   onSendPrompt: (text: string) => void;
   onResolvePermission: (item: PendingPermission, optionId: string) => void;
   /** Bump after attach/spawn to pin Timeline to the bottom. */
@@ -87,8 +87,8 @@ export function SessionDetailView({
   permissions,
   permBusyKey,
   controlBusy,
-  permissionMode,
-  onPermissionModeChange,
+  sessionMode,
+  onSessionModeChange,
   onSendPrompt,
   onResolvePermission,
   pinTimelineBottomSeq = 0,
@@ -154,7 +154,7 @@ export function SessionDetailView({
       />
 
       <div className="detail-header">
-        <div>
+        <div className="detail-header-main">
           <div className="detail-status-row">
             <span
               className={`pill ${
@@ -181,12 +181,18 @@ export function SessionDetailView({
               <span className="pill danger">{card.errorCount} errors</span>
             )}
           </div>
-          <h1>{card.title}</h1>
+          <h1 title={card.title || undefined}>{card.title}</h1>
           <div className="detail-sub">
             <span title={card.cwd}>{shortPath(card.cwd, 64)}</span>
-            {card.headBranch && <span>⎇ {card.headBranch}</span>}
-            <span>updated {formatRelative(card.lastActiveAt ?? card.updatedAt)}</span>
-            <span className="mono">{card.id.slice(0, 13)}…</span>
+            {card.headBranch && (
+              <span title={card.headBranch}>⎇ {card.headBranch}</span>
+            )}
+            <span>
+              updated {formatRelative(card.lastActiveAt ?? card.updatedAt)}
+            </span>
+            <span className="mono" title={card.id}>
+              {card.id.slice(0, 13)}…
+            </span>
           </div>
         </div>
 
@@ -252,8 +258,8 @@ export function SessionDetailView({
       <PromptBar
         managed={managed}
         busy={controlBusy}
-        permissionMode={permissionMode}
-        onPermissionModeChange={onPermissionModeChange}
+        sessionMode={sessionMode}
+        onSessionModeChange={onSessionModeChange}
         onSend={onSendPrompt}
         availableCommands={availableCommands}
       />

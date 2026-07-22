@@ -103,6 +103,9 @@ pub fn decide_gate(mode: PermissionMode, pending: &PendingPermission) -> GateDec
         PermissionMode::Default => GateDecision::Ask,
         PermissionMode::AcceptEdits if is_edit_permission(pending) => GateDecision::Allow,
         PermissionMode::AcceptEdits => GateDecision::Ask,
+        // Live Auto is host-side only (see PermissionMode::Auto docs).
+        PermissionMode::Auto if pending.risk == "high" => GateDecision::Ask,
+        PermissionMode::Auto => GateDecision::Allow,
     }
 }
 
@@ -283,6 +286,27 @@ mod tests {
         assert_eq!(
             decide_gate(PermissionMode::DontAsk, &edit),
             GateDecision::Deny
+        );
+    }
+
+    #[test]
+    fn auto_allows_safe_asks_on_high_risk() {
+        let edit = pending(PermissionKind::FsWrite, "Write file", "/tmp/a.rs");
+        let shell = pending(
+            PermissionKind::ToolPermission,
+            "Bash",
+            r#"{"command":"rm"}"#,
+        );
+        // Shell title sets risk high via build_tool_permission; set explicitly here.
+        let mut high = shell;
+        high.risk = "high".into();
+        assert_eq!(
+            decide_gate(PermissionMode::Auto, &edit),
+            GateDecision::Allow
+        );
+        assert_eq!(
+            decide_gate(PermissionMode::Auto, &high),
+            GateDecision::Ask
         );
     }
 }

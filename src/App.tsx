@@ -9,10 +9,12 @@ import {
   listPendingPermissions,
   listSessions,
   listTaskPermissionModes,
+  listTaskPlanArmed,
   promptAgent,
   resolvePermission,
   setPermissionMode,
   setTaskPermissionMode,
+  setTaskPlanArmed,
   spawnAgent,
   stopAgent,
 } from "./api";
@@ -33,11 +35,18 @@ import type {
   PermissionMode,
   SessionCard,
   SessionDetail,
+  SessionMode,
 } from "./types";
 import {
   isLocalSlashCommand,
   runLocalSlash,
 } from "./utils/localSlash";
+import {
+  agentSlashForPermissionTransition,
+  applySessionModeChange,
+  canSendModeSlash,
+  displaySessionMode,
+} from "./utils/sessionMode";
 import "./App.css";
 
 /**
@@ -92,6 +101,14 @@ function App() {
   const [taskPermissionModes, setTaskPermissionModes] = useState<
     Record<string, PermissionMode>
   >({});
+  /**
+   * Plan arming per session (Grok Plan is orthogonal to permission).
+   * Persisted under `~/.marsbuild/task_prefs.json` like permission modes.
+   * Display Mode = planArmed ? Plan : from host PermissionMode.
+   */
+  const [planArmedBySession, setPlanArmedBySession] = useState<
+    Record<string, boolean>
+  >({});
   /** Seed for New Task modal; last mode used when spawning. */
   const [lastSpawnMode, setLastSpawnMode] =
     useState<PermissionMode>("default");
@@ -142,15 +159,17 @@ function App() {
     }
   }, [upsertManaged]);
 
-  // Hydrate per-task permission modes + last spawn seed once on mount.
+  // Hydrate per-task permission modes, Plan arming, + last spawn seed on mount.
   useEffect(() => {
     void (async () => {
       try {
-        const [modes, last] = await Promise.all([
+        const [modes, planArmed, last] = await Promise.all([
           listTaskPermissionModes(),
+          listTaskPlanArmed(),
           getLastSpawnPermissionMode(),
         ]);
         setTaskPermissionModes(modes);
+        setPlanArmedBySession(planArmed);
         setLastSpawnMode(last);
       } catch {
         /* non-tauri / first run */
@@ -172,6 +191,14 @@ function App() {
     }
     return "default";
   }, [managedForSession, selectedId, taskPermissionModes]);
+
+  /** Single Mode chip: planArmed + host permission (no second Mode map). */
+  const effectiveSessionMode: SessionMode = useMemo(() => {
+    const planArmed = selectedId
+      ? Boolean(planArmedBySession[selectedId])
+      : false;
+    return displaySessionMode(planArmed, effectivePermissionMode);
+  }, [selectedId, planArmedBySession, effectivePermissionMode]);
 
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
@@ -407,44 +434,94 @@ function App() {
     }
   }
 
-  async function handlePermissionModeChange(mode: PermissionMode) {
+  /**
+   * Grok single Mode control (Shift+Tab ring).
+   * - planArmed is orthogonal to permission and persisted per task
+   * - permission is the host gate (+ spawn flags when process starts)
+   * - when the agent is ready, best-effort `/auto` or `/always-approve` keeps
+   *   the grok process mode in sync with the host ring
+   */
+  async function handleSessionModeChange(mode: SessionMode) {
     const sessionId = selectedId;
-    const previousMode = effectivePermissionMode;
-    // Optimistic local map so the select updates immediately.
-    if (sessionId) {
-      setTaskPermissionModes((prev) => ({ ...prev, [sessionId]: mode }));
+    const previousPlan = sessionId
+      ? Boolean(planArmedBySession[sessionId])
+      : false;
+    const previousPerm = effectivePermissionMode;
+    const next = applySessionModeChange(mode, previousPerm);
+    const planChanged = next.planArmed !== previousPlan;
+
+    // Optimistic plan arming.
+    if (sessionId && planChanged) {
+      setPlanArmedBySession((prev) => ({
+        ...prev,
+        [sessionId]: next.planArmed,
+      }));
     }
 
-    setControlBusy(true);
+    const targetPerm = next.permission;
+    const permChanged = Boolean(targetPerm && targetPerm !== previousPerm);
+
+    if (sessionId && permChanged && targetPerm) {
+      setTaskPermissionModes((prev) => ({
+        ...prev,
+        [sessionId]: targetPerm,
+      }));
+    }
+
+    // Nothing to persist / sync.
+    if (!planChanged && !permChanged) {
+      return;
+    }
+
     setError(null);
     try {
-      if (managedForSession && managedForSession.status !== "stopped") {
-        // Attached agent path also persists to disk in Rust.
-        const info = await setPermissionMode(
-          managedForSession.handleId,
-          mode,
-        );
-        upsertManaged(info);
-        if (info.sessionId) {
-          setTaskPermissionModes((prev) => ({
-            ...prev,
-            [info.sessionId!]: mode,
-          }));
+      if (sessionId && planChanged) {
+        await setTaskPlanArmed(sessionId, next.planArmed);
+      }
+
+      if (permChanged && targetPerm) {
+        if (managedForSession && managedForSession.status !== "stopped") {
+          const info = await setPermissionMode(
+            managedForSession.handleId,
+            targetPerm,
+          );
+          upsertManaged(info);
+          if (info.sessionId) {
+            setTaskPermissionModes((prev) => ({
+              ...prev,
+              [info.sessionId!]: targetPerm,
+            }));
+          }
+
+          // Keep Grok agent permission ring in sync when idle.
+          const slash = agentSlashForPermissionTransition(
+            previousPerm,
+            targetPerm,
+          );
+          if (slash && canSendModeSlash(info.status)) {
+            try {
+              await promptAgent(info.handleId, slash);
+              setPinTimelineBottomSeq((n) => n + 1);
+            } catch {
+              // Host gate still applies; process flag may need re-attach.
+            }
+          }
+        } else if (sessionId) {
+          await setTaskPermissionMode(sessionId, targetPerm);
         }
-      } else if (sessionId) {
-        await setTaskPermissionMode(sessionId, mode);
       }
     } catch (e) {
-      // Keep the UI aligned with the backend when the optimistic write fails.
       if (sessionId) {
+        setPlanArmedBySession((prev) => ({
+          ...prev,
+          [sessionId]: previousPlan,
+        }));
         setTaskPermissionModes((prev) => ({
           ...prev,
-          [sessionId]: previousMode,
+          [sessionId]: previousPerm,
         }));
       }
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setControlBusy(false);
     }
   }
 
@@ -637,8 +714,8 @@ function App() {
           permissions={permissionsForSession}
           permBusyKey={permBusyKey}
           controlBusy={controlBusy}
-          permissionMode={effectivePermissionMode}
-          onPermissionModeChange={(m) => void handlePermissionModeChange(m)}
+          sessionMode={effectiveSessionMode}
+          onSessionModeChange={(m) => void handleSessionModeChange(m)}
           onSendPrompt={(t) => void handleSend(t)}
           onResolvePermission={(item, opt) =>
             void handleResolvePermission(item, opt)

@@ -79,7 +79,8 @@ export function NewTaskModal({
         </div>
         <p className="muted small">
           Spawns <code>grok agent stdio</code>, creates an ACP session, and
-          streams updates live. Permission mode is saved with this task.
+          streams updates live. Host permission is the process gate; the
+          composer Mode chip (Shift+Tab) is the day-to-day Grok ring.
         </p>
 
         <label className="field">
@@ -139,7 +140,7 @@ export function NewTaskModal({
         </label>
 
         <label className="field" title={modeHint}>
-          <span>Permission mode</span>
+          <span>Host permission</span>
           <select
             className="field-select"
             value={permissionMode}
@@ -147,7 +148,7 @@ export function NewTaskModal({
             onChange={(e) =>
               setPermissionMode(e.target.value as PermissionMode)
             }
-            aria-label="Permission mode for this task"
+            aria-label="Host permission for this task"
           >
             {PERMISSION_MODE_OPTIONS.map((o) => (
               <option key={o.value} value={o.value} title={o.hint}>
@@ -159,6 +160,11 @@ export function NewTaskModal({
           {permissionMode === "bypassPermissions" ? (
             <span className="field-hint muted small">
               Spawns with <code>--always-approve</code>
+            </span>
+          ) : null}
+          {permissionMode === "auto" ? (
+            <span className="field-hint muted small">
+              Spawns with <code>--permission-mode auto</code>
             </span>
           ) : null}
         </label>

@@ -1,13 +1,15 @@
 //! Multi-agent process manager: spawn / attach / prompt / stop / permissions via ACP.
 //!
-//! Permission modes mirror Grok Build's prompt policy (see `22-permissions-and-safety.md`):
-//! - `default` — ask the user on gated ops
+//! Permission modes mirror Grok Build's prompt policy:
+//! - `default` — ask the user on gated ops (Normal / ask)
 //! - `acceptEdits` — auto-allow file edits; ask for shell / other tools
-//! - `bypassPermissions` — auto-allow (spawn with `grok --always-approve`)
+//! - `auto` — allow safe tools; ask on high-risk shell (`--permission-mode auto` + `/auto`)
+//! - `bypassPermissions` — auto-allow (spawn with `grok --always-approve` + `/always-approve`)
 //! - `dontAsk` — auto-deny anything that would have prompted
 //!
-//! Process flag `--always-approve` is only available on `grok agent`; other modes are
-//! enforced by this ACP host. Runtime mode changes update host decisions only.
+//! Process flags apply on spawn/attach. Live Mode changes update this host's
+//! `decide_gate` and, when the agent is ready, best-effort Grok slash toggles
+//! (`/auto`, `/always-approve`) so the process ring stays aligned.
 
 use crate::acp::{AcpClient, NotifyFn};
 use crate::agent_fs::{read_text_file, write_text_file};
@@ -67,9 +69,9 @@ impl AgentManager {
 
     /// Change host-side permission mode for a live agent.
     ///
-    /// Process-level `grok --always-approve` is fixed at spawn/attach; this updates
-    /// MarsBuild's ACP auto-response only. Pending requests are reconciled for the
-    /// new mode (allow / deny / leave for acceptEdits partial matches).
+    /// Updates MarsBuild's ACP auto-response and reconciles pending requests.
+    /// Callers should also send `/auto` or `/always-approve` when the agent is
+    /// ready so Grok's process ring matches (see frontend `handleSessionModeChange`).
     pub fn set_permission_mode(
         &self,
         handle_id: &str,
@@ -871,7 +873,7 @@ impl AgentManager {
         task_prefs::set_last_spawn_mode(permission_mode);
         let handle_id = Uuid::new_v4().to_string();
 
-        let mut extra = Vec::new();
+        let mut extra = permission_mode.spawn_extra_args();
         if let Some(model) = &req.model {
             if !model.is_empty() {
                 extra.push("-m".into());
@@ -975,6 +977,7 @@ impl AgentManager {
         let always_approve = permission_mode.spawns_always_approve();
         task_prefs::set_permission_mode(&session_id, permission_mode);
         let handle_id = Uuid::new_v4().to_string();
+        let extra = permission_mode.spawn_extra_args();
 
         let info = ManagedAgentInfo {
             handle_id: handle_id.clone(),
@@ -993,7 +996,7 @@ impl AgentManager {
             created_at: now_iso(),
             pending_permission_count: 0,
         };
-        let (mut info, client) = self.start_client(info, &[])?;
+        let (mut info, client) = self.start_client(info, &extra)?;
         let result = match client.session_load(&session_id, &cwd) {
             Ok(r) => r,
             Err(e) => {

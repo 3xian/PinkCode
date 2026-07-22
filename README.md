@@ -23,7 +23,7 @@
 
 A desktop console for [Grok Build](https://x.ai): multi-task board, ACP timeline, workspace files/Git, permissions, and usage. It attaches to `grok` over ACP — it does not run its own agent loop.
 
-**Tauri 2 · React · TypeScript · Rust** · current version **0.1.3**
+**Tauri 2 · React · TypeScript · Rust** · current version **0.1.4**
 
 ## Screenshot
 
@@ -40,7 +40,8 @@ A desktop console for [Grok Build](https://x.ai): multi-task board, ACP timeline
 | **File changes** | Agent hunks from `hunk_records.jsonl`. |
 | **Raw** | Tail of on-disk ACP `session/update` records. |
 | **Workspace** | Project file tree + Git porcelain status (right rail). |
-| **Permissions** | Modes: Default, Accept edits, Always approve, Don't ask — persisted per task under `~/.marsbuild`. |
+| **Mode** | Grok Shift+Tab ring: **Normal → Plan → Auto → Always-approve**. Plan is orthogonal to permission (next free-text becomes `/plan …`). Auto / Always-approve update the host gate and best-effort sync the agent via `/auto` / `/always-approve` when idle. |
+| **Permissions** | Host gate also supports Accept edits and Don't ask (New Task spawn). Per-task prefs under `~/.marsbuild` (permission + Plan arming). |
 | **Usage** | Week remaining (Grok billing API) + recent day token series from local sessions. |
 | **Updates** | Checks GitHub Releases on startup; optional download & install. Title bar shows `MarsBuild <version>`. |
 

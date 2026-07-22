@@ -1,18 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AvailableCommand, ManagedAgentInfo, PermissionMode } from "../types";
-import { PERMISSION_MODE_OPTIONS } from "../types";
+import type {
+  AvailableCommand,
+  ManagedAgentInfo,
+  SessionMode,
+} from "../types";
+import { SESSION_MODE_OPTIONS } from "../types";
 import {
   GROK_BUILTIN_SLASH_COMMANDS,
   mergeSlashCommands,
 } from "../utils/format";
 import { isLocalSlashCommand } from "../utils/localSlash";
+import {
+  applySessionModeToPrompt,
+  cycleSessionMode,
+} from "../utils/sessionMode";
+import { PromptChipSelect } from "./PromptChipSelect";
 
 interface Props {
   managed: ManagedAgentInfo | null;
   busy: boolean;
-  /** Effective mode for the current task (persisted or live agent). */
-  permissionMode: PermissionMode;
-  onPermissionModeChange: (mode: PermissionMode) => void;
+  /**
+   * Grok session mode (single control).
+   * Shift+Tab: Normal → Plan → Auto → Always-approve (docs.x.ai).
+   */
+  sessionMode: SessionMode;
+  onSessionModeChange: (mode: SessionMode) => void;
   onSend: (text: string) => void;
   /** Agent-advertised slash commands (ACP available_commands_update). */
   availableCommands?: AvailableCommand[];
@@ -21,8 +33,8 @@ interface Props {
 export function PromptBar({
   managed,
   busy,
-  permissionMode,
-  onPermissionModeChange,
+  sessionMode,
+  onSessionModeChange,
   onSend,
   availableCommands = [],
 }: Props) {
@@ -52,8 +64,9 @@ export function PromptBar({
       (connected || localSlash),
   );
 
-  const modeHint =
-    PERMISSION_MODE_OPTIONS.find((o) => o.value === permissionMode)?.hint ?? "";
+  const modeMeta =
+    SESSION_MODE_OPTIONS.find((o) => o.value === sessionMode) ??
+    SESSION_MODE_OPTIONS[0]!;
 
   /** Agent overrides builtins by name; builtins fill gaps. */
   const commandCatalog = useMemo(
@@ -126,7 +139,8 @@ export function PromptBar({
     const trimmed = text.trim();
     if (!trimmed || running || awaiting || busy) return;
     if (!connected && !isLocalSlashCommand(trimmed)) return;
-    onSend(trimmed);
+    const payload = applySessionModeToPrompt(sessionMode, trimmed);
+    onSend(payload);
     setText("");
     setMenuOpen(false);
     suppressMenuRef.current = false;
@@ -196,7 +210,9 @@ export function PromptBar({
                 ? "Approve or deny the permission request above to continue…"
                 : running
                   ? "Agent is working… you can queue another message after it finishes"
-                  : "Message the agent… / for commands · Enter to send · Ctrl+Enter for newline"
+                  : sessionMode === "plan"
+                    ? "Plan mode · next free-text send becomes /plan … · Shift+Tab to cycle"
+                    : "Message the agent… / for commands · Enter to send · Shift+Tab mode · Ctrl+Enter newline"
               : "/usage /context /session-info work without attach · flip switch for agent prompts"
           }
           value={text}
@@ -213,6 +229,20 @@ export function PromptBar({
           }}
           onKeyDown={(e) => {
             if (e.nativeEvent.isComposing) return;
+
+            // Shift+Tab: Grok session mode cycle — keep focus in the composer.
+            if (e.key === "Tab" && e.shiftKey) {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!running && !awaiting) {
+                onSessionModeChange(cycleSessionMode(sessionMode));
+              }
+              const el = textareaRef.current;
+              requestAnimationFrame(() => {
+                el?.focus({ preventScroll: true });
+              });
+              return;
+            }
 
             if (showMenu) {
               if (e.key === "ArrowDown") {
@@ -286,29 +316,24 @@ export function PromptBar({
           }}
         />
         <div className="prompt-toolbar">
-          <label className="prompt-perm" title={modeHint}>
-            <span className="prompt-perm-label">Permissions</span>
-            <select
-              className="prompt-perm-select"
-              value={permissionMode}
-              disabled={busy}
-              onChange={(e) =>
-                onPermissionModeChange(e.target.value as PermissionMode)
-              }
-              aria-label="Permission mode"
-            >
-              {PERMISSION_MODE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value} title={o.hint}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="prompt-controls">
+            <PromptChipSelect
+              label="Mode"
+              value={sessionMode}
+              displayLabel={modeMeta.label}
+              title={`${modeMeta.hint} · Shift+Tab to cycle`}
+              accent={modeMeta.accent}
+              glyph={modeGlyph(sessionMode)}
+              options={SESSION_MODE_OPTIONS}
+              disabled={busy || running || awaiting}
+              onChange={onSessionModeChange}
+            />
+          </div>
           <button
             className="btn primary prompt-send"
             type="button"
             disabled={!canSend}
-            title="Enter to send · Ctrl+Enter for newline"
+            title="Enter to send · Ctrl+Enter for newline · Shift+Tab mode"
             onClick={sendIfReady}
           >
             Send
@@ -317,6 +342,19 @@ export function PromptBar({
       </div>
     </div>
   );
+}
+
+function modeGlyph(mode: SessionMode): string {
+  switch (mode) {
+    case "plan":
+      return "◇";
+    case "auto":
+      return "◎";
+    case "alwaysApprove":
+      return "⚡";
+    default:
+      return "○";
+  }
 }
 
 /**

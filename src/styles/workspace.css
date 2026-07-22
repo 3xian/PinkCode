@@ -238,6 +238,7 @@
   background: var(--bg-panel);
   padding: 0;
   overflow: hidden;
+  min-width: 0; /* allow title ellipsis inside grid track */
 }
 
 .panel-header {

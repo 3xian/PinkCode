@@ -18,6 +18,10 @@ pub enum PermissionMode {
     #[default]
     Default,
     AcceptEdits,
+    /// Grok Auto: classifier / host allow safe tools; ask on high risk.
+    /// Spawn/attach pass `--permission-mode auto`. Live toggles update the host
+    /// gate and best-effort send `/auto` when the agent is ready.
+    Auto,
     BypassPermissions,
     DontAsk,
 }
@@ -25,6 +29,14 @@ pub enum PermissionMode {
 impl PermissionMode {
     pub fn spawns_always_approve(self) -> bool {
         matches!(self, Self::BypassPermissions)
+    }
+
+    /// Extra CLI args after `grok agent` (before `stdio`).
+    pub fn spawn_extra_args(self) -> Vec<String> {
+        match self {
+            Self::Auto => vec!["--permission-mode".into(), "auto".into()],
+            _ => Vec::new(),
+        }
     }
 
     pub fn from_request(mode: Option<Self>, always_approve: Option<bool>) -> Self {
@@ -149,6 +161,7 @@ mod tests {
         let modes = [
             PermissionMode::Default,
             PermissionMode::AcceptEdits,
+            PermissionMode::Auto,
             PermissionMode::BypassPermissions,
             PermissionMode::DontAsk,
         ];

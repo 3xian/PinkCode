@@ -144,6 +144,22 @@ export async function getLastSpawnPermissionMode(): Promise<PermissionMode> {
   return invoke<PermissionMode>("get_last_spawn_permission_mode");
 }
 
+/** Persist Grok Plan arming (Pending) for a session. */
+export async function setTaskPlanArmed(
+  sessionId: string,
+  armed: boolean,
+): Promise<void> {
+  return invoke("set_task_plan_armed", { sessionId, armed });
+}
+
+export async function getTaskPlanArmed(sessionId: string): Promise<boolean> {
+  return invoke<boolean>("get_task_plan_armed", { sessionId });
+}
+
+export async function listTaskPlanArmed(): Promise<Record<string, boolean>> {
+  return invoke<Record<string, boolean>>("list_task_plan_armed");
+}
+
 export async function listProjectDir(
   root: string,
   path?: string | null,

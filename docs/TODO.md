@@ -25,6 +25,7 @@ Learn from Reasonix **UX and architecture habits**, not its DeepSeek runtime.
 - [x] Shell merged into Live + type filter chips
 - [x] Workspace panel: file tree + Git status; path context menu
 - [x] Grok-aligned permission modes (per-task prefs)
+- [x] Grok session Mode ring (Normal → Plan → Auto → Always-approve; Plan arming persisted; live `/auto` / `/always-approve`)
 - [x] Slash-command autocomplete; richer Live events (plan / turn / recap / …)
 - [x] Attach-switch pending UX; auto-refresh expanded file tree
 

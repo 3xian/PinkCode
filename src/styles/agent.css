@@ -168,7 +168,8 @@
 .shell-card {
   border: none;
   border-radius: 0;
-  background: #0a0c11;
+  /* Timeline paints terminal black on .tl-item.kind-shell; keep card flat. */
+  background: transparent;
   overflow: hidden;
 }
 
@@ -177,7 +178,7 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  padding: 8px 10px 0;
+  padding: 0;
 }
 
 .shell-status {
@@ -215,16 +216,16 @@
 }
 
 .shell-cmd {
-  padding: 6px 10px;
-  color: var(--accent);
+  padding: 4px 0 0;
+  color: var(--kind-shell);
   font-size: 12px;
   word-break: break-all;
 }
 
 .shell-out {
   margin: 0;
-  padding: 10px 12px;
-  background: #05070a;
+  padding: 8px 0 0;
+  background: transparent;
   border: none;
   font-family: var(--mono);
   font-size: 11px;
@@ -240,7 +241,7 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 4px 10px 0;
+  padding: 4px 0 0;
 }
 
 .shell-collapse-btn {
@@ -250,7 +251,7 @@
 }
 
 .shell-waiting {
-  padding: 8px 12px 12px;
+  padding: 6px 0 0;
 }
 
 /* Streaming text: plain mono until settle → Markdown (avoids per-chunk parse). */
@@ -521,49 +522,199 @@
   border-top: 1px solid var(--border, rgba(255, 255, 255, 0.06));
 }
 
-.prompt-perm {
+/* Mode + Permissions chip pair */
+.prompt-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.prompt-chip {
+  --chip-fg: var(--text);
+  --chip-border: var(--border-strong, rgba(255, 255, 255, 0.12));
+  --chip-bg: rgba(255, 255, 255, 0.03);
+  --chip-glow: transparent;
+  --chip-accent: var(--text-muted);
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin: 0;
   min-width: 0;
 }
 
-.prompt-perm-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  flex-shrink: 0;
+.prompt-chip.accent-plan {
+  --chip-accent: var(--kind-plan);
+  --chip-border: rgba(167, 139, 250, 0.45);
+  --chip-bg: var(--kind-plan-dim);
+  --chip-glow: rgba(167, 139, 250, 0.18);
+  --chip-fg: #e9ddff;
 }
 
-.prompt-perm-select {
+.prompt-chip.accent-auto {
+  --chip-accent: var(--kind-shell);
+  --chip-border: rgba(45, 212, 191, 0.4);
+  --chip-bg: var(--kind-shell-dim);
+  --chip-glow: rgba(45, 212, 191, 0.14);
+  --chip-fg: #c7fff6;
+}
+
+.prompt-chip.accent-yolo {
+  --chip-accent: var(--warn);
+  --chip-border: rgba(240, 180, 41, 0.45);
+  --chip-bg: var(--kind-event-dim);
+  --chip-glow: rgba(240, 180, 41, 0.16);
+  --chip-fg: #ffe6a8;
+}
+
+.prompt-chip.accent-danger {
+  --chip-accent: var(--danger);
+  --chip-border: rgba(255, 107, 122, 0.4);
+  --chip-bg: var(--danger-dim);
+  --chip-glow: rgba(255, 107, 122, 0.12);
+  --chip-fg: #ffc9cf;
+}
+
+.prompt-chip-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.prompt-chip-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 168px;
+  margin: 0;
+  padding: 4px 8px 4px 7px;
+  border: 1px solid var(--chip-border);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 60%),
+    var(--chip-bg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 0 var(--chip-glow);
+  color: var(--chip-fg);
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  padding: 4px 10px;
-  border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.12));
-  border-radius: 999px;
-  background: var(--bg-elevated);
-  color: var(--text);
-  color-scheme: dark;
   cursor: pointer;
-  min-width: 0;
-  max-width: 160px;
   outline: none;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease,
+    background 0.12s ease;
 }
 
-.prompt-perm-select:hover:not(:disabled) {
-  background: var(--bg-hover);
+.prompt-chip-trigger:hover:not(:disabled) {
+  border-color: var(--chip-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 3px var(--chip-glow);
 }
 
-.prompt-perm-select:focus {
-  border-color: var(--accent);
+.prompt-chip-trigger:focus-visible {
+  border-color: var(--chip-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 2px var(--chip-accent);
 }
 
-.prompt-perm-select:disabled {
+.prompt-chip.open .prompt-chip-trigger {
+  border-color: var(--chip-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 3px var(--chip-glow);
+}
+
+.prompt-chip.disabled .prompt-chip-trigger {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.prompt-chip-glyph {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--chip-accent);
+  opacity: 0.95;
+}
+
+.prompt-chip-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.prompt-chip-caret {
+  flex-shrink: 0;
+  font-size: 9px;
+  opacity: 0.55;
+  transform: translateY(0.5px);
+}
+
+.prompt-chip-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 50;
+  min-width: 220px;
+  max-width: min(320px, 70vw);
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  box-shadow:
+    0 -10px 28px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prompt-chip-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  margin: 0;
+  padding: 7px 9px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.prompt-chip-option:hover,
+.prompt-chip-option.active {
+  background: var(--accent-dim);
+}
+
+.prompt-chip-option.selected {
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 2px 0 0 var(--chip-accent);
+}
+
+.prompt-chip-option-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.prompt-chip-option-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.3;
 }
 
 .prompt-send {

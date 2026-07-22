@@ -161,6 +161,7 @@ export type ManagedStatus = (typeof MANAGED_STATUSES)[number];
 export const PERMISSION_MODES = [
   "default",
   "acceptEdits",
+  "auto",
   "bypassPermissions",
   "dontAsk",
 ] as const;
@@ -182,14 +183,63 @@ export const PERMISSION_MODE_OPTIONS: {
     hint: "Auto-approve file edits; ask for shell / other tools",
   },
   {
+    value: "auto",
+    label: "Auto",
+    hint: "Classifier / host auto-approves safe tools; dangerous may still prompt (--permission-mode auto)",
+  },
+  {
     value: "bypassPermissions",
     label: "Always approve",
-    hint: "Auto-approve all tools (grok --always-approve)",
+    hint: "Skip permission prompts; deny rules still apply (grok --always-approve)",
   },
   {
     value: "dontAsk",
     label: "Don't ask",
     hint: "Deny anything that would have prompted",
+  },
+];
+
+/**
+ * Grok Build session modes — single TUI control (Shift+Tab cycle).
+ * Normal → Plan → Auto → Always-approve. Plan is orthogonal to permission.
+ */
+export const SESSION_MODES = [
+  "normal",
+  "plan",
+  "auto",
+  "alwaysApprove",
+] as const;
+export type SessionMode = (typeof SESSION_MODES)[number];
+
+export const SESSION_MODE_OPTIONS: {
+  value: SessionMode;
+  label: string;
+  hint: string;
+  accent: "neutral" | "plan" | "auto" | "yolo";
+}[] = [
+  {
+    value: "normal",
+    label: "Normal",
+    hint: "Ask before tools (Grok default / ask)",
+    accent: "neutral",
+  },
+  {
+    value: "plan",
+    label: "Plan",
+    hint: "Plan first · next free-text send becomes /plan · permission stays underneath",
+    accent: "plan",
+  },
+  {
+    value: "auto",
+    label: "Auto",
+    hint: "Auto-approve safe tools; dangerous may still prompt (/auto)",
+    accent: "auto",
+  },
+  {
+    value: "alwaysApprove",
+    label: "Always approve",
+    hint: "Skip permission prompts; deny rules still apply (/always-approve)",
+    accent: "yolo",
   },
 ];
 

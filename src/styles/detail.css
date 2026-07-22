@@ -5,14 +5,30 @@
   flex-direction: column;
   gap: 14px;
   flex-shrink: 0;
+  min-width: 0;
+}
+
+.detail-header-main {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .detail-header h1 {
   margin: 6px 0 4px;
   font-size: 20px;
   font-weight: 650;
-  line-height: 1.25;
+  line-height: 1.3;
   color: var(--title-selected);
+  min-width: 0;
+  max-width: 100%;
+  /* Long titles: 2 lines then ellipsis — keeps header height stable */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .detail-status-row,
@@ -21,11 +37,21 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .detail-sub {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.detail-sub > span {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pill {
@@ -265,8 +291,34 @@
   flex: 1;
 }
 
+/* Shell content sits on the card itself — no nested black panel */
 .tl-item.kind-shell .shell-card {
   margin-top: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.tl-item.kind-shell .shell-card-top {
+  padding: 0;
+}
+
+.tl-item.kind-shell .shell-cmd {
+  padding: 4px 0 0;
+}
+
+.tl-item.kind-shell .shell-out {
+  margin: 0;
+  padding: 8px 0 0;
+  background: transparent;
+  border: none;
+}
+
+.tl-item.kind-shell .shell-collapse-bar {
+  padding: 4px 0 0;
+}
+
+.tl-item.kind-shell .shell-waiting {
+  padding: 6px 0 0;
 }
 
 .empty-state {
@@ -624,17 +676,23 @@
   color: var(--kind-thought);
 }
 
-/* Shell: teal / terminal — distinct from Event amber */
+/* Shell: full-card terminal black (not a nested panel on elevated chrome) */
 .tl-item.kind-shell {
-  background: linear-gradient(
-    135deg,
-    var(--kind-shell-dim),
-    rgba(18, 21, 28, 0.92)
-  );
+  background: #0a0c11;
+  color: #c8d0e0;
 }
 
 .tl-item.kind-shell .tl-kind {
   color: var(--kind-shell);
+}
+
+.tl-item.kind-shell .tl-title {
+  color: var(--text);
+}
+
+.tl-item.kind-shell .muted,
+.tl-item.kind-shell .tl-meta {
+  color: rgba(200, 208, 224, 0.55);
 }
 
 .tl-item.kind-event {

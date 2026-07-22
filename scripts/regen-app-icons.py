@@ -1,17 +1,15 @@
 """
 Rebuild the shared desktop icon master (macOS + Windows + others).
 
-One master feeds `tauri icon`, which emits icon.icns, icon.ico, and PNGs
-together — there is no separate Windows/Mac art path. Changing layout for
-one platform always affects the other.
+One master feeds `tauri icon` → icon.icns + icon.ico + PNGs. There is no
+separate Windows/Mac art path.
 
-Goals:
-  - Full-bleed opaque plate so Dock/taskbar icons fill the slot (no
-    floating transparent glyph that looks "a size smaller").
-  - Glyph ~88% of the short side of the fit box (~6% margin) for breathing
-    room under macOS squircle mask and Windows tile corners — not a hard
-    Apple percentage, but closer to common template margins than 95%.
-  - Plate color matches app chrome (tauri backgroundColor).
+Design:
+  - Full-bleed opaque plate (app chrome color) so Dock/taskbar slots are full
+    size — never a floating transparent glyph.
+  - Cover-fit the logo into ~90% of the plate so the planet/face reads large.
+    Wide rings may clip slightly at the sides; that is intentional so the
+    mascot matches other apps optically (letterbox was making it look small).
 """
 from __future__ import annotations
 
@@ -24,8 +22,8 @@ SRC = ROOT / "src" / "assets" / "logo.png"
 OUT_MASTER = ROOT / "src-tauri" / "icons" / "app-icon-master.png"
 # App window chrome: tauri.conf backgroundColor [11, 13, 18]
 PLATE = (11, 13, 18, 255)
-# Optical fill of the logo bounding box within the square (after crop).
-FILL = 0.88
+# Cover-fit target: glyph box aims to fill this fraction of the square.
+FILL = 0.90
 SIZE = 1024
 
 
@@ -58,20 +56,31 @@ def main() -> None:
     canvas = Image.new("RGBA", (SIZE, SIZE), PLATE)
     target = int(SIZE * FILL)
     gw, gh = glyph.size
-    scale = min(target / gw, target / gh)
+    # Cover: scale so the *smaller* relative axis fills `target` — logo is
+    # wider than tall, so height drives scale and side rings may crop.
+    scale = max(target / gw, target / gh)
     nw, nh = max(1, int(round(gw * scale))), max(1, int(round(gh * scale)))
     glyph = glyph.resize((nw, nh), Image.Resampling.LANCZOS)
     x = (SIZE - nw) // 2
     y = (SIZE - nh) // 2
-    canvas.alpha_composite(glyph, (x, y))
+    # Paste may extend past canvas; alpha_composite needs same-size layer.
+    layer = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    # Crop glyph to canvas if oversized.
+    gx0 = max(0, -x)
+    gy0 = max(0, -y)
+    gx1 = min(nw, SIZE - x)
+    gy1 = min(nh, SIZE - y)
+    if gx1 > gx0 and gy1 > gy0:
+        cropped = glyph.crop((gx0, gy0, gx1, gy1))
+        layer.paste(cropped, (max(0, x), max(0, y)), cropped)
+    canvas.alpha_composite(layer)
 
     OUT_MASTER.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(OUT_MASTER, "PNG")
     print(f"wrote {OUT_MASTER.relative_to(ROOT)} ({SIZE}x{SIZE})")
-    print(f"  source crop {box} -> glyph {gw}x{gh} scaled {nw}x{nh} fill={FILL}")
-    print(f"  pad LTRB {x},{y},{SIZE - nw - x},{SIZE - nh - y}")
+    print(f"  source crop {box} -> glyph {gw}x{gh} scaled {nw}x{nh} fill={FILL} cover")
+    print(f"  paste offset ({x},{y})")
     print("  next: npx tauri icon src-tauri/icons/app-icon-master.png")
-    print("  then remove any icons/ios and icons/android folders (desktop-only).")
 
 
 if __name__ == "__main__":

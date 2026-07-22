@@ -37,6 +37,8 @@ import type {
   SessionDetail,
   SessionMode,
 } from "./types";
+import { isLikelyMacProtectedPath } from "./utils/tccPaths";
+import { shortPath } from "./utils/format";
 import {
   isLocalSlashCommand,
   runLocalSlash,
@@ -132,6 +134,28 @@ function App() {
   } = useAgentEvents(selectedId);
 
   const projectCwd = detail?.card.cwd ?? null;
+  /**
+   * macOS TCC: reading a project under Documents/Desktop/Downloads shows a
+   * system prompt. Defer FileTree/Git until the user opts in for those paths
+   * so cold start of the task board does not hit Documents every time.
+   * (Ad-hoc-signed builds also re-prompt more often after each update.)
+   */
+  const [workspaceArmed, setWorkspaceArmed] = useState(false);
+  useEffect(() => {
+    if (!projectCwd) {
+      setWorkspaceArmed(false);
+      return;
+    }
+    // Safe paths (e.g. under home project dirs that are not TCC-gated) load now.
+    setWorkspaceArmed(!isLikelyMacProtectedPath(projectCwd));
+  }, [projectCwd]);
+  const activeProjectCwd =
+    projectCwd && workspaceArmed ? projectCwd : null;
+  const showWorkspaceGate = Boolean(
+    projectCwd &&
+      !workspaceArmed &&
+      isLikelyMacProtectedPath(projectCwd),
+  );
   const { pendingUpdate, dismissUpdate } = useAppUpdate();
 
   const refreshList = useCallback(async () => {
@@ -725,9 +749,34 @@ function App() {
         />
 
         <aside className="side-panel workspace-panel">
-          <FileTree root={projectCwd} refreshKey={gitRefreshKey} />
-          <div className="workspace-split" />
-          <GitChanges cwd={projectCwd} refreshKey={gitRefreshKey} />
+          {showWorkspaceGate ? (
+            <div className="workspace-gate">
+              <div className="panel-header">
+                <h2>Workspace</h2>
+              </div>
+              <p className="muted small workspace-gate-path" title={projectCwd ?? undefined}>
+                {projectCwd ? shortPath(projectCwd, 48) : ""}
+              </p>
+              <p className="muted small">
+                This project is under a macOS-protected folder (Documents,
+                Desktop, or Downloads). Load files only when you need them so
+                MarsBuild does not request access on every launch.
+              </p>
+              <button
+                className="btn primary"
+                type="button"
+                onClick={() => setWorkspaceArmed(true)}
+              >
+                Load project files
+              </button>
+            </div>
+          ) : (
+            <>
+              <FileTree root={activeProjectCwd} refreshKey={gitRefreshKey} />
+              <div className="workspace-split" />
+              <GitChanges cwd={activeProjectCwd} refreshKey={gitRefreshKey} />
+            </>
+          )}
         </aside>
       </div>
 

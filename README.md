@@ -48,12 +48,32 @@ Prebuilt installers: **[Releases](https://github.com/3xian/MarsBuild/releases)**
 
 ## Quick start
 
+### 1. Install Grok Build first
+
+MarsBuild attaches to [Grok Build](https://grok.com/build) over ACP — install the CLI before running MarsBuild.
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://x.ai/cli/install.ps1 | iex
+```
+
+**macOS / Linux / WSL:**
+
+```bash
+curl -fsSL https://x.ai/cli/install.sh | bash
+```
+
+After install, the `grok` binary and data live under `~/.grok` (or `%USERPROFILE%\.grok` / `GROK_HOME` on Windows).
+
+### 2. Dev prerequisites
+
 | | macOS | Windows 11 | Linux |
 |---|---|---|---|
 | Node | 24+ | 24+ | 24+ |
 | Rust | stable | stable (`x86_64-pc-windows-msvc`) | stable |
 | Platform | Xcode CLT | MSVC Build Tools + [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) | webkit2gtk (see Tauri docs) |
-| Grok Build | `~/.grok` | `%USERPROFILE%\.grok` or `GROK_HOME` | `~/.grok` |
+| Grok Build | installed (step 1) | installed (step 1) | installed (step 1) |
 
 Windows toolchain (once):
 
@@ -64,6 +84,8 @@ winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passi
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/windows-setup.ps1
 ```
+
+### 3. Build and run MarsBuild
 
 ```bash
 npm install

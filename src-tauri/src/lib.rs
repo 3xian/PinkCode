@@ -3,6 +3,7 @@ mod agent_fs;
 mod agent_manager;
 mod agent_runtime;
 mod agent_types;
+mod auth;
 mod billing;
 mod models;
 mod permission_policy;

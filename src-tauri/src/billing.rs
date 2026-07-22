@@ -2,12 +2,11 @@
 //!
 //! Mirrors the Grok TUI `/usage` source:
 //! `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`
-//! with the session token stored in `~/.grok/auth.json`.
+//!
+//! Auth (read / OIDC refresh / persist) lives in [`crate::auth`].
 
-use crate::sessions;
+use crate::auth;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::fs;
 use std::time::Duration;
 
 const BILLING_URL: &str = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
@@ -73,31 +72,15 @@ fn remaining(used: f64) -> f64 {
     (100.0 - used).clamp(0.0, 100.0)
 }
 
-fn read_session_token() -> Result<String, String> {
-    let path = sessions::grok_home().join("auth.json");
-    let raw = fs::read_to_string(&path).map_err(|e| {
-        format!(
-            "Cannot read {}: {e}. Run `grok login` to authenticate.",
-            path.display()
-        )
-    })?;
-    let v: Value = serde_json::from_str(&raw).map_err(|e| format!("Invalid auth.json: {e}"))?;
-    let obj = v
-        .as_object()
-        .ok_or_else(|| "auth.json is not an object".to_string())?;
-    for (_k, entry) in obj {
-        if let Some(key) = entry.get("key").and_then(|x| x.as_str()) {
-            if !key.is_empty() {
-                return Ok(key.to_string());
-            }
-        }
-    }
-    Err("No session token in auth.json. Run `grok login`.".to_string())
-}
-
 /// Fetch current period usage (weekly for SuperGrok / Grok Build accounts).
 pub fn fetch_week_usage() -> WeekUsage {
-    let fetched_at = chrono_now();
+    let fetched_at = format!(
+        "{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    );
     match fetch_week_usage_inner() {
         Ok(mut u) => {
             u.fetched_at = fetched_at;
@@ -119,7 +102,6 @@ pub fn fetch_week_usage() -> WeekUsage {
 }
 
 /// Honor `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` (and lowercase variants).
-/// Without this, ureq dials the origin directly and fails on proxied networks.
 fn proxy_from_env() -> Option<ureq::Proxy> {
     const KEYS: &[&str] = &[
         "HTTPS_PROXY",
@@ -147,7 +129,6 @@ fn proxy_from_env() -> Option<ureq::Proxy> {
 }
 
 fn http_agent() -> ureq::Agent {
-    // Short timeouts so a slow/offline billing endpoint never freezes startup.
     let mut builder = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(3))
         .timeout_read(Duration::from_secs(5));
@@ -157,27 +138,50 @@ fn http_agent() -> ureq::Agent {
     builder.build()
 }
 
-fn fetch_week_usage_inner() -> Result<WeekUsage, String> {
-    let token = read_session_token()?;
-    let agent = http_agent();
-
-    let resp = agent
+/// ureq 2 maps 4xx/5xx to `Error::Status`.
+fn call_billing(agent: &ureq::Agent, token: &str) -> Result<ureq::Response, (u16, String)> {
+    match agent
         .get(BILLING_URL)
         .set("Authorization", &format!("Bearer {token}"))
         .set("Accept", "application/json")
         .set("User-Agent", "marsbuild")
         .set("x-grok-client-mode", "billing")
         .call()
-        .map_err(|e| format!("Billing request failed: {e}"))?;
-
-    if !(200..300).contains(&resp.status()) {
-        return Err(format!("Billing HTTP {}", resp.status()));
+    {
+        Ok(resp) => Ok(resp),
+        Err(ureq::Error::Status(code, _resp)) => Err((code, format!("Billing HTTP {code}"))),
+        Err(e) => Err((0, format!("Billing request failed: {e}"))),
     }
+}
 
+fn auth_failed_msg(code: u16) -> String {
+    format!("Billing HTTP {code} (auth failed). Run `grok login` to re-authenticate.")
+}
+
+fn fetch_week_usage_inner() -> Result<WeekUsage, String> {
+    let agent = http_agent();
+    let mut token = auth::read_access_token()?;
+
+    // One policy: use disk token; on 401 refresh once and retry.
+    for attempt in 0..2 {
+        match call_billing(&agent, &token) {
+            Ok(resp) => return parse_billing(resp),
+            Err((401, _)) if attempt == 0 => {
+                token = auth::refresh_access_token(&agent)?;
+            }
+            Err((code, _)) if code == 401 || code == 403 => {
+                return Err(auth_failed_msg(code));
+            }
+            Err((_, msg)) => return Err(msg),
+        }
+    }
+    Err(auth_failed_msg(401))
+}
+
+fn parse_billing(resp: ureq::Response) -> Result<WeekUsage, String> {
     let body: BillingResponse = resp
         .into_json()
         .map_err(|e| format!("Failed to parse billing response: {e}"))?;
-
     let config = body
         .config
         .ok_or_else(|| "Billing response missing config".to_string())?;
@@ -228,19 +232,6 @@ fn fetch_week_usage_inner() -> Result<WeekUsage, String> {
     })
 }
 
-fn chrono_now() -> String {
-    // RFC3339-ish without extra deps: system time as unix millis string is fine,
-    // but ISO is nicer for the UI. Use a tiny manual UTC formatter.
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    // Keep simple ISO-ish timestamp via gmtime-ish math is heavy; use unix for now
-    // and let the frontend Date.parse if needed. Prefer actual ISO via `time`? Skip deps.
-    format!("{secs}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,7 +246,6 @@ mod tests {
 
     #[test]
     fn proxy_from_env_parses_when_set() {
-        // Snapshot and restore so we don't leak proxy into other tests.
         let keys = [
             "HTTPS_PROXY",
             "https_proxy",
@@ -277,5 +267,19 @@ mod tests {
                 None => std::env::remove_var(k),
             }
         }
+    }
+
+    /// Optional live check: `MARSBUILD_LIVE_BILLING=1 cargo test live_week_usage -- --ignored`
+    #[test]
+    #[ignore]
+    fn live_week_usage_smoke() {
+        let u = fetch_week_usage();
+        assert!(
+            u.error.is_none(),
+            "expected billing success, got error: {:?}",
+            u.error
+        );
+        assert!(u.remaining_percent <= 100.0);
+        assert!(!u.period_type.is_empty());
     }
 }

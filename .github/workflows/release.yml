@@ -38,8 +38,9 @@ jobs:
     name: Prepare release notes
     needs: verify
     runs-on: ubuntu-latest
+    # generate-notes API requires contents:write (read-only GITHUB_TOKEN → 403).
     permissions:
-      contents: read
+      contents: write
     outputs:
       body: ${{ steps.gen.outputs.body }}
     steps:

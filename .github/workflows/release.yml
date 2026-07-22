@@ -32,9 +32,37 @@ jobs:
       - name: Run checks
         run: npm run check
 
+  # Single canonical changelog for Release body + latest.json notes + UpdateModal.
+  # Matrix pack jobs only consume this output (do not regenerate notes).
+  prepare-notes:
+    name: Prepare release notes
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      body: ${{ steps.gen.outputs.body }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Generate release notes
+        id: gen
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          node scripts/generate-release-notes.mjs | tee release-notes.md
+          echo "----- release notes -----"
+          cat release-notes.md
+
   release:
     name: ${{ matrix.name }}
-    needs: verify
+    needs: [verify, prepare-notes]
     permissions:
       contents: write
     strategy:
@@ -104,7 +132,8 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "MarsBuild ${{ github.ref_name }}"
-          releaseBody: "Download the installer for your platform below. In-app updates use latest.json + signed bundles."
+          # Same body on every matrix leg (from prepare-notes only).
+          releaseBody: ${{ needs.prepare-notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           # Publishes latest.json for tauri-plugin-updater endpoints.
@@ -151,11 +180,9 @@ jobs:
             echo "OK: $(basename "${sigs[0]}")"
           fi
 
-  # tauri-action writes api.github.com asset URLs into latest.json. Those need
-  # Accept: application/octet-stream and are rate-limited without auth, so the
-  # in-app updater gets HTTP 403. Rewrite to public browser download URLs.
+  # Patch latest.json: public download URLs + notes === release body (UpdateModal source).
   rewrite-updater-json:
-    name: Rewrite latest.json download URLs
+    name: Patch latest.json for updater
     needs: release
     if: always() && needs.release.result == 'success'
     runs-on: ubuntu-latest
@@ -166,7 +193,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - name: Point platform URLs at github.com download links
+      - name: Rewrite platform URLs and sync notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}

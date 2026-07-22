@@ -25,9 +25,9 @@ Learn from Reasonix **UX and architecture habits**, not its DeepSeek runtime.
 - [x] Shell merged into Live + type filter chips
 - [x] Workspace panel: file tree + Git status; path context menu
 - [x] Grok-aligned permission modes (per-task prefs)
-- [x] Grok session Mode ring (Normal → Plan → Auto → Always-approve; Plan arming persisted; live `/auto` / `/always-approve`)
+- [x] Grok session Mode ring (Normal → Plan → Auto → Always-approve; Plan arming persisted; live host gate only — no `/auto` prompt on chip change)
 - [x] Slash-command autocomplete; richer Live events (plan / turn / recap / …)
-- [x] Attach-switch pending UX; auto-refresh expanded file tree
+- [x] Auto-connect ACP on first send (no list attach switch); Stop in detail header; auto-refresh expanded file tree
 
 ---
 

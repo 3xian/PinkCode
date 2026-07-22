@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { listen } from "@tauri-apps/api/event";
 import {
   attachAgent,
@@ -44,9 +43,7 @@ import {
   runLocalSlash,
 } from "./utils/localSlash";
 import {
-  agentSlashForPermissionTransition,
   applySessionModeChange,
-  canSendModeSlash,
   displaySessionMode,
 } from "./utils/sessionMode";
 import "./App.css";
@@ -94,10 +91,6 @@ function App() {
   /** Bumped after attach/spawn so Timeline pins to bottom. */
   const [pinTimelineBottomSeq, setPinTimelineBottomSeq] = useState(0);
   const [controlBusy, setControlBusy] = useState(false);
-  /** Session whose attach switch was flipped on; switch breathes until settle. */
-  const [attachingSessionId, setAttachingSessionId] = useState<string | null>(
-    null,
-  );
   const [permBusyKey, setPermBusyKey] = useState<string | null>(null);
   /** Per-task permission modes loaded from disk (`~/.marsbuild/task_prefs.json`). */
   const [taskPermissionModes, setTaskPermissionModes] = useState<
@@ -393,53 +386,49 @@ function App() {
     }
   }
 
-  async function handleAttach(sessionId: string) {
+  /**
+   * Connect ACP for a session if needed. No list-side toggle — desktop apps
+   * connect when the user chats (or New task spawns already connected).
+   * Returns the live handle, or null on failure / missing card.
+   */
+  async function ensureAttached(
+    sessionId: string,
+  ): Promise<ManagedAgentInfo | null> {
+    const existing = managedList.find(
+      (m) =>
+        m.sessionId === sessionId &&
+        m.status !== "stopped" &&
+        m.status !== "error",
+    );
+    if (existing) return existing;
+
     const card = sessions.find((s) => s.id === sessionId);
-    if (!card) return;
-    // Already managed — switch should already be on.
-    const already = managedList.some(
-      (m) => m.sessionId === sessionId && m.status !== "stopped",
-    );
-    if (already) return;
+    if (!card) return null;
 
-    // Paint switch pending state *before* the long attach IPC so the glow starts.
-    flushSync(() => {
-      setSelectedId(sessionId);
-      setAttachingSessionId(sessionId);
-      setControlBusy(true);
-      setError(null);
+    setSelectedId(sessionId);
+    // Backend restores this task's saved mode when permissionMode is omitted.
+    const saved = taskPermissionModes[sessionId];
+    const info = await attachAgent({
+      sessionId: card.id,
+      cwd: card.cwd,
+      permissionMode: saved ?? null,
     });
-    await new Promise<void>((r) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => r())),
-    );
-
-    try {
-      // Backend restores this task's saved mode when permissionMode is omitted.
-      // If the UI already has a preference for this task, pass it explicitly.
-      const saved = taskPermissionModes[sessionId];
-      const info = await attachAgent({
-        sessionId: card.id,
-        cwd: card.cwd,
-        permissionMode: saved ?? null,
-      });
-      upsertManaged(info);
-      if (info.sessionId) {
-        setTaskPermissionModes((prev) => ({
-          ...prev,
-          [info.sessionId!]: info.permissionMode,
-        }));
-      }
-      setTab("timeline");
-      setPinTimelineBottomSeq((n) => n + 1);
-      // Hydrate any already-queued permissions (usually empty right after attach)
-      const queued = await listPendingPermissions(info.handleId);
-      hydratePermissions(queued);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setControlBusy(false);
-      setAttachingSessionId(null);
+    upsertManaged(info);
+    if (info.sessionId) {
+      setTaskPermissionModes((prev) => ({
+        ...prev,
+        [info.sessionId!]: info.permissionMode,
+      }));
     }
+    setTab("timeline");
+    setPinTimelineBottomSeq((n) => n + 1);
+    const queued = await listPendingPermissions(info.handleId);
+    hydratePermissions(queued);
+
+    if (info.status === "error" || info.status === "stopped") {
+      throw new Error(info.lastError ?? "Failed to connect agent");
+    }
+    return info;
   }
 
   async function handleResolvePermission(
@@ -461,9 +450,12 @@ function App() {
   /**
    * Grok single Mode control (Shift+Tab ring).
    * - planArmed is orthogonal to permission and persisted per task
-   * - permission is the host gate (+ spawn flags when process starts)
-   * - when the agent is ready, best-effort `/auto` or `/always-approve` keeps
-   *   the grok process mode in sync with the host ring
+   * - permission is the host ACP gate only (spawn/attach may still pass
+   *   `--permission-mode auto` / `--always-approve`)
+   *
+   * Do NOT send `/auto` or `/always-approve` as session/prompt on chip change.
+   * In Grok Build those are local TUI toggles (no turn). Forwarding them over
+   * ACP starts a real prompt and can kick off tool runs — different from Grok.
    */
   async function handleSessionModeChange(mode: SessionMode) {
     const sessionId = selectedId;
@@ -515,20 +507,6 @@ function App() {
               ...prev,
               [info.sessionId!]: targetPerm,
             }));
-          }
-
-          // Keep Grok agent permission ring in sync when idle.
-          const slash = agentSlashForPermissionTransition(
-            previousPerm,
-            targetPerm,
-          );
-          if (slash && canSendModeSlash(info.status)) {
-            try {
-              await promptAgent(info.handleId, slash);
-              setPinTimelineBottomSeq((n) => n + 1);
-            } catch {
-              // Host gate still applies; process flag may need re-attach.
-            }
           }
         } else if (sessionId) {
           await setTaskPermissionMode(sessionId, targetPerm);
@@ -585,13 +563,27 @@ function App() {
         }
       }
 
-      if (!managedForSession) {
-        setError(
-          "Attach a task (flip the switch) to send agent prompts. Local /usage /context /session-info /help work without attach.",
-        );
-        return;
+      // Connect on first agent message (no attach switch). Local slashes above
+      // already returned without needing ACP.
+      let handleId = managedForSession?.handleId;
+      if (
+        !handleId ||
+        managedForSession?.status === "stopped" ||
+        managedForSession?.status === "error"
+      ) {
+        const sessionId = selectedId ?? sessions[0]?.id ?? null;
+        if (!sessionId) {
+          setError("Select a task first, or create one with New.");
+          return;
+        }
+        const info = await ensureAttached(sessionId);
+        if (!info) {
+          setError("Could not connect to this task.");
+          return;
+        }
+        handleId = info.handleId;
       }
-      await promptAgent(managedForSession.handleId, trimmed);
+      await promptAgent(handleId, trimmed);
       setPinTimelineBottomSeq((n) => n + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -653,9 +645,8 @@ function App() {
   const defaultCwd = detail?.card.cwd ?? sessions[0]?.cwd ?? "";
 
   /**
-   * Sessions confirmed attached (ready/running/awaitingPermission).
-   * Exclude `starting` so the task list only reorders after attach succeeds —
-   * mid-attach agent-status events must not jump the card to the top yet.
+   * Sessions confirmed live (ready/running/awaitingPermission).
+   * Exclude `starting` so the task list only reorders after connect succeeds.
    */
   const managedSessionIds = useMemo(
     () =>
@@ -668,17 +659,6 @@ function App() {
               m.status !== "error" &&
               m.status !== "starting",
           )
-          .map((m) => m.sessionId as string),
-      ),
-    [managedList],
-  );
-
-  /** Switch on = any non-stopped managed handle (includes error, so user can detach). */
-  const attachedSessionIds = useMemo(
-    () =>
-      new Set(
-        managedList
-          .filter((m) => m.sessionId && m.status !== "stopped")
           .map((m) => m.sessionId as string),
       ),
     [managedList],
@@ -718,11 +698,6 @@ function App() {
               setSelectedId(id);
             }}
             managedSessionIds={managedSessionIds}
-            attachedSessionIds={attachedSessionIds}
-            onAttach={(id) => void handleAttach(id)}
-            onRequestStop={requestStop}
-            toggleBusy={controlBusy}
-            attachingSessionId={attachingSessionId}
             onNewTask={() => setModalOpen(true)}
           />
         </aside>
@@ -743,6 +718,11 @@ function App() {
           onSendPrompt={(t) => void handleSend(t)}
           onResolvePermission={(item, opt) =>
             void handleResolvePermission(item, opt)
+          }
+          onStopAgent={
+            selectedId && managedForSession && managedForSession.status !== "stopped"
+              ? () => requestStop(selectedId)
+              : undefined
           }
           pinTimelineBottomSeq={pinTimelineBottomSeq}
           availableCommands={availableCommands}
@@ -810,9 +790,9 @@ function App() {
             </div>
             <p className="muted small">
               This will kill the agent process for{" "}
-              <strong title={stopConfirm.title}>{stopConfirm.title}</strong>,
-              cancel any pending permission requests, and detach it from
-              MarsBuild. Session history on disk is kept.
+              <strong title={stopConfirm.title}>{stopConfirm.title}</strong>
+              {" "}and cancel any pending permission requests. Session history
+              on disk is kept. Send a message later to reconnect.
             </p>
             <div className="modal-actions">
               <button

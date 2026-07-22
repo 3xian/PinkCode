@@ -1,6 +1,6 @@
 {
   "name": "marsbuild",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Desktop mission control for Grok agents.",
   "type": "module",
   "keywords": [
@@ -48,7 +48,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "icons:regen": "python scripts/regen-app-icons.py",
+    "icons:windows-export": "python scripts/regen-app-icons.py --windows-export"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

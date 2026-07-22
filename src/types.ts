@@ -232,13 +232,13 @@ export const SESSION_MODE_OPTIONS: {
   {
     value: "auto",
     label: "Auto",
-    hint: "Auto-approve safe tools; dangerous may still prompt (/auto)",
+    hint: "Host auto-approves safe tools; dangerous may still prompt",
     accent: "auto",
   },
   {
     value: "alwaysApprove",
     label: "Always approve",
-    hint: "Skip permission prompts; deny rules still apply (/always-approve)",
+    hint: "Skip permission prompts; deny rules still apply",
     accent: "yolo",
   },
 ];

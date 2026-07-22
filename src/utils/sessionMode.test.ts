@@ -132,7 +132,7 @@ describe("permissionRing + canSendModeSlash", () => {
     expect(permissionRing("bypassPermissions")).toBe("yolo");
   });
 
-  it("only sends mode slashes when agent is ready", () => {
+  it("treats ready as the only idle status for mode-related gates", () => {
     expect(canSendModeSlash("ready")).toBe(true);
     expect(canSendModeSlash("running")).toBe(false);
     expect(canSendModeSlash("awaitingPermission")).toBe(false);

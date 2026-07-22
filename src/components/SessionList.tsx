@@ -15,14 +15,8 @@ interface Props {
   query: string;
   onQuery: (q: string) => void;
   onSelect: (id: string) => void;
+  /** Live ACP sessions (card accent + sort). No per-card attach control. */
   managedSessionIds?: Set<string>;
-  /** Sessions with a managed agent (includes error; switch is on). */
-  attachedSessionIds?: Set<string>;
-  onAttach?: (sessionId: string) => void;
-  onRequestStop?: (sessionId: string) => void;
-  toggleBusy?: boolean;
-  /** Session currently attaching — switch breathes until done. */
-  attachingSessionId?: string | null;
   onNewTask?: () => void;
 }
 
@@ -33,11 +27,6 @@ export function SessionList({
   onQuery,
   onSelect,
   managedSessionIds,
-  attachedSessionIds,
-  onAttach,
-  onRequestStop,
-  toggleBusy,
-  attachingSessionId,
   onNewTask,
 }: Props) {
   const visible = useMemo(() => {
@@ -97,10 +86,8 @@ export function SessionList({
         )}
         {visible.map((s) => {
           // Scheme A: single visual state (priority order).
-          // ACP attached > Grok disk-active > idle. (No red/error bar.)
+          // ACP live > Grok disk-active > idle. (No red/error bar.)
           const managed = managedSessionIds?.has(s.id) ?? false;
-          const attached = attachedSessionIds?.has(s.id) ?? false;
-          const isAttaching = attachingSessionId === s.id;
           const state = resolveCardState({
             managed,
             diskActive: s.isActive && !managed,
@@ -118,51 +105,10 @@ export function SessionList({
               className={cardClass}
               onClick={() => onSelect(s.id)}
             >
-              <div
-                className="card-top"
-                title={isAttaching ? "Attaching agent…" : stateTitle(state)}
-              >
+              <div className="card-top" title={stateTitle(state)}>
                 <span className="card-title" title={s.title}>
                   {s.title}
                 </span>
-                {(onAttach || onRequestStop) && (
-                  <button
-                    type="button"
-                    className={`attach-switch${
-                      attached && !isAttaching ? " on" : ""
-                    }${isAttaching ? " pending" : ""}`}
-                    role="switch"
-                    aria-checked={attached && !isAttaching}
-                    aria-busy={isAttaching || undefined}
-                    aria-label={
-                      isAttaching
-                        ? "Attaching agent…"
-                        : attached
-                          ? "Detach agent (stop process)"
-                          : "Attach agent"
-                    }
-                    title={
-                      isAttaching
-                        ? "Attaching…"
-                        : attached
-                          ? "On — click to stop agent"
-                          : "Off — click to attach"
-                    }
-                    disabled={toggleBusy}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (attached) {
-                        onRequestStop?.(s.id);
-                      } else {
-                        onAttach?.(s.id);
-                      }
-                    }}
-                  >
-                    <span className="attach-switch-track" aria-hidden>
-                      <span className="attach-switch-thumb" />
-                    </span>
-                  </button>
-                )}
               </div>
               <div className="card-meta">
                 <span title={s.cwd}>{projectName(s.cwd)}</span>
@@ -214,9 +160,9 @@ function resolveCardState(opts: {
 function stateTitle(state: CardState): string {
   switch (state) {
     case "live":
-      return "Attached (ACP)";
+      return "Live in MarsBuild";
     case "disk-active":
-      return "Active in Grok (not attached) — flip switch to attach";
+      return "Active in Grok Build — send a message here to connect";
     case "idle":
       return "Idle";
   }

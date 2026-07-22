@@ -1,11 +1,14 @@
 /**
- * Rewrite latest.json platform download URLs from GitHub API asset IDs
- * (api.github.com/.../releases/assets/{id}) to public browser download URLs
- * (github.com/.../releases/download/{tag}/{name}).
+ * Patch release `latest.json` for in-app updates:
  *
- * tauri-action currently embeds API URLs. Those require Accept:
- * application/octet-stream (and hit unauthenticated rate limits), so the
- * Tauri updater gets HTTP 403. Public browser URLs work without auth.
+ * 1. Rewrite platform download URLs from GitHub API asset IDs
+ *    (api.github.com/.../releases/assets/{id}) to public browser download URLs
+ *    (github.com/.../releases/download/{tag}/{name}).
+ *    tauri-action embeds API URLs; those need Accept: application/octet-stream
+ *    and hit unauthenticated rate limits → HTTP 403. Public URLs work without auth.
+ *
+ * 2. Sync top-level `notes` from the GitHub release body so the UpdateModal
+ *    can show a real changelog (plugin maps notes → Update.body).
  *
  * Env:
  *   GITHUB_TOKEN  required (contents:write)
@@ -132,7 +135,7 @@ const json = JSON.parse(Buffer.from(raw).toString("utf8"));
 const tagName = release.tag_name;
 const base = `https://github.com/${owner}/${name}/releases/download/${tagName}`;
 
-let changed = 0;
+let urlChanges = 0;
 for (const [platform, meta] of Object.entries(json.platforms || {})) {
   if (!meta || typeof meta !== "object") continue;
   const url = String(meta.url || "");
@@ -157,12 +160,32 @@ for (const [platform, meta] of Object.entries(json.platforms || {})) {
   if (meta.url !== next) {
     console.log(`${platform}: ${meta.url} → ${next}`);
     meta.url = next;
-    changed++;
+    urlChanges++;
   }
 }
 
-if (changed === 0) {
-  console.log("No API asset URLs to rewrite; latest.json already public.");
+// Canonical notes: GitHub release body (from prepare-notes → tauri-action).
+// Fail closed — empty body means the release pipeline did not produce a changelog.
+const releaseNotes = String(release.body || "").trim();
+if (!releaseNotes) {
+  console.error(
+    "release body is empty; refusing to publish latest.json without notes",
+  );
+  process.exit(1);
+}
+let notesChanged = false;
+if (json.notes !== releaseNotes) {
+  console.log(
+    `notes: ${JSON.stringify(String(json.notes || "").slice(0, 80))} → release body (${releaseNotes.length} chars)`,
+  );
+  json.notes = releaseNotes;
+  notesChanged = true;
+} else {
+  console.log("notes already match release body");
+}
+
+if (urlChanges === 0 && !notesChanged) {
+  console.log("latest.json already up to date (public URLs + notes).");
   process.exit(0);
 }
 
@@ -193,4 +216,6 @@ if (!uploadRes.ok) {
   );
 }
 
-console.log(`OK: rewrote ${changed} platform URL(s) on ${tagName}`);
+console.log(
+  `OK: ${tagName} — ${urlChanges} URL rewrite(s), notes ${notesChanged ? "updated" : "unchanged"}`,
+);

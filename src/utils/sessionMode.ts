@@ -106,12 +106,13 @@ export function permissionRing(mode: PermissionMode): PermissionRing {
 }
 
 /**
- * Best-effort Grok slash to keep the agent process mode in sync with the host
- * gate. Grok treats `/auto` and `/always-approve` as toggles; switching between
- * them (or off) is done by invoking the target / previous command once.
+ * Reference mapping of host permission ring transitions to Grok TUI toggle
+ * slashes (`/auto`, `/always-approve`).
  *
- * Returns null when the ring side of the mode is unchanged (e.g. default ↔
- * acceptEdits) or when no agent slash applies.
+ * Not used for live Mode-chip / Shift+Tab changes: those only update the host
+ * ACP gate. Sending these strings via `session/prompt` starts a real agent turn
+ * (unlike the Grok Build TUI, where they are local toggles with no tool runs).
+ * Kept so manual prompt autocomplete semantics stay documented/tested.
  */
 export function agentSlashForPermissionTransition(
   from: PermissionMode,
@@ -129,8 +130,8 @@ export function agentSlashForPermissionTransition(
 }
 
 /**
- * Whether the attached agent is idle enough to accept a mode slash without
- * interrupting a turn (Grok mode toggles apply when idle).
+ * Whether the agent is idle. Historically gated auto-sending mode slashes;
+ * Mode chip no longer prompts the agent (host gate only).
  */
 export function canSendModeSlash(status: string | undefined | null): boolean {
   return status === "ready";

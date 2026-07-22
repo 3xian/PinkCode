@@ -3,13 +3,14 @@
 //! Permission modes mirror Grok Build's prompt policy:
 //! - `default` — ask the user on gated ops (Normal / ask)
 //! - `acceptEdits` — auto-allow file edits; ask for shell / other tools
-//! - `auto` — allow safe tools; ask on high-risk shell (`--permission-mode auto` + `/auto`)
-//! - `bypassPermissions` — auto-allow (spawn with `grok --always-approve` + `/always-approve`)
+//! - `auto` — allow safe tools; ask on high-risk shell (spawn `--permission-mode auto`)
+//! - `bypassPermissions` — auto-allow (spawn with `grok --always-approve`)
 //! - `dontAsk` — auto-deny anything that would have prompted
 //!
-//! Process flags apply on spawn/attach. Live Mode changes update this host's
-//! `decide_gate` and, when the agent is ready, best-effort Grok slash toggles
-//! (`/auto`, `/always-approve`) so the process ring stays aligned.
+//! Process flags apply on spawn/attach. Live Mode changes update only this
+//! host's `decide_gate` (ACP permission responses). Do not inject `/auto` or
+//! `/always-approve` as `session/prompt` — those are local TUI toggles in Grok
+//! Build; forwarding them over ACP starts a turn and can run tools.
 
 use crate::acp::{AcpClient, NotifyFn};
 use crate::agent_fs::{read_text_file, write_text_file};
@@ -69,9 +70,9 @@ impl AgentManager {
 
     /// Change host-side permission mode for a live agent.
     ///
-    /// Updates MarsBuild's ACP auto-response and reconciles pending requests.
-    /// Callers should also send `/auto` or `/always-approve` when the agent is
-    /// ready so Grok's process ring matches (see frontend `handleSessionModeChange`).
+    /// Updates MarsBuild's ACP auto-response and reconciles pending requests
+    /// that the new mode would no longer ask about. Does not prompt the agent
+    /// (Grok Build Mode toggles are local; see frontend `handleSessionModeChange`).
     pub fn set_permission_mode(
         &self,
         handle_id: &str,

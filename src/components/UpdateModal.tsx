@@ -1,6 +1,7 @@
 import type { Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useEffect, useMemo, useState } from "react";
+import { Markdown } from "./Markdown";
 
 interface Props {
   update: Update | null;
@@ -9,6 +10,11 @@ interface Props {
 
 type Phase = "prompt" | "downloading" | "installing" | "done" | "error";
 
+/**
+ * In-app update prompt. Changelog is `update.body` from latest.json `notes`
+ * (pipeline: prepare-notes → release body → rewrite-updater-json).
+ * This component only displays — it does not invent or filter notes.
+ */
 export function UpdateModal({ update, onDismiss }: Props) {
   const [phase, setPhase] = useState<Phase>("prompt");
   const [downloaded, setDownloaded] = useState(0);
@@ -30,6 +36,7 @@ export function UpdateModal({ update, onDismiss }: Props) {
 
   if (!update) return null;
 
+  const notes = update.body?.trim() || null;
   const busy = phase === "downloading" || phase === "installing";
 
   async function handleInstall() {
@@ -87,17 +94,21 @@ export function UpdateModal({ update, onDismiss }: Props) {
           <strong>v{update.version}</strong>
         </p>
 
-        {update.body?.trim() ? (
-          <div className="update-notes">
-            <div className="muted small">Release notes</div>
-            <pre className="update-notes-body">{update.body.trim()}</pre>
+        <div className="update-notes">
+          <div className="muted small">
+            What&apos;s new in v{update.version}
           </div>
-        ) : (
-          <p className="muted small">
-            A newer MarsBuild build is ready. Download and install without
-            leaving the app.
-          </p>
-        )}
+          {notes ? (
+            <div className="update-notes-body">
+              <Markdown className="compact">{notes}</Markdown>
+            </div>
+          ) : (
+            <p className="muted small update-notes-fallback">
+              A newer MarsBuild build is ready. Download and install without
+              leaving the app.
+            </p>
+          )}
+        </div>
 
         {(phase === "downloading" || phase === "installing") && (
           <div className="update-progress" aria-live="polite">

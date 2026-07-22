@@ -18,9 +18,9 @@ pub enum PermissionMode {
     #[default]
     Default,
     AcceptEdits,
-    /// Grok Auto: classifier / host allow safe tools; ask on high risk.
-    /// Spawn/attach pass `--permission-mode auto`. Live toggles update the host
-    /// gate and best-effort send `/auto` when the agent is ready.
+    /// Grok Auto: host allows safe tools; ask on high risk.
+    /// Spawn/attach pass `--permission-mode auto`. Live Mode toggles only update
+    /// the host ACP gate (no `/auto` session/prompt — that would start a turn).
     Auto,
     BypassPermissions,
     DontAsk,

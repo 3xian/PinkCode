@@ -35,12 +35,12 @@ A desktop console for [Grok Build](https://x.ai): multi-task board, ACP timeline
 
 | Area | Behavior |
 |------|----------|
-| **Tasks** | Lists sessions under `~/.grok` / `%USERPROFILE%\.grok`. Spawn, attach, prompt, stop. Per-card switch attach/detach. |
-| **Timeline** | One stream: user / agent / thought / tool / shell / plan / events. Live ACP when attached; otherwise hydrate from session `updates.jsonl`. Filters + stick-to-bottom. |
+| **Tasks** | Lists sessions under `~/.grok` / `%USERPROFILE%\.grok`. New task, select, prompt, stop. First send auto-connects ACP (no attach toggle). |
+| **Timeline** | One stream: user / agent / thought / tool / shell / plan / events. Live ACP when connected; otherwise hydrate from session `updates.jsonl`. Filters + stick-to-bottom. |
 | **File changes** | Agent hunks from `hunk_records.jsonl`. |
 | **Raw** | Tail of on-disk ACP `session/update` records. |
 | **Workspace** | Project file tree + Git porcelain status (right rail). |
-| **Mode** | Grok Shift+Tab ring: **Normal → Plan → Auto → Always-approve**. Plan is orthogonal to permission (next free-text becomes `/plan …`). Auto / Always-approve update the host gate and best-effort sync the agent via `/auto` / `/always-approve` when idle. |
+| **Mode** | Grok Shift+Tab ring: **Normal → Plan → Auto → Always-approve**. Plan is orthogonal to permission (next free-text becomes `/plan …`). Auto / Always-approve update the **host ACP gate only** (same idea as Grok Build local toggles — no `session/prompt` side effects). |
 | **Permissions** | Host gate also supports Accept edits and Don't ask (New Task spawn). Per-task prefs under `~/.marsbuild` (permission + Plan arming). |
 | **Usage** | Week remaining (Grok billing API) + recent day token series from local sessions. |
 | **Updates** | Checks GitHub Releases on startup; optional download & install. Title bar shows `MarsBuild <version>`. |

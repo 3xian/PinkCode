@@ -9,7 +9,6 @@ import {
   GROK_BUILTIN_SLASH_COMMANDS,
   mergeSlashCommands,
 } from "../utils/format";
-import { isLocalSlashCommand } from "../utils/localSlash";
 import {
   applySessionModeToPrompt,
   cycleSessionMode,
@@ -54,14 +53,9 @@ export function PromptBar({
   const running = managed?.status === "running";
   const awaiting = managed?.status === "awaitingPermission";
   const trimmedText = text.trim();
-  // /usage /context /session-info /help run in MarsBuild without ACP attach.
-  const localSlash = isLocalSlashCommand(trimmedText);
+  // Local slashes work offline; first agent message auto-connects ACP.
   const canSend = Boolean(
-    trimmedText &&
-      !busy &&
-      !running &&
-      !awaiting &&
-      (connected || localSlash),
+    trimmedText && !busy && !running && !awaiting,
   );
 
   const modeMeta =
@@ -138,7 +132,7 @@ export function PromptBar({
   function sendIfReady() {
     const trimmed = text.trim();
     if (!trimmed || running || awaiting || busy) return;
-    if (!connected && !isLocalSlashCommand(trimmed)) return;
+    // First non-local message auto-connects ACP in App.handleSend.
     const payload = applySessionModeToPrompt(sessionMode, trimmed);
     onSend(payload);
     setText("");
@@ -213,7 +207,7 @@ export function PromptBar({
                   : sessionMode === "plan"
                     ? "Plan mode · next free-text send becomes /plan … · Shift+Tab to cycle"
                     : "Message the agent… / for commands · Enter to send · Shift+Tab mode · Ctrl+Enter newline"
-              : "/usage /context /session-info work without attach · flip switch for agent prompts"
+              : "Message the agent… first send connects · /usage /context work offline"
           }
           value={text}
           disabled={running || awaiting || busy}

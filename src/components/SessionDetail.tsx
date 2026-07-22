@@ -46,7 +46,9 @@ interface Props {
   onSessionModeChange: (mode: SessionMode) => void;
   onSendPrompt: (text: string) => void;
   onResolvePermission: (item: PendingPermission, optionId: string) => void;
-  /** Bump after attach/spawn to pin Timeline to the bottom. */
+  /** Stop the live agent for this task (confirm handled by parent). */
+  onStopAgent?: () => void;
+  /** Bump after connect/spawn to pin Timeline to the bottom. */
   pinTimelineBottomSeq?: number;
   /** Agent-advertised slash commands for the prompt autocomplete. */
   availableCommands?: AvailableCommand[];
@@ -91,6 +93,7 @@ export function SessionDetailView({
   onSessionModeChange,
   onSendPrompt,
   onResolvePermission,
+  onStopAgent,
   pinTimelineBottomSeq = 0,
   availableCommands = [],
 }: Props) {
@@ -127,9 +130,9 @@ export function SessionDetailView({
         <div className="empty-state">
           <h2>Select a task</h2>
           <p>
-            Pick a session from the left, or spawn a new agent with{" "}
-            <strong>New task</strong>. Live mirrors Grok Build on disk, or
-            attach for real-time ACP.
+            Pick a session from the left, or create one with{" "}
+            <strong>New</strong>. Timeline mirrors Grok Build on disk; send a
+            message to connect live.
           </p>
         </div>
       </section>
@@ -142,6 +145,10 @@ export function SessionDetailView({
     managed &&
     managed.status !== "stopped" &&
     managed.status !== "error";
+  const canStop =
+    Boolean(onStopAgent) &&
+    managed &&
+    managed.status !== "stopped";
   const awaiting =
     managed?.status === "awaitingPermission" || permissions.length > 0;
 
@@ -179,6 +186,17 @@ export function SessionDetailView({
             )}
             {card.errorCount > 0 && (
               <span className="pill danger">{card.errorCount} errors</span>
+            )}
+            {canStop && (
+              <button
+                type="button"
+                className="btn danger-btn detail-stop-btn"
+                disabled={controlBusy}
+                title="Stop the agent process for this task"
+                onClick={onStopAgent}
+              >
+                Stop
+              </button>
             )}
           </div>
           <h1 title={card.title || undefined}>{card.title}</h1>
@@ -383,7 +401,7 @@ function TimelinePanel({
     scrollToEnd("auto");
   }, [filtered]);
 
-  // Attach / spawn: always jump to bottom (even if user had scrolled up earlier).
+  // Connect / spawn: always jump to bottom (even if user had scrolled up earlier).
   useEffect(() => {
     if (!pinBottomSeq) return;
     stickToBottom.current = true;
@@ -403,7 +421,7 @@ function TimelinePanel({
       <div className="empty-hint">
         {managed
           ? "Waiting for ACP stream… send a prompt or wait for the agent."
-          : "No stream yet. Work in Grok Build on this task (Timeline mirrors disk), or flip the switch to attach for real-time ACP."}
+          : "No stream yet. Timeline mirrors Grok Build on disk; send a message to connect live."}
       </div>
     );
   }

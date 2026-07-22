@@ -120,7 +120,7 @@
 
 /* In-app update prompt */
 .update-modal {
-  width: min(440px, 100%);
+  width: min(480px, 100%);
 }
 
 .update-version-line {
@@ -135,19 +135,53 @@
   min-width: 0;
 }
 
+.update-notes-fallback {
+  margin: 0;
+}
+
 .update-notes-body {
   margin: 0;
-  max-height: 180px;
+  max-height: 240px;
   overflow: auto;
   padding: 10px 12px;
-  font: inherit;
   font-size: 12px;
   line-height: 1.45;
-  white-space: pre-wrap;
   word-break: break-word;
   background: var(--bg);
   color: var(--text-muted);
-  border-radius: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Shared compact markdown density (modals, dense panels). */
+.md.compact > :first-child {
+  margin-top: 0;
+}
+.md.compact > :last-child {
+  margin-bottom: 0;
+}
+.md.compact p,
+.md.compact ul,
+.md.compact ol {
+  margin: 0 0 0.55em;
+}
+.md.compact h1,
+.md.compact h2,
+.md.compact h3,
+.md.compact h4 {
+  margin: 0 0 0.4em;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text, inherit);
+}
+.md.compact ul,
+.md.compact ol {
+  padding-left: 1.2em;
+}
+.md.compact li {
+  margin: 0.15em 0;
+}
+.md.compact a {
+  color: var(--accent, #6ea8ff);
 }
 
 .update-progress {

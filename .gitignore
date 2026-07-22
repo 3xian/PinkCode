@@ -31,6 +31,8 @@ src-tauri/WixTools
 # Desktop-only; `tauri icon` also emits these by default.
 src-tauri/icons/ios/
 src-tauri/icons/android/
+# Local icon preview scratch files
+src-tauri/icons/_preview*.png
 
 # Env
 .env

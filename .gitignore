@@ -28,6 +28,9 @@ src-tauri/target
 src-tauri/gen
 src-tauri/WixTools
 *.rs.bk
+# Desktop-only; `tauri icon` also emits these by default.
+src-tauri/icons/ios/
+src-tauri/icons/android/
 
 # Env
 .env

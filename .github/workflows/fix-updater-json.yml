@@ -1,0 +1,35 @@
+# One-shot / on-demand: rewrite latest.json on an existing release so
+# in-app updates use public github.com download URLs (not api.github.com).
+name: Fix updater JSON
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to fix (empty = latest non-draft)"
+        required: false
+        default: ""
+  # Auto-run once when this workflow lands on main (repairs current latest).
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fix-updater-json.yml"
+      - "scripts/rewrite-updater-json.mjs"
+
+permissions:
+  contents: write
+
+jobs:
+  rewrite:
+    name: Rewrite latest.json download URLs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Point platform URLs at github.com download links
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node scripts/rewrite-updater-json.mjs

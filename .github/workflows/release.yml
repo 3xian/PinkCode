@@ -150,3 +150,24 @@ jobs:
             fi
             echo "OK: $(basename "${sigs[0]}")"
           fi
+
+  # tauri-action writes api.github.com asset URLs into latest.json. Those need
+  # Accept: application/octet-stream and are rate-limited without auth, so the
+  # in-app updater gets HTTP 403. Rewrite to public browser download URLs.
+  rewrite-updater-json:
+    name: Rewrite latest.json download URLs
+    needs: release
+    if: always() && needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Point platform URLs at github.com download links
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/rewrite-updater-json.mjs

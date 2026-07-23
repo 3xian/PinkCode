@@ -337,11 +337,8 @@ def compose_icon(layout: GlyphLayout, style: IconStyle) -> Image.Image:
 
 
 def flatten_on_black(im: Image.Image) -> Image.Image:
-    """Opaque black canvas for ICO entries."""
-    flat = Image.new("RGBA", im.size, WIN_PLATE)
-    flat.alpha_composite(im)
-    r, g, b, _a = flat.split()
-    return Image.merge("RGBA", (r, g, b, Image.new("L", flat.size, 255)))
+    """Return image as-is — compose_icon already bakes black plate + circular mask."""
+    return im
 
 
 def resize_for_windows(master_flat: Image.Image, side: int) -> Image.Image:

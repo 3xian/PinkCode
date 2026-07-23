@@ -24,11 +24,31 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Verify tag matches package version
+      - name: Verify all version sources match the tag
         shell: bash
         run: |
-          version="$(node -p "require('./package.json').version")"
-          test "v${version}" = "${GITHUB_REF_NAME}"
+          tag="${GITHUB_REF_NAME}"
+          npm_version="$(node -p "require('./package.json').version")"
+          cargo_version="$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)"
+          tauri_version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+
+          echo "tag=${tag}"
+          echo "package.json=${npm_version}"
+          echo "Cargo.toml=${cargo_version}"
+          echo "tauri.conf.json=${tauri_version}"
+
+          ok=true
+          for v in "${cargo_version}" "${tauri_version}"; do
+            if [ "${v}" != "${npm_version}" ]; then
+              echo "::error::Version mismatch: package.json=${npm_version} but got ${v}"
+              ok=false
+            fi
+          done
+          if [ "${tag}" != "v${npm_version}" ]; then
+            echo "::error::Tag ${tag} does not match package.json version ${npm_version}"
+            ok=false
+          fi
+          if [ "${ok}" != "true" ]; then exit 1; fi
 
       - name: Install dependencies
         run: npm ci

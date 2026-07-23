@@ -43,9 +43,6 @@ src-tauri/icons/_preview*.png
 .mimocode/
 .vscode/
 
-# Local agent bootstrap (session context; keep machine/personal)
-AGENTS.md
-
 # Local Windows probe artifacts
 _win_probe*
 

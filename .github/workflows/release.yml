@@ -20,6 +20,10 @@ jobs:
           node-version: 24
           cache: npm
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
       - name: Verify tag matches package version
         shell: bash
         run: |
@@ -29,8 +33,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run checks
-        run: npm run check
+      # Frontend checks + rustfmt (fast). Full clippy/test run on Windows pack jobs
+      # and on main CI; keep tag verify from shipping unformatted Rust (CI gap that
+      # previously let Release succeed while the rust job failed on fmt).
+      - name: Frontend checks
+        run: npm run check:frontend
+
+      - name: Rust format check
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
   # Single canonical changelog for Release body + latest.json notes + UpdateModal.
   # Matrix pack jobs only consume this output (do not regenerate notes).

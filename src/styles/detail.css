@@ -824,6 +824,21 @@ code.md-file-link {
   cursor: pointer;
 }
 
+/* Agent markdown images that open the workspace preview on click. */
+img.md-file-image {
+  max-width: 100%;
+  height: auto;
+  cursor: pointer;
+  border-radius: 4px;
+  display: block;
+  margin: 6px 0;
+}
+
+img.md-file-image:hover {
+  outline: 1px solid #8eb0ff;
+  outline-offset: 2px;
+}
+
 .file-meta {
   display: flex;
   flex-wrap: wrap;

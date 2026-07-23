@@ -246,20 +246,29 @@ async fn list_project_dir(root: String, path: Option<String>) -> Result<Vec<DirE
 }
 
 #[tauri::command]
-async fn open_project_path(root: String, path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || project_fs::open_path(&root, &path))
-        .await
-        .map_err(|e| format!("open path task failed: {e}"))?
+async fn open_project_path(
+    root: String,
+    path: String,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        project_fs::open_path(&root, &path, session_id.as_deref())
+    })
+    .await
+    .map_err(|e| format!("open path task failed: {e}"))?
 }
 
 #[tauri::command]
 async fn read_project_file(
     root: String,
     path: String,
+    session_id: Option<String>,
 ) -> Result<project_fs::FilePreview, String> {
-    tauri::async_runtime::spawn_blocking(move || project_fs::read_file(&root, &path))
-        .await
-        .map_err(|e| format!("read file task failed: {e}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        project_fs::read_file(&root, &path, session_id.as_deref())
+    })
+    .await
+    .map_err(|e| format!("read file task failed: {e}"))?
 }
 
 #[tauri::command]

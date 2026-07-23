@@ -15,21 +15,23 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run check
+      # Frontend only here — full `npm run check` also runs Rust (needs toolchain).
+      - run: npm run check:frontend
 
   rust:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - working-directory: src-tauri
-        run: cargo fmt --check
-      - working-directory: src-tauri
-        run: cargo clippy --all-targets -- -D warnings
-      - working-directory: src-tauri
-        run: cargo test
+      # Same entrypoint as local `npm run check:rust` / `npm run check`.
+      - run: npm run check:rust

@@ -23,7 +23,10 @@ export function joinUnderRoot(root: string, rel: string): string {
   if (!r || isAbsolutePath(r)) return r || root;
   const sep = root.includes("\\") ? "\\" : "/";
   const base = root.replace(/[\\/]+$/, "");
-  const tail = r.replace(/^[\\/]+/, "");
+  // Normalize separators in the relative tail to match the project root style.
+  const tail = r
+    .replace(/^[\\/]+/, "")
+    .replace(/[/\\]+/g, sep);
   return `${base}${sep}${tail}`;
 }
 

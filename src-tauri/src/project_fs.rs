@@ -175,10 +175,16 @@ fn resolve_root(root: &str) -> Result<PathBuf, String> {
 fn join_under_root(root: &Path, rel: &str) -> Result<PathBuf, String> {
     // Strip Windows extended-length prefix so absolute client paths still join/compare cleanly.
     let rel = strip_extended_prefix(rel.trim());
-    let candidate = if Path::new(&rel).is_absolute() {
-        PathBuf::from(&rel)
+    // Normalize `/` → OS separator so mixed `images/1.jpg` under `D:\proj` resolves.
+    let rel_os = if Path::new(&rel).is_absolute() {
+        rel.clone()
     } else {
-        root.join(&rel)
+        rel.replace('/', std::path::MAIN_SEPARATOR_STR)
+    };
+    let candidate = if Path::new(&rel_os).is_absolute() {
+        PathBuf::from(&rel_os)
+    } else {
+        root.join(&rel_os)
     };
     let canon = fs::canonicalize(&candidate).unwrap_or(candidate);
     let root_canon = fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
@@ -189,6 +195,102 @@ fn join_under_root(root: &Path, rel: &str) -> Result<PathBuf, String> {
         return Err("path escapes project root".into());
     }
     Ok(canon)
+}
+
+/// If `path` is under `root`, return the relative remainder (`images/1.jpg`).
+fn relative_under(root: &Path, path: &Path) -> Option<String> {
+    let norm = |p: &Path| {
+        strip_extended_prefix(&p.to_string_lossy())
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_string()
+    };
+    // Case-fold on Windows so `D:\A` matches `d:\a\…`.
+    #[cfg(windows)]
+    let (root_s, path_s) = {
+        (
+            norm(root).to_ascii_lowercase(),
+            norm(path).to_ascii_lowercase(),
+        )
+    };
+    #[cfg(not(windows))]
+    let (root_s, path_s) = (norm(root), norm(path));
+
+    if path_s == root_s {
+        return None;
+    }
+    let prefix = format!("{root_s}/");
+    path_s
+        .strip_prefix(&prefix)
+        .filter(|rest| !rest.is_empty())
+        .map(|rest| rest.to_string())
+}
+
+/// Try Grok session assets for several candidate path forms.
+fn try_session(session_id: &str, candidates: &[&str]) -> Option<PathBuf> {
+    for c in candidates {
+        if c.is_empty() {
+            continue;
+        }
+        if let Ok(p) = crate::sessions::resolve_in_session(session_id, c) {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// Resolve a readable path for preview/open.
+///
+/// Order:
+/// 1. Under `project_root` (absolute or relative) when the path exists.
+/// 2. Else under the Grok session dir (`~/.grok/sessions/…/{session_id}/`) when
+///    `session_id` is set — covers agent-generated assets like `images/1.jpg`.
+///    Frontend often absolute-joins relative paths under the project first; we
+///    re-derive the relative suffix so session lookup still works.
+/// 3. Absolute paths that escape the project but stay under the session dir.
+fn resolve_for_read(
+    project_root: &str,
+    path: &str,
+    session_id: Option<&str>,
+) -> Result<PathBuf, String> {
+    let root_path = resolve_root(project_root)?;
+    let raw = strip_extended_prefix(path.trim());
+    if raw.is_empty() {
+        return Err("empty path".into());
+    }
+
+    match join_under_root(&root_path, &raw) {
+        Ok(p) if p.exists() => Ok(p),
+        Ok(project_miss) => {
+            if let Some(sid) = session_id {
+                let mut candidates = vec![raw.as_str()];
+                // `openPreview` may have joined `images/1.jpg` → `D:\proj\images\1.jpg`.
+                let rel_owned = relative_under(&root_path, &project_miss);
+                if let Some(ref rel) = rel_owned {
+                    candidates.push(rel.as_str());
+                }
+                // Original relative form if client still sent one.
+                if !Path::new(&raw).is_absolute() {
+                    candidates.push(raw.as_str());
+                }
+                if let Some(sp) = try_session(sid, &candidates) {
+                    return Ok(sp);
+                }
+            }
+            Err(format!(
+                "Path does not exist: {}",
+                path_for_ui(&project_miss)
+            ))
+        }
+        Err(project_err) => {
+            if let Some(sid) = session_id {
+                if let Some(sp) = try_session(sid, &[raw.as_str()]) {
+                    return Ok(sp);
+                }
+            }
+            Err(project_err)
+        }
+    }
 }
 
 /// Path string suitable for the frontend (no Windows `\\?\` extended prefix).
@@ -208,13 +310,13 @@ fn strip_extended_prefix(s: &str) -> String {
     }
 }
 
-/// Open a project file (or directory) with the OS default application.
+/// Open a project (or session-asset) file with the OS default application.
 ///
-/// `path` may be absolute or relative to `root`. Must stay under `root`.
-/// Uses the opener crate from Rust (no frontend path ACL scope required).
-pub fn open_path(root: &str, path: &str) -> Result<(), String> {
-    let root_path = resolve_root(root)?;
-    let target = join_under_root(&root_path, path)?;
+/// `path` may be absolute or relative to `root`. Project paths must stay under
+/// `root`; optional `session_id` also allows Grok session assets
+/// (`images/…` under `~/.grok/sessions/…`).
+pub fn open_path(root: &str, path: &str, session_id: Option<&str>) -> Result<(), String> {
+    let target = resolve_for_read(root, path, session_id)?;
     if !target.exists() {
         return Err(format!("Path does not exist: {}", path_for_ui(&target)));
     }
@@ -229,7 +331,8 @@ const PREVIEW_MAX_IMAGE_BYTES: u64 = 12 * 1024 * 1024;
 
 /// Text file contents for the workspace preview pane.
 ///
-/// `path` may be absolute or relative to `root`. Must stay under `root`.
+/// `path` may be absolute or relative to `root` (project), or a Grok session
+/// asset when `session_id` is provided (e.g. generated `images/1.jpg`).
 /// - `kind: "text"` — UTF-8 text in `content`
 /// - `kind: "image"` — base64 payload in `content` + `mime_type`
 /// - `kind: "binary"` — unsupported binary (empty `content`)
@@ -245,9 +348,8 @@ pub struct FilePreview {
     pub mime_type: Option<String>,
 }
 
-pub fn read_file(root: &str, path: &str) -> Result<FilePreview, String> {
-    let root_path = resolve_root(root)?;
-    let target = join_under_root(&root_path, path)?;
+pub fn read_file(root: &str, path: &str, session_id: Option<&str>) -> Result<FilePreview, String> {
+    let target = resolve_for_read(root, path, session_id)?;
     if !target.exists() {
         return Err(format!("Path does not exist: {}", path_for_ui(&target)));
     }

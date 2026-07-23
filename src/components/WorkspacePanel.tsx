@@ -10,6 +10,8 @@ interface Props {
   /** Absolute path under project root currently previewed. */
   previewPath: string | null;
   onPreviewPath: (path: string | null) => void;
+  /** Active session — session-scoped assets (generated images) for preview. */
+  sessionId?: string | null;
 }
 
 /**
@@ -21,6 +23,7 @@ export function WorkspacePanel({
   refreshKey,
   previewPath,
   onPreviewPath,
+  sessionId = null,
 }: Props) {
   const [tab, setTab] = useState<"files" | "git">("files");
   const [gitChangeCount, setGitChangeCount] = useState(0);
@@ -88,6 +91,7 @@ export function WorkspacePanel({
         <FilePreview
           root={cwd}
           path={previewPath}
+          sessionId={sessionId}
           onClose={() => onPreviewPath(null)}
           onResolvedPath={onPreviewPath}
         />

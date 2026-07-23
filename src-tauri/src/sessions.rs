@@ -300,6 +300,44 @@ fn find_session_dir(session_id: &str) -> Result<(PathBuf, String)> {
     Err(SessionError::NotFound(session_id.to_string()))
 }
 
+/// Resolve a path under a Grok session directory (e.g. generated `images/1.jpg`).
+///
+/// Accepts project-relative paths or absolute paths that stay inside the session
+/// folder. Used by the workspace preview when files live in `~/.grok/sessions/…`
+/// rather than the project cwd.
+pub fn resolve_in_session(session_id: &str, path: &str) -> std::result::Result<PathBuf, String> {
+    let (session_dir, _) = find_session_dir(session_id).map_err(|e| e.to_string())?;
+    let session_dir = fs::canonicalize(&session_dir).unwrap_or(session_dir);
+    let raw = path.trim();
+    if raw.is_empty() {
+        return Err("empty path".into());
+    }
+    let candidate = if Path::new(raw).is_absolute() {
+        PathBuf::from(raw)
+    } else {
+        // Normalize mixed separators so Windows joins `images/1.jpg` cleanly.
+        let normalized = raw.replace('/', std::path::MAIN_SEPARATOR_STR);
+        session_dir.join(normalized)
+    };
+    let canon = fs::canonicalize(&candidate)
+        .map_err(|_| format!("Path does not exist: {}", candidate.to_string_lossy()))?;
+    if !canon.starts_with(&session_dir) {
+        // Also compare without Windows `\\?\` prefixes.
+        let strip = |p: &Path| {
+            let s = p.to_string_lossy();
+            if let Some(rest) = s.strip_prefix(r"\\?\") {
+                PathBuf::from(rest)
+            } else {
+                PathBuf::from(s.as_ref())
+            }
+        };
+        if !strip(&canon).starts_with(strip(&session_dir)) {
+            return Err("path escapes session directory".into());
+        }
+    }
+    Ok(canon)
+}
+
 pub fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>> {
     let root = sessions_root();
     if !root.exists() {

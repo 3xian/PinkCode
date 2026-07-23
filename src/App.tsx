@@ -800,6 +800,7 @@ function App() {
               refreshKey={gitRefreshKey}
               previewPath={previewPath}
               onPreviewPath={openPreview}
+              sessionId={selectedId}
             />
           )}
         </aside>

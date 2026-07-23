@@ -43,6 +43,34 @@ export function Markdown({ children, className, onOpenFile }: Props) {
           pre: ({ children: preChildren }) => (
             <pre className="md-pre">{preChildren}</pre>
           ),
+          // Agent-generated images: `![](images/1.jpg)` — click opens preview.
+          img: ({ src, alt }) => {
+            const path =
+              src && isFileLinkHref(src) ? hrefToFsPath(src) : null;
+            if (onOpenFile && path) {
+              return (
+                <img
+                  src={src}
+                  alt={alt ?? ""}
+                  className="md-file-image md-file-link"
+                  title={`${path}\nClick to preview`}
+                  role="link"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onOpenFile(path);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onOpenFile(path);
+                    }
+                  }}
+                />
+              );
+            }
+            return <img src={src} alt={alt ?? ""} />;
+          },
           code: ({ className: codeClass, children: codeChildren, ...props }) => {
             const isBlock = Boolean(codeClass);
             if (isBlock) {

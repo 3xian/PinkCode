@@ -10,6 +10,11 @@ interface Props {
   root: string | null;
   /** Absolute path under project root (or null when empty). */
   path: string | null;
+  /**
+   * Active Grok session id — enables preview of session assets
+   * (e.g. generated `images/1.jpg` under `~/.grok/sessions/…`).
+   */
+  sessionId?: string | null;
   onClose: () => void;
   /**
    * After a successful read, adopt the backend display path when it differs
@@ -18,7 +23,13 @@ interface Props {
   onResolvedPath?: (path: string) => void;
 }
 
-export function FilePreview({ root, path, onClose, onResolvedPath }: Props) {
+export function FilePreview({
+  root,
+  path,
+  sessionId = null,
+  onClose,
+  onResolvedPath,
+}: Props) {
   const [data, setData] = useState<FilePreviewData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -39,7 +50,7 @@ export function FilePreview({ root, path, onClose, onResolvedPath }: Props) {
     setImgError(false);
     void (async () => {
       try {
-        const preview = await readProjectFile(root, path);
+        const preview = await readProjectFile(root, path, sessionId);
         if (cancelled) return;
         setData(preview);
         setError(null);
@@ -58,7 +69,7 @@ export function FilePreview({ root, path, onClose, onResolvedPath }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [root, path, onResolvedPath]);
+  }, [root, path, sessionId, onResolvedPath]);
 
   if (!root || !path) {
     return (
@@ -128,7 +139,7 @@ export function FilePreview({ root, path, onClose, onResolvedPath }: Props) {
             disabled={!root}
             onClick={() => {
               if (!root || !path) return;
-              void openProjectPath(root, path).catch((e) =>
+              void openProjectPath(root, path, sessionId).catch((e) =>
                 setError(e instanceof Error ? e.message : String(e)),
               );
             }}

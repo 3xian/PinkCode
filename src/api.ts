@@ -175,16 +175,29 @@ export async function listProjectDir(
 export async function openProjectPath(
   root: string,
   path: string,
+  sessionId?: string | null,
 ): Promise<void> {
-  return invoke("open_project_path", { root, path });
+  return invoke("open_project_path", {
+    root,
+    path,
+    sessionId: sessionId ?? null,
+  });
 }
 
-/** Read a project file for the in-app preview pane (text / image / binary). */
+/**
+ * Read a project file (or Grok session asset such as `images/1.jpg`) for the
+ * in-app preview pane.
+ */
 export async function readProjectFile(
   root: string,
   path: string,
+  sessionId?: string | null,
 ): Promise<FilePreview> {
-  return invoke<FilePreview>("read_project_file", { root, path });
+  return invoke<FilePreview>("read_project_file", {
+    root,
+    path,
+    sessionId: sessionId ?? null,
+  });
 }
 
 export async function gitStatus(cwd: string): Promise<GitChange[]> {

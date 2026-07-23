@@ -415,14 +415,6 @@
   min-width: 0;
 }
 
-.tasks-logo {
-  width: 36px;
-  height: 36px;
-  object-fit: contain;
-  flex-shrink: 0;
-  display: block;
-}
-
 .panel-header-right {
   display: flex;
   align-items: center;

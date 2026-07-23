@@ -253,6 +253,16 @@ async fn open_project_path(root: String, path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn read_project_file(
+    root: String,
+    path: String,
+) -> Result<project_fs::FilePreview, String> {
+    tauri::async_runtime::spawn_blocking(move || project_fs::read_file(&root, &path))
+        .await
+        .map_err(|e| format!("read file task failed: {e}"))?
+}
+
+#[tauri::command]
 async fn git_status(cwd: String) -> Result<Vec<GitChange>, String> {
     tauri::async_runtime::spawn_blocking(move || project_fs::git_status(&cwd))
         .await
@@ -317,6 +327,7 @@ pub fn run() {
             list_task_plan_armed,
             list_project_dir,
             open_project_path,
+            read_project_file,
             git_status,
         ])
         .run(tauri::generate_context!())

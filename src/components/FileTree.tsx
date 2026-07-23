@@ -9,12 +9,18 @@ import { createPortal } from "react-dom";
 import { listProjectDir, openProjectPath } from "../api";
 import { useKeyedSilentRefresh } from "../hooks/useKeyedSilentRefresh";
 import type { DirEntry } from "../types";
+import { writeClipboard } from "../utils/clipboard";
 import { projectName, shortPath } from "../utils/format";
+import { pathsEqual } from "../utils/paths";
 
 interface Props {
   root: string | null;
   /** Bump to re-read the tree (FS events / turn complete). */
   refreshKey?: number;
+  /** Highlight the currently previewed file. */
+  selectedPath?: string | null;
+  /** Single-click a file → open in preview pane. */
+  onSelectFile?: (path: string) => void;
 }
 
 interface TreeNode {
@@ -32,7 +38,12 @@ interface CtxMenu {
   isDir: boolean;
 }
 
-export function FileTree({ root, refreshKey = 0 }: Props) {
+export function FileTree({
+  root,
+  refreshKey = 0,
+  selectedPath = null,
+  onSelectFile,
+}: Props) {
   const [nodes, setNodes] = useState<TreeNode[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loadingRoot, setLoadingRoot] = useState(false);
@@ -286,9 +297,6 @@ export function FileTree({ root, refreshKey = 0 }: Props) {
   if (!root) {
     return (
       <div className="workspace-section file-tree-section">
-        <div className="panel-header">
-          <h2>Files</h2>
-        </div>
         <div className="empty-hint small">
           Select a session to browse its project.
         </div>
@@ -298,9 +306,6 @@ export function FileTree({ root, refreshKey = 0 }: Props) {
 
   return (
     <div className="workspace-section file-tree-section">
-      <div className="panel-header">
-        <h2>Files</h2>
-      </div>
       <div
         className="file-tree-root mono"
         title={`${root}\nRight-click for actions`}
@@ -321,7 +326,9 @@ export function FileTree({ root, refreshKey = 0 }: Props) {
               key={n.entry.path}
               node={n}
               depth={0}
+              selectedPath={selectedPath}
               onToggle={toggle}
+              onSelectFile={(p) => onSelectFile?.(p)}
               onOpenFile={openInSystem}
               onContextMenu={openContextMenu}
             />
@@ -343,6 +350,14 @@ export function FileTree({ root, refreshKey = 0 }: Props) {
               void openInSystem(ctx.path);
               setCtx(null);
             }}
+            onPreview={
+              !ctx.isDir && onSelectFile
+                ? () => {
+                    onSelectFile(ctx.path);
+                    setCtx(null);
+                  }
+                : undefined
+            }
           />,
           document.body,
         )}
@@ -356,12 +371,14 @@ function FileContextMenu({
   isDir,
   onCopy,
   onOpen,
+  onPreview,
 }: {
   x: number;
   y: number;
   isDir: boolean;
   onCopy: () => void;
   onOpen: () => void;
+  onPreview?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
@@ -396,6 +413,16 @@ function FileContextMenu({
         e.stopPropagation();
       }}
     >
+      {!isDir && onPreview && (
+        <button
+          type="button"
+          role="menuitem"
+          className="file-ctx-item"
+          onClick={onPreview}
+        >
+          Preview
+        </button>
+      )}
       <button
         type="button"
         role="menuitem"
@@ -404,16 +431,14 @@ function FileContextMenu({
       >
         Copy full path
       </button>
-      {isDir && (
-        <button
-          type="button"
-          role="menuitem"
-          className="file-ctx-item"
-          onClick={onOpen}
-        >
-          Open in system
-        </button>
-      )}
+      <button
+        type="button"
+        role="menuitem"
+        className="file-ctx-item"
+        onClick={onOpen}
+      >
+        Open in system
+      </button>
     </div>
   );
 }
@@ -421,31 +446,44 @@ function FileContextMenu({
 function TreeRow({
   node,
   depth,
+  selectedPath,
   onToggle,
+  onSelectFile,
   onOpenFile,
   onContextMenu,
 }: {
   node: TreeNode;
   depth: number;
+  selectedPath?: string | null;
   onToggle: (path: string) => void;
+  onSelectFile: (path: string) => void;
   onOpenFile: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, path: string, isDir: boolean) => void;
 }) {
   const { entry } = node;
+  const selected =
+    !entry.isDir &&
+    selectedPath != null &&
+    pathsEqual(selectedPath, entry.path);
   return (
     <>
       <div
-        className={`file-tree-row ${entry.isDir ? "is-dir" : "is-file"}`}
+        className={
+          `file-tree-row ${entry.isDir ? "is-dir" : "is-file"}` +
+          (selected ? " is-selected" : "")
+        }
         style={{ paddingLeft: 8 + depth * 12 }}
         role="treeitem"
         aria-expanded={entry.isDir ? Boolean(node.expanded) : undefined}
+        aria-selected={selected || undefined}
         title={
           entry.isDir
             ? `${entry.path}\nRight-click: copy path · open in system`
-            : `${entry.path}\nDouble-click to open · right-click to copy path`
+            : `${entry.path}\nClick to preview · double-click to open · right-click for more`
         }
         onClick={() => {
           if (entry.isDir) onToggle(entry.path);
+          else onSelectFile(entry.path);
         }}
         onDoubleClick={() => {
           if (!entry.isDir) onOpenFile(entry.path);
@@ -464,37 +502,15 @@ function TreeRow({
             key={c.entry.path}
             node={c}
             depth={depth + 1}
+            selectedPath={selectedPath}
             onToggle={onToggle}
+            onSelectFile={onSelectFile}
             onOpenFile={onOpenFile}
             onContextMenu={onContextMenu}
           />
         ))}
     </>
   );
-}
-
-/** Prefer async clipboard API; fall back to a hidden textarea for Tauri/WebView. */
-async function writeClipboard(text: string): Promise<void> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return;
-    }
-  } catch {
-    // fall through
-  }
-  const ta = document.createElement("textarea");
-  ta.value = text;
-  ta.setAttribute("readonly", "");
-  ta.style.position = "fixed";
-  ta.style.left = "-9999px";
-  ta.style.top = "0";
-  document.body.appendChild(ta);
-  ta.select();
-  ta.setSelectionRange(0, text.length);
-  const ok = document.execCommand("copy");
-  document.body.removeChild(ta);
-  if (!ok) throw new Error("clipboard write rejected");
 }
 
 function findNode(nodes: TreeNode[], path: string): TreeNode | null {

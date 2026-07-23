@@ -109,7 +109,6 @@ function TokenUsageChart({
   }
 
   const days = series.days;
-  const midDay = days[Math.floor(days.length / 2)];
   const hoverDay = hoverIdx != null ? days[hoverIdx] : null;
   const hoverPt = hoverIdx != null && chart ? chart.points[hoverIdx] : null;
   const hoverTopPct = hoverPt ? (hoverPt.y / CHART_VB_H) * 100 : 0;
@@ -201,7 +200,6 @@ function TokenUsageChart({
       </div>
       <div className="token-chart-meta">
         <span>{shortDay(days[0]?.date)}</span>
-        <span>{shortDay(midDay?.date)}</span>
         <span>{shortDay(days[days.length - 1]?.date)}</span>
       </div>
     </div>

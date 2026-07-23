@@ -1,11 +1,14 @@
 import type { HunkRecord } from "../types";
 import { formatRelative, shortPath } from "../utils/format";
+import { FilePathLink } from "./FilePathLink";
 
 interface Props {
   hunks: HunkRecord[];
+  /** Open a file path in the workspace preview pane. */
+  onOpenFile?: (path: string) => void;
 }
 
-export function DiffPanel({ hunks }: Props) {
+export function DiffPanel({ hunks, onOpenFile }: Props) {
   if (hunks.length === 0) {
     return (
       <div className="empty-hint">
@@ -50,9 +53,9 @@ export function DiffPanel({ hunks }: Props) {
       <div className="file-list">
         {files.map(([path, agg]) => (
           <div key={path} className="file-row">
-            <div className="file-path" title={path}>
+            <FilePathLink path={path} onOpen={onOpenFile} className="file-path">
               {shortPath(path, 72)}
-            </div>
+            </FilePathLink>
             <div className="file-meta">
               <span className="add">+{agg.added}</span>
               <span className="del">−{agg.removed}</span>
@@ -67,7 +70,11 @@ export function DiffPanel({ hunks }: Props) {
       <div className="hunk-list">
         {hunks.slice(0, 40).map((h, i) => (
           <div key={h.hunkId ?? i} className="hunk-row">
-            <div className="hunk-path" title={h.filePath}>
+            <FilePathLink
+              path={h.filePath}
+              onOpen={onOpenFile}
+              className="hunk-path"
+            >
               {shortPath(h.filePath, 60)}
               {h.hunkStart != null && (
                 <span className="muted">
@@ -75,7 +82,7 @@ export function DiffPanel({ hunks }: Props) {
                   {h.hunkEnd != null ? `–${h.hunkEnd}` : ""}
                 </span>
               )}
-            </div>
+            </FilePathLink>
             <div className="file-meta">
               <span className="add">+{h.linesAdded}</span>
               <span className="del">−{h.linesRemoved}</span>

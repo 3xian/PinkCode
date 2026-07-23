@@ -3,7 +3,8 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 320px;
+  /* Left rail ~60% of previous 300px; middle/right share remaining width evenly. */
+  grid-template-columns: 180px minmax(0, 1fr) minmax(0, 1fr);
   gap: 0;
   contain: layout;
 }
@@ -41,6 +42,8 @@
   background: var(--bg);
   padding-bottom: 0;
   overflow: hidden;
+  /* Divider between middle (detail) and right (workspace) columns. */
+  border-left: 1px solid var(--border);
 }
 
 .side-panel.workspace-panel {
@@ -62,7 +65,7 @@
 }
 
 .workspace-gate-path {
-  font-family: var(--mono, ui-monospace, monospace);
+  font-family: var(--mono);
   word-break: break-all;
 }
 
@@ -73,14 +76,261 @@
   overflow: hidden;
 }
 
+.workspace-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.workspace-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 10px 12px 9px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workspace-tab:hover {
+  color: var(--text);
+}
+
+.workspace-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent, #6c8cff);
+}
+
+/* Equal height upper (Files/Git) and lower (Preview) panes. */
+.workspace-half {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.workspace-browser {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.workspace-tab-panel {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.workspace-tab-panel.is-active {
+  display: flex;
+}
+
+/* When using the HTML hidden attr as well, keep layout only for the active panel. */
+.workspace-tab-panel[hidden] {
+  display: none !important;
+}
+
 .file-tree-section {
-  flex: 1 1 50%;
-  min-height: 120px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .git-changes-section {
-  flex: 1 1 50%;
-  min-height: 120px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.file-preview-section {
+  flex: 1;
+  min-height: 0;
+  background: #000;
+}
+
+.file-preview-empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  text-align: center;
+}
+
+.file-preview-logo {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  opacity: 0.88;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Double class beats later `.panel-header { align-items/padding }` rules.
+   Soft bar — no border grid; subtle wash + text weight only. */
+.panel-header.file-preview-header {
+  gap: 6px;
+  padding: 0 6px 0 10px;
+  min-height: 26px;
+  height: 26px;
+  align-items: stretch;
+  border: none;
+  border-bottom: none;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--bg-elevated, #12151c) 55%, #000);
+}
+
+.panel-header.file-preview-header .file-preview-title,
+.panel-header.file-preview-header > h2 {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px !important;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  line-height: 1;
+  padding-right: 4px;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.panel-header.file-preview-header .file-preview-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 0 1 auto;
+  line-height: 1;
+}
+
+.panel-header.file-preview-header .file-preview-meta {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  font-weight: 500;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  /* Distinct from path — cooler/dimmer so size doesn't compete with path */
+  color: color-mix(in srgb, var(--accent, #6ea8ff) 55%, var(--text-muted));
+  white-space: nowrap;
+}
+
+.panel-header.file-preview-header .file-preview-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  flex-shrink: 0;
+  align-self: stretch;
+  height: 100%;
+  padding: 2px 0;
+}
+
+.panel-header.file-preview-header .file-preview-btn {
+  appearance: none;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 0 10px;
+  margin: 0;
+  cursor: pointer;
+  line-height: 1;
+  height: 100%;
+  min-height: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+}
+
+.panel-header.file-preview-header .file-preview-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text);
+  border-radius: 999px;
+}
+
+.panel-header.file-preview-header .file-preview-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.panel-header.file-preview-header .file-preview-btn-close {
+  min-width: 26px;
+  padding: 0 7px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.file-preview-body {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 10px 12px 12px;
+  overflow: auto;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #c8d0e0;
+  white-space: pre;
+  tab-size: 2;
+  user-select: text;
+}
+
+.file-preview-image-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 12px;
+  background:
+    linear-gradient(45deg, #141820 25%, transparent 25%),
+    linear-gradient(-45deg, #141820 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #141820 75%),
+    linear-gradient(-45deg, transparent 75%, #141820 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-color: #0a0c10;
+}
+
+.file-preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+  image-rendering: auto;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
 }
 
 .workspace-split {
@@ -128,6 +378,11 @@
 
 .file-tree-row:hover {
   background: var(--bg-hover);
+}
+
+.file-tree-row.is-selected {
+  background: color-mix(in srgb, var(--accent, #6c8cff) 18%, transparent);
+  color: var(--text);
 }
 
 .file-tree-chevron {
@@ -206,6 +461,14 @@
   background: var(--bg-hover);
 }
 
+.git-change.is-clickable {
+  cursor: pointer;
+}
+
+.git-change.is-selected {
+  background: color-mix(in srgb, var(--accent, #6c8cff) 18%, transparent);
+}
+
 .git-badge {
   font-size: 10px;
   font-weight: 700;
@@ -252,7 +515,7 @@
 }
 
 .detail-panel {
-  background: var(--bg-panel);
+  background: #000;
   padding: 0;
   overflow: hidden;
   min-width: 0; /* allow title ellipsis inside grid track */
@@ -332,11 +595,14 @@
 
 .session-cards {
   overflow: auto;
-  padding: 0 8px 12px;
+  padding: 0 0 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   flex: 1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .session-card {
@@ -345,11 +611,17 @@
   border: none;
   background: transparent;
   border-radius: 0;
-  padding: 10px 11px;
+  /* Tight right padding so titles can run to the rail edge before ellipsis. */
+  padding: 10px 4px 10px 8px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 5px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  align-self: stretch;
   transition:
     background 0.12s ease,
     box-shadow 0.14s ease;
@@ -426,8 +698,9 @@
 .card-top {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0;
   min-width: 0;
+  width: 100%;
 }
 
 .card-title {
@@ -435,8 +708,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .session-card.selected .card-title {

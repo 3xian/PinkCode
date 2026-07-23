@@ -134,6 +134,19 @@ export interface GitChange {
   kind: string;
 }
 
+export type FilePreviewKind = "text" | "image" | "binary";
+
+/** In-app workspace file preview (from `read_project_file`). */
+export interface FilePreview {
+  path: string;
+  /** UTF-8 text, or base64 for `kind === "image"`. */
+  content: string;
+  size: number;
+  truncated: boolean;
+  kind: FilePreviewKind;
+  mimeType?: string | null;
+}
+
 export interface ShellEntry {
   id: string;
   handleId: string;
@@ -226,19 +239,19 @@ export const SESSION_MODE_OPTIONS: {
   {
     value: "plan",
     label: "Plan",
-    hint: "Plan first · next free-text send becomes /plan · permission stays underneath",
+    hint: "Plan first · next free-text send becomes /plan",
     accent: "plan",
   },
   {
     value: "auto",
     label: "Auto",
-    hint: "Host auto-approves safe tools; dangerous may still prompt",
+    hint: "Auto-approve safe tools; dangerous ones may still prompt",
     accent: "auto",
   },
   {
     value: "alwaysApprove",
     label: "Always approve",
-    hint: "Skip permission prompts; deny rules still apply",
+    hint: "Skip tool approval prompts; deny rules still apply",
     accent: "yolo",
   },
 ];

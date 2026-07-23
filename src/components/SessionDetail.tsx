@@ -24,7 +24,9 @@ import {
   formatTokens,
   shortPath,
 } from "../utils/format";
+import { extractToolPath } from "../utils/paths";
 import { DiffPanel } from "./DiffPanel";
+import { FilePathLink } from "./FilePathLink";
 import { Markdown } from "./Markdown";
 import { PermissionGate } from "./PermissionGate";
 import { PromptBar } from "./PromptBar";
@@ -52,6 +54,8 @@ interface Props {
   pinTimelineBottomSeq?: number;
   /** Agent-advertised slash commands for the prompt autocomplete. */
   availableCommands?: AvailableCommand[];
+  /** Open a project file path in the right-rail preview pane. */
+  onOpenFile?: (path: string) => void;
 }
 
 const TIMELINE_FILTER_LABELS: Record<string, string> = {
@@ -96,6 +100,7 @@ export function SessionDetailView({
   onStopAgent,
   pinTimelineBottomSeq = 0,
   availableCommands = [],
+  onOpenFile,
 }: Props) {
   const tabBodyRef = useRef<HTMLDivElement>(null);
 
@@ -267,9 +272,12 @@ export function SessionDetailView({
             items={timelineItems}
             managed={managed}
             pinBottomSeq={pinTimelineBottomSeq}
+            onOpenFile={onOpenFile}
           />
         )}
-        {tab === "diff" && <DiffPanel hunks={detail.hunks} />}
+        {tab === "diff" && (
+          <DiffPanel hunks={detail.hunks} onOpenFile={onOpenFile} />
+        )}
         {tab === "raw" && <RawStream detail={detail} />}
       </div>
 
@@ -319,10 +327,12 @@ function TimelinePanel({
   items,
   managed,
   pinBottomSeq = 0,
+  onOpenFile,
 }: {
   items: TimelineItem[];
   managed: ManagedAgentInfo | null;
   pinBottomSeq?: number;
+  onOpenFile?: (path: string) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -466,6 +476,7 @@ function TimelinePanel({
                 item.kind,
                 filtered[i + 1]?.kind,
               )}
+              onOpenFile={onOpenFile}
             />
           ))}
           <div ref={endRef} className="timeline-panel-end" aria-hidden />
@@ -482,14 +493,21 @@ function TimelinePanel({
 const LiveItemRow = memo(function LiveItemRow({
   item,
   stackClass,
+  onOpenFile,
 }: {
   item: TimelineItem;
   stackClass: string;
+  onOpenFile?: (path: string) => void;
 }) {
   const isMdKind =
     item.kind === "agent" || item.kind === "user" || item.kind === "thought";
   // While chunks are still coalescing, skip react-markdown (O(len) per frame).
   const useMarkdown = isMdKind && Boolean(item.detail) && !item.streaming;
+  // Tool cards often put a path in detail or backtick-title — open on click.
+  const toolPath =
+    item.kind === "tool" && onOpenFile
+      ? extractToolPath(item.detail, item.title)
+      : null;
 
   return (
     <TimelineRowChrome kind={item.kind} ts={item.ts} stackClass={stackClass}>
@@ -497,13 +515,27 @@ const LiveItemRow = memo(function LiveItemRow({
         <ShellCard shell={item.shell} />
       ) : (
         <>
-          <div className="tl-title">{item.title}</div>
+          {toolPath ? (
+            <FilePathLink path={toolPath} onOpen={onOpenFile} className="tl-title">
+              {item.title}
+            </FilePathLink>
+          ) : (
+            <div className="tl-title">{item.title}</div>
+          )}
           {item.detail && (
             <div className="tl-detail">
               {useMarkdown ? (
-                <Markdown>{item.detail}</Markdown>
+                <Markdown onOpenFile={onOpenFile}>{item.detail}</Markdown>
               ) : isMdKind ? (
                 <pre className="tl-stream-plain">{item.detail}</pre>
+              ) : toolPath && item.detail === toolPath ? (
+                <FilePathLink
+                  path={toolPath}
+                  onOpen={onOpenFile}
+                  className="tl-detail-path"
+                >
+                  {item.detail}
+                </FilePathLink>
               ) : (
                 item.detail
               )}

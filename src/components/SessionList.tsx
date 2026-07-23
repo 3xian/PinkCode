@@ -6,7 +6,6 @@ import {
   formatTokens,
   projectName,
 } from "../utils/format";
-import logo from "../assets/logo.png";
 
 interface Props {
   sessions: SessionCard[];
@@ -54,7 +53,6 @@ export function SessionList({
     <div className="session-list">
       <div className="panel-header">
         <div className="panel-header-left">
-          <img src={logo} alt="" className="tasks-logo" />
           <h2>Tasks</h2>
         </div>
         <div className="panel-header-right">
@@ -123,7 +121,6 @@ export function SessionList({
                 <span>
                   {contextPct(s.contextTokensUsed, s.contextWindowTokens)}% ctx
                 </span>
-                <span>{s.toolCallCount} tools</span>
                 {(s.agentLinesAdded > 0 || s.agentLinesRemoved > 0) && (
                   <span className="diff-stat">
                     +{s.agentLinesAdded}/−{s.agentLinesRemoved}

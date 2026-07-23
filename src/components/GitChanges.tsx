@@ -2,14 +2,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { gitStatus } from "../api";
 import { useKeyedSilentRefresh } from "../hooks/useKeyedSilentRefresh";
 import type { GitChange } from "../types";
+import { joinUnderRoot, pathsEqual } from "../utils/paths";
 
 interface Props {
   cwd: string | null;
   /** Bump to force a refresh (e.g. after FS events). Debounce in parent. */
   refreshKey?: number;
+  /** Currently previewed path (highlight). */
+  selectedPath?: string | null;
+  /** Click a changed file → preview. Path is absolute under cwd when possible. */
+  onSelectFile?: (path: string) => void;
+  /** Report change count so parent tab can show a badge. */
+  onCountChange?: (count: number) => void;
 }
 
-export function GitChanges({ cwd, refreshKey = 0 }: Props) {
+export function GitChanges({
+  cwd,
+  refreshKey = 0,
+  selectedPath = null,
+  onSelectFile,
+  onCountChange,
+}: Props) {
   const [changes, setChanges] = useState<GitChange[]>([]);
   const [error, setError] = useState<string | null>(null);
   /** Only for first load of a cwd when the list is empty. */
@@ -19,6 +32,8 @@ export function GitChanges({ cwd, refreshKey = 0 }: Props) {
   cwdRef.current = cwd;
   const changesRef = useRef(changes);
   changesRef.current = changes;
+  const onCountChangeRef = useRef(onCountChange);
+  onCountChangeRef.current = onCountChange;
 
   const refresh = useCallback(async (dir: string, silent: boolean) => {
     const seq = ++requestSeq.current;
@@ -41,6 +56,10 @@ export function GitChanges({ cwd, refreshKey = 0 }: Props) {
     }
   }, []);
 
+  useEffect(() => {
+    onCountChangeRef.current?.(changes.length);
+  }, [changes.length]);
+
   useKeyedSilentRefresh({
     identity: cwd,
     refreshKey,
@@ -48,6 +67,7 @@ export function GitChanges({ cwd, refreshKey = 0 }: Props) {
       requestSeq.current += 1;
       setChanges([]);
       setError(null);
+      onCountChangeRef.current?.(0);
       if (!id) {
         setLoading(false);
         return;
@@ -68,25 +88,16 @@ export function GitChanges({ cwd, refreshKey = 0 }: Props) {
 
   if (!cwd) {
     return (
-      <div className="workspace-section">
-        <div className="panel-header">
-          <h2>Git changes</h2>
+      <div className="workspace-section git-changes-section">
+        <div className="empty-hint small">
+          Select a session to see uncommitted files.
         </div>
-        <div className="empty-hint small">Select a session to see uncommitted files.</div>
       </div>
     );
   }
 
   return (
     <div className="workspace-section git-changes-section">
-      <div className="panel-header">
-        <h2>
-          Git changes
-          {changes.length > 0 && (
-            <span className="tab-count">{changes.length}</span>
-          )}
-        </h2>
-      </div>
       {error && <div className="empty-hint error-text small">{error}</div>}
       {loading && changes.length === 0 ? (
         <div className="empty-hint small">Loading…</div>
@@ -97,17 +108,31 @@ export function GitChanges({ cwd, refreshKey = 0 }: Props) {
         </div>
       ) : (
         <ul className="git-change-list">
-          {changes.map((c) => (
-            <li key={c.path} className={`git-change kind-${c.kind}`}>
-              <span className={`git-badge kind-${c.kind}`} title={c.status}>
-                {statusLetter(c)}
-              </span>
-              <span className="git-path mono" title={c.path}>
-                {c.path}
-              </span>
-              <span className="git-kind muted">{c.kind}</span>
-            </li>
-          ))}
+          {changes.map((c) => {
+            const abs = joinUnderRoot(cwd, c.path);
+            const selected =
+              selectedPath != null && pathsEqual(selectedPath, abs);
+            return (
+              <li
+                key={c.path}
+                className={
+                  `git-change kind-${c.kind}` +
+                  (selected ? " is-selected" : "") +
+                  (onSelectFile ? " is-clickable" : "")
+                }
+                title={onSelectFile ? `${abs}\nClick to preview` : abs}
+                onClick={() => onSelectFile?.(abs)}
+              >
+                <span className={`git-badge kind-${c.kind}`} title={c.status}>
+                  {statusLetter(c)}
+                </span>
+                <span className="git-path mono" title={c.path}>
+                  {c.path}
+                </span>
+                <span className="git-kind muted">{c.kind}</span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -130,12 +155,10 @@ function sameGitChanges(a: GitChange[], b: GitChange[]): boolean {
 }
 
 function statusLetter(c: GitChange): string {
-  if (c.kind === "untracked") return "U";
-  if (c.kind === "added") return "A";
-  if (c.kind === "deleted") return "D";
-  if (c.kind === "renamed") return "R";
-  if (c.kind === "modified") return "M";
-  if (c.kind === "unmerged") return "!";
-  const trimmed = c.status.replace(/ /g, "");
-  return (trimmed[0] || "?").toUpperCase();
+  const s = c.status.replace(/\s/g, "");
+  if (s === "??") return "U";
+  if (s.length === 0) return "?";
+  // Prefer index letter, else worktree.
+  const ch = c.status[0] !== " " ? c.status[0]! : c.status[1] ?? "?";
+  return ch === "?" ? "U" : ch;
 }

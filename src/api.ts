@@ -4,6 +4,7 @@ import type {
   AttachRequest,
   DashboardStats,
   DirEntry,
+  FilePreview,
   GitChange,
   HunkRecord,
   ManagedAgentInfo,
@@ -176,6 +177,14 @@ export async function openProjectPath(
   path: string,
 ): Promise<void> {
   return invoke("open_project_path", { root, path });
+}
+
+/** Read a project file for the in-app preview pane (text / image / binary). */
+export async function readProjectFile(
+  root: string,
+  path: string,
+): Promise<FilePreview> {
+  return invoke<FilePreview>("read_project_file", { root, path });
 }
 
 export async function gitStatus(cwd: string): Promise<GitChange[]> {

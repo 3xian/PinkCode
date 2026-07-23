@@ -218,7 +218,7 @@
 
 @media (max-width: 1200px) {
   .main-grid {
-    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-columns: 168px minmax(0, 1fr);
   }
 
   .side-panel {

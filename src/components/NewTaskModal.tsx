@@ -1,19 +1,19 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
-import type { PermissionMode } from "../types";
-import { PERMISSION_MODE_OPTIONS } from "../types";
+import type { SessionMode } from "../types";
+import { SESSION_MODE_OPTIONS } from "../types";
 
 interface Props {
   open: boolean;
   defaultCwd: string;
   busy: boolean;
-  /** Seed for the permission selector when the modal opens. */
-  defaultPermissionMode: PermissionMode;
+  /** Seed for the Mode selector when the modal opens. */
+  defaultSessionMode: SessionMode;
   onClose: () => void;
   onSubmit: (opts: {
     cwd: string;
     prompt: string;
-    permissionMode: PermissionMode;
+    sessionMode: SessionMode;
   }) => void;
 }
 
@@ -21,14 +21,14 @@ export function NewTaskModal({
   open,
   defaultCwd,
   busy,
-  defaultPermissionMode,
+  defaultSessionMode,
   onClose,
   onSubmit,
 }: Props) {
   const [cwd, setCwd] = useState(defaultCwd);
   const [prompt, setPrompt] = useState("");
-  const [permissionMode, setPermissionMode] =
-    useState<PermissionMode>(defaultPermissionMode);
+  const [sessionMode, setSessionMode] =
+    useState<SessionMode>(defaultSessionMode);
   const [picking, setPicking] = useState(false);
 
   // Component stays mounted while closed (returns null); re-sync defaults on open.
@@ -36,10 +36,10 @@ export function NewTaskModal({
     if (open) {
       setCwd(defaultCwd);
       setPrompt("");
-      setPermissionMode(defaultPermissionMode);
+      setSessionMode(defaultSessionMode);
       setPicking(false);
     }
-  }, [open, defaultCwd, defaultPermissionMode]);
+  }, [open, defaultCwd, defaultSessionMode]);
 
   async function pickDirectory() {
     if (busy || picking) return;
@@ -63,8 +63,9 @@ export function NewTaskModal({
 
   if (!open) return null;
 
-  const modeHint =
-    PERMISSION_MODE_OPTIONS.find((o) => o.value === permissionMode)?.hint ?? "";
+  const modeMeta =
+    SESSION_MODE_OPTIONS.find((o) => o.value === sessionMode) ??
+    SESSION_MODE_OPTIONS[0]!;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -79,8 +80,8 @@ export function NewTaskModal({
         </div>
         <p className="muted small">
           Spawns <code>grok agent stdio</code>, creates an ACP session, and
-          streams updates live. Host permission is the process gate; the
-          composer Mode chip (Shift+Tab) is the day-to-day Grok ring.
+          streams updates live. Mode matches the composer chip (Shift+Tab):
+          Normal → Plan → Auto → Always approve.
         </p>
 
         <label className="field">
@@ -139,32 +140,25 @@ export function NewTaskModal({
           />
         </label>
 
-        <label className="field" title={modeHint}>
-          <span>Host permission</span>
+        <label className="field" title={modeMeta.hint}>
+          <span>Mode</span>
           <select
             className="field-select"
-            value={permissionMode}
+            value={sessionMode}
             disabled={busy}
-            onChange={(e) =>
-              setPermissionMode(e.target.value as PermissionMode)
-            }
-            aria-label="Host permission for this task"
+            onChange={(e) => setSessionMode(e.target.value as SessionMode)}
+            aria-label="Mode for this task"
           >
-            {PERMISSION_MODE_OPTIONS.map((o) => (
+            {SESSION_MODE_OPTIONS.map((o) => (
               <option key={o.value} value={o.value} title={o.hint}>
                 {o.label}
               </option>
             ))}
           </select>
-          <span className="field-hint muted small">{modeHint}</span>
-          {permissionMode === "bypassPermissions" ? (
+          <span className="field-hint muted small">{modeMeta.hint}</span>
+          {sessionMode === "plan" && prompt.trim() && !prompt.trim().startsWith("/") ? (
             <span className="field-hint muted small">
-              Spawns with <code>--always-approve</code>
-            </span>
-          ) : null}
-          {permissionMode === "auto" ? (
-            <span className="field-hint muted small">
-              Spawns with <code>--permission-mode auto</code>
+              Initial prompt will be sent as <code>/plan …</code>
             </span>
           ) : null}
         </label>
@@ -181,7 +175,7 @@ export function NewTaskModal({
               onSubmit({
                 cwd: cwd.trim(),
                 prompt: prompt.trim(),
-                permissionMode,
+                sessionMode,
               })
             }
           >

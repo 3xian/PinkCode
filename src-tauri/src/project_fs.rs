@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -36,7 +37,7 @@ pub fn list_dir(root: &str, path: Option<&str>) -> Result<Vec<DirEntry>, String>
         Some(p) if !p.trim().is_empty() => {
             let joined = join_under_root(&root_path, p)?;
             if !joined.is_dir() {
-                return Err(format!("Not a directory: {}", joined.display()));
+                return Err(format!("Not a directory: {}", path_for_ui(&joined)));
             }
             joined
         }
@@ -55,7 +56,7 @@ pub fn list_dir(root: &str, path: Option<&str>) -> Result<Vec<DirEntry>, String>
         let is_dir = full.is_dir();
         entries.push(DirEntry {
             name,
-            path: full.display().to_string(),
+            path: path_for_ui(&full),
             is_dir,
         });
     }
@@ -165,24 +166,46 @@ fn resolve_root(root: &str) -> Result<PathBuf, String> {
     }
     let canon = fs::canonicalize(&p).unwrap_or(p);
     if !canon.is_dir() {
-        return Err(format!("Not a directory: {}", canon.display()));
+        return Err(format!("Not a directory: {}", path_for_ui(&canon)));
     }
     Ok(canon)
 }
 
 /// Join `rel` under `root`, rejecting path escape (`..` outside root).
 fn join_under_root(root: &Path, rel: &str) -> Result<PathBuf, String> {
-    let candidate = if Path::new(rel).is_absolute() {
-        PathBuf::from(rel)
+    // Strip Windows extended-length prefix so absolute client paths still join/compare cleanly.
+    let rel = strip_extended_prefix(rel.trim());
+    let candidate = if Path::new(&rel).is_absolute() {
+        PathBuf::from(&rel)
     } else {
-        root.join(rel)
+        root.join(&rel)
     };
     let canon = fs::canonicalize(&candidate).unwrap_or(candidate);
     let root_canon = fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-    if !canon.starts_with(&root_canon) {
+    // Compare after stripping `\\?\` so mixed prefix styles still match.
+    let canon_cmp = PathBuf::from(strip_extended_prefix(&canon.to_string_lossy()));
+    let root_cmp = PathBuf::from(strip_extended_prefix(&root_canon.to_string_lossy()));
+    if !canon_cmp.starts_with(&root_cmp) && !canon.starts_with(&root_canon) {
         return Err("path escapes project root".into());
     }
     Ok(canon)
+}
+
+/// Path string suitable for the frontend (no Windows `\\?\` extended prefix).
+fn path_for_ui(path: &Path) -> String {
+    strip_extended_prefix(&path.to_string_lossy())
+}
+
+fn strip_extended_prefix(s: &str) -> String {
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else if let Some(rest) = s.strip_prefix("//?/") {
+        rest.to_string()
+    } else {
+        s.to_string()
+    }
 }
 
 /// Open a project file (or directory) with the OS default application.
@@ -193,8 +216,128 @@ pub fn open_path(root: &str, path: &str) -> Result<(), String> {
     let root_path = resolve_root(root)?;
     let target = join_under_root(&root_path, path)?;
     if !target.exists() {
-        return Err(format!("Path does not exist: {}", target.display()));
+        return Err(format!("Path does not exist: {}", path_for_ui(&target)));
     }
-    let s = target.display().to_string();
+    let s = path_for_ui(&target);
     tauri_plugin_opener::open_path(&s, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Soft cap for in-app text preview (bytes). Larger files are truncated.
+const PREVIEW_MAX_BYTES: u64 = 512 * 1024;
+/// Soft cap for image preview (bytes). Larger images open externally only.
+const PREVIEW_MAX_IMAGE_BYTES: u64 = 12 * 1024 * 1024;
+
+/// Text file contents for the workspace preview pane.
+///
+/// `path` may be absolute or relative to `root`. Must stay under `root`.
+/// - `kind: "text"` — UTF-8 text in `content`
+/// - `kind: "image"` — base64 payload in `content` + `mime_type`
+/// - `kind: "binary"` — unsupported binary (empty `content`)
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilePreview {
+    pub path: String,
+    pub content: String,
+    pub size: u64,
+    pub truncated: bool,
+    /// `"text" | "image" | "binary"`
+    pub kind: String,
+    pub mime_type: Option<String>,
+}
+
+pub fn read_file(root: &str, path: &str) -> Result<FilePreview, String> {
+    let root_path = resolve_root(root)?;
+    let target = join_under_root(&root_path, path)?;
+    if !target.exists() {
+        return Err(format!("Path does not exist: {}", path_for_ui(&target)));
+    }
+    if target.is_dir() {
+        return Err(format!("Is a directory: {}", path_for_ui(&target)));
+    }
+    let meta = fs::metadata(&target).map_err(|e| format!("stat: {e}"))?;
+    let size = meta.len();
+    let display_path = path_for_ui(&target);
+
+    if let Some(mime) = image_mime_for_path(&target) {
+        return read_image_preview(&target, display_path, size, mime);
+    }
+
+    let read_cap = (size.min(PREVIEW_MAX_BYTES)) as usize;
+    let mut buf = vec![0u8; read_cap];
+    {
+        let mut f = fs::File::open(&target).map_err(|e| format!("open: {e}"))?;
+        let n = f.read(&mut buf).map_err(|e| format!("read: {e}"))?;
+        buf.truncate(n);
+    }
+    if buf.contains(&0) {
+        return Ok(binary_preview(display_path, size));
+    }
+    match String::from_utf8(buf) {
+        Ok(content) => Ok(FilePreview {
+            path: display_path,
+            content,
+            size,
+            truncated: size > PREVIEW_MAX_BYTES,
+            kind: "text".into(),
+            mime_type: None,
+        }),
+        Err(_) => Ok(binary_preview(display_path, size)),
+    }
+}
+
+fn binary_preview(path: String, size: u64) -> FilePreview {
+    FilePreview {
+        path,
+        content: String::new(),
+        size,
+        truncated: false,
+        kind: "binary".into(),
+        mime_type: None,
+    }
+}
+
+fn read_image_preview(
+    target: &Path,
+    display_path: String,
+    size: u64,
+    mime: &'static str,
+) -> Result<FilePreview, String> {
+    if size > PREVIEW_MAX_IMAGE_BYTES {
+        return Ok(FilePreview {
+            path: display_path,
+            content: String::new(),
+            size,
+            truncated: true,
+            kind: "image".into(),
+            mime_type: Some(mime.into()),
+        });
+    }
+    let bytes = fs::read(target).map_err(|e| format!("read: {e}"))?;
+    use base64::Engine as _;
+    let content = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(FilePreview {
+        path: display_path,
+        content,
+        size,
+        truncated: false,
+        kind: "image".into(),
+        mime_type: Some(mime.into()),
+    })
+}
+
+/// MIME for common raster/vector image extensions (case-insensitive).
+fn image_mime_for_path(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" | "jfif" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "bmp" => Some("image/bmp"),
+        "ico" => Some("image/x-icon"),
+        "svg" => Some("image/svg+xml"),
+        "avif" => Some("image/avif"),
+        "tif" | "tiff" => Some("image/tiff"),
+        _ => None,
+    }
 }

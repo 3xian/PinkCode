@@ -17,13 +17,12 @@ import {
   spawnAgent,
   stopAgent,
 } from "./api";
-import { FileTree } from "./components/FileTree";
-import { GitChanges } from "./components/GitChanges";
 import { NewTaskModal } from "./components/NewTaskModal";
 import { SessionDetailView } from "./components/SessionDetail";
 import { SessionList } from "./components/SessionList";
 import { StatsBar } from "./components/StatsBar";
 import { UpdateModal } from "./components/UpdateModal";
+import { WorkspacePanel } from "./components/WorkspacePanel";
 import { useAgentEvents } from "./hooks/useAgentEvents";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useUsageMetrics } from "./hooks/useUsageMetrics";
@@ -42,9 +41,12 @@ import {
   isLocalSlashCommand,
   runLocalSlash,
 } from "./utils/localSlash";
+import { joinUnderRoot } from "./utils/paths";
 import {
   applySessionModeChange,
+  applySessionModeToPrompt,
   displaySessionMode,
+  sessionModeFromPermission,
 } from "./utils/sessionMode";
 import "./App.css";
 
@@ -104,11 +106,16 @@ function App() {
   const [planArmedBySession, setPlanArmedBySession] = useState<
     Record<string, boolean>
   >({});
-  /** Seed for New Task modal; last mode used when spawning. */
-  const [lastSpawnMode, setLastSpawnMode] =
-    useState<PermissionMode>("default");
+  /** Seed for New Task modal Mode selector; last session mode used when spawning. */
+  const [lastSpawnSessionMode, setLastSpawnSessionMode] =
+    useState<SessionMode>("normal");
   /** Bump git changes panel after disk events. */
   const [gitRefreshKey, setGitRefreshKey] = useState(0);
+  /**
+   * File preview selection — always absolute under project root when set
+   * (see openPreview). Relative paths from markdown/tools are normalized here.
+   */
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
 
   const {
     managedList,
@@ -137,13 +144,29 @@ function App() {
   useEffect(() => {
     if (!projectCwd) {
       setWorkspaceArmed(false);
+      setPreviewPath(null);
       return;
     }
+    // New project → clear previous preview selection.
+    setPreviewPath(null);
     // Safe paths (e.g. under home project dirs that are not TCC-gated) load now.
     setWorkspaceArmed(!isLikelyMacProtectedPath(projectCwd));
   }, [projectCwd]);
   const activeProjectCwd =
     projectCwd && workspaceArmed ? projectCwd : null;
+
+  /** Single write boundary for preview: one path identity (absolute under root). */
+  const openPreview = useCallback(
+    (path: string | null) => {
+      if (!path) {
+        setPreviewPath(null);
+        return;
+      }
+      const root = projectCwd;
+      setPreviewPath(root ? joinUnderRoot(root, path) : path);
+    },
+    [projectCwd],
+  );
   const showWorkspaceGate = Boolean(
     projectCwd &&
       !workspaceArmed &&
@@ -187,7 +210,7 @@ function App() {
         ]);
         setTaskPermissionModes(modes);
         setPlanArmedBySession(planArmed);
-        setLastSpawnMode(last);
+        setLastSpawnSessionMode(sessionModeFromPermission(last));
       } catch {
         /* non-tauri / first run */
       }
@@ -350,26 +373,46 @@ function App() {
   async function handleSpawn(opts: {
     cwd: string;
     prompt: string;
-    permissionMode: PermissionMode;
+    sessionMode: SessionMode;
   }) {
     setControlBusy(true);
     setError(null);
     try {
+      // Map UI Mode → host gate + Plan arming (same rules as the composer chip).
+      const next = applySessionModeChange(opts.sessionMode, "default");
+      const permissionMode = next.permission ?? "default";
+      const rawPrompt = opts.prompt.trim();
+      const prompt = rawPrompt
+        ? applySessionModeToPrompt(opts.sessionMode, rawPrompt)
+        : null;
+
       const info = await spawnAgent({
         cwd: opts.cwd,
-        // Empty string → omit; backend treats missing/blank as “no initial prompt”.
-        prompt: opts.prompt.trim() ? opts.prompt.trim() : null,
-        permissionMode: opts.permissionMode,
+        // Empty / null → backend treats as “no initial prompt”.
+        prompt,
+        permissionMode,
       });
       upsertManaged(info);
-      setLastSpawnMode(opts.permissionMode);
+      setLastSpawnSessionMode(opts.sessionMode);
       if (info.sessionId) {
+        const sessionId = info.sessionId;
         setTaskPermissionModes((prev) => ({
           ...prev,
-          [info.sessionId!]: opts.permissionMode,
+          [sessionId]: permissionMode,
         }));
-        focusOnceSessionRef.current = info.sessionId;
-        setSelectedId(info.sessionId);
+        if (next.planArmed) {
+          setPlanArmedBySession((prev) => ({
+            ...prev,
+            [sessionId]: true,
+          }));
+          try {
+            await setTaskPlanArmed(sessionId, true);
+          } catch {
+            /* best-effort; Mode chip still shows from local state this session */
+          }
+        }
+        focusOnceSessionRef.current = sessionId;
+        setSelectedId(sessionId);
         setTab("timeline");
         setPinTimelineBottomSeq((n) => n + 1);
       } else if (info.status === "error") {
@@ -726,6 +769,7 @@ function App() {
           }
           pinTimelineBottomSeq={pinTimelineBottomSeq}
           availableCommands={availableCommands}
+          onOpenFile={openPreview}
         />
 
         <aside className="side-panel workspace-panel">
@@ -751,11 +795,12 @@ function App() {
               </button>
             </div>
           ) : (
-            <>
-              <FileTree root={activeProjectCwd} refreshKey={gitRefreshKey} />
-              <div className="workspace-split" />
-              <GitChanges cwd={activeProjectCwd} refreshKey={gitRefreshKey} />
-            </>
+            <WorkspacePanel
+              cwd={activeProjectCwd}
+              refreshKey={gitRefreshKey}
+              previewPath={previewPath}
+              onPreviewPath={openPreview}
+            />
           )}
         </aside>
       </div>
@@ -764,7 +809,7 @@ function App() {
         open={modalOpen}
         defaultCwd={defaultCwd}
         busy={controlBusy}
-        defaultPermissionMode={lastSpawnMode}
+        defaultSessionMode={lastSpawnSessionMode}
         onClose={() => setModalOpen(false)}
         onSubmit={(o) => void handleSpawn(o)}
       />

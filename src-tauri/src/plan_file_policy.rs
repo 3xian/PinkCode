@@ -212,7 +212,7 @@ mod tests {
             "Execute",
             &format!(
                 r#"{{"command":"{}"}}"#,
-                &cmd[..cmd.len().min(180)]
+                cmd[..cmd.len().min(180)]
                     .replace('\\', "\\\\")
                     .replace('"', "\\\"")
             ),

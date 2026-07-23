@@ -98,7 +98,19 @@ export const GROK_SLASH_COMMANDS: SlashCommandDef[] = [
   {
     name: "view-plan",
     description: "Open saved plan preview",
-    fulfillment: "agent",
+    fulfillment: "local",
+  },
+  {
+    name: "show-plan",
+    description: "Open saved plan preview",
+    fulfillment: "local",
+    hidden: true,
+  },
+  {
+    name: "plan-view",
+    description: "Open saved plan preview",
+    fulfillment: "local",
+    hidden: true,
   },
   {
     name: "memory",

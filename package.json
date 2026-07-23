@@ -1,6 +1,6 @@
 {
   "name": "marsbuild",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "Desktop mission control for Grok agents.",
   "type": "module",
   "keywords": [
@@ -62,7 +62,8 @@
     "@tauri-apps/plugin-updater": "^2.10.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-markdown": "^10.1.0"
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

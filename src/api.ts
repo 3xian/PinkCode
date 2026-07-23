@@ -103,9 +103,18 @@ export async function resolvePermission(
   handleId: string,
   requestKey: string,
   optionId: string,
+  comments?: string | null,
+  /** Structured answers for userQuestion (see UserQuestionResolvePayload). */
+  payload?: object | null,
 ): Promise<PendingPermission> {
   return invoke<PendingPermission>("resolve_permission", {
-    request: { handleId, requestKey, optionId },
+    request: {
+      handleId,
+      requestKey,
+      optionId,
+      comments: comments ?? null,
+      payload: payload ?? null,
+    },
   });
 }
 
@@ -117,6 +126,17 @@ export async function setPermissionMode(
     handleId,
     mode,
   });
+}
+
+/**
+ * ACP `session/set_mode` — e.g. `"plan"` / `"default"`.
+ * Prefixing `/plan` in prompt text alone does not enter Grok plan mode over ACP.
+ */
+export async function setSessionMode(
+  handleId: string,
+  modeId: string,
+): Promise<void> {
+  return invoke("set_session_mode", { handleId, modeId });
 }
 
 /** Persist mode for a session even when no agent is live. */
@@ -159,6 +179,19 @@ export async function getTaskPlanArmed(sessionId: string): Promise<boolean> {
 
 export async function listTaskPlanArmed(): Promise<Record<string, boolean>> {
   return invoke<Record<string, boolean>>("list_task_plan_armed");
+}
+
+/** Session plan.md (Grok plan mode artifact under ~/.grok/sessions/…). */
+export interface SessionPlan {
+  path: string;
+  content: string;
+  empty: boolean;
+}
+
+export async function getSessionPlan(
+  sessionId: string,
+): Promise<SessionPlan | null> {
+  return invoke<SessionPlan | null>("get_session_plan", { sessionId });
 }
 
 export async function listProjectDir(

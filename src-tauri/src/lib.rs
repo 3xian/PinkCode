@@ -3,10 +3,14 @@ mod agent_fs;
 mod agent_manager;
 mod agent_runtime;
 mod agent_types;
+mod ask_user_question;
 mod auth;
 mod billing;
+mod json_util;
 mod models;
 mod permission_policy;
+mod plan_approval;
+mod plan_file_policy;
 mod project_fs;
 mod session_noise;
 mod sessions;
@@ -54,6 +58,14 @@ async fn get_session_detail(session_id: String) -> Result<SessionDetail, String>
     tauri::async_runtime::spawn_blocking(move || sessions::get_session_detail(&session_id))
         .await
         .map_err(|e| format!("session detail task failed: {e}"))?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_session_plan(session_id: String) -> Result<Option<sessions::SessionPlan>, String> {
+    tauri::async_runtime::spawn_blocking(move || sessions::read_session_plan(&session_id))
+        .await
+        .map_err(|e| format!("session plan task failed: {e}"))?
         .map_err(|e| e.to_string())
 }
 
@@ -202,6 +214,19 @@ fn set_permission_mode(
     manager.set_permission_mode(&handle_id, mode)
 }
 
+/// ACP `session/set_mode` (e.g. `"plan"`). Required for real plan mode over ACP.
+#[tauri::command]
+async fn set_session_mode(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+    mode_id: String,
+) -> Result<(), String> {
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.set_session_mode(&handle_id, &mode_id))
+        .await
+        .map_err(|e| format!("set_session_mode task failed: {e}"))?
+}
+
 /// Persist permission mode for a task even when no agent is attached.
 #[tauri::command]
 fn set_task_permission_mode(session_id: String, mode: PermissionMode) {
@@ -312,6 +337,7 @@ pub fn run() {
             list_active_sessions,
             list_sessions,
             get_session_detail,
+            get_session_plan,
             list_session_hunks,
             get_dashboard_stats,
             get_token_usage_series,
@@ -327,6 +353,7 @@ pub fn run() {
             list_pending_permissions,
             resolve_permission,
             set_permission_mode,
+            set_session_mode,
             set_task_permission_mode,
             get_task_permission_mode,
             list_task_permission_modes,

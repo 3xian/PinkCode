@@ -2,6 +2,9 @@ use crate::agent_runtime::{now_ms, truncate_text};
 use crate::agent_types::{PendingPermission, PermissionKind, PermissionMode, PermissionOption};
 use serde_json::Value;
 
+// Plan-file auto-allow lives in plan_file_policy.
+use crate::plan_file_policy::is_session_plan_file_write;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GateDecision {
     Allow,
@@ -97,6 +100,15 @@ pub fn request_id_key(id: &Value) -> String {
 }
 
 pub fn decide_gate(mode: PermissionMode, pending: &PendingPermission) -> GateDecision {
+    // Grok plan mode (host complement to agent PlanModeTracker):
+    // - Agent rejects non-plan-file edits while Active (edit gate in tool_calls).
+    // - Plan-file edits are auto-approved on the agent (`should_auto_approve_edit`)
+    //   and here so fs/write + write tools targeting session plan.md never stall.
+    // - Bash is not path-inspected by the agent gate; we still auto-allow pure
+    //   plan.md shell materialization (Set-Content / heredoc fallbacks).
+    if is_session_plan_file_write(pending) {
+        return GateDecision::Allow;
+    }
     match mode {
         PermissionMode::BypassPermissions => GateDecision::Allow,
         PermissionMode::DontAsk => GateDecision::Deny,

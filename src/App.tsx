@@ -13,7 +13,6 @@ import {
   resolvePermission,
   setPermissionMode,
   setTaskPermissionMode,
-  setTaskPlanArmed,
   spawnAgent,
   stopAgent,
 } from "./api";
@@ -25,6 +24,7 @@ import { UpdateModal } from "./components/UpdateModal";
 import { WorkspacePanel } from "./components/WorkspacePanel";
 import { useAgentEvents } from "./hooks/useAgentEvents";
 import { useAppUpdate } from "./hooks/useAppUpdate";
+import { useSessionPlanMode } from "./hooks/useSessionPlanMode";
 import { useUsageMetrics } from "./hooks/useUsageMetrics";
 import type {
   MainTab,
@@ -41,6 +41,7 @@ import {
   isLocalSlashCommand,
   runLocalSlash,
 } from "./utils/localSlash";
+import type { UserQuestionResolvePayload } from "./utils/permissionPayload";
 import { joinUnderRoot } from "./utils/paths";
 import {
   applySessionModeChange,
@@ -98,14 +99,6 @@ function App() {
   const [taskPermissionModes, setTaskPermissionModes] = useState<
     Record<string, PermissionMode>
   >({});
-  /**
-   * Plan arming per session (Grok Plan is orthogonal to permission).
-   * Persisted under `~/.marsbuild/task_prefs.json` like permission modes.
-   * Display Mode = planArmed ? Plan : from host PermissionMode.
-   */
-  const [planArmedBySession, setPlanArmedBySession] = useState<
-    Record<string, boolean>
-  >({});
   /** Seed for New Task modal Mode selector; last session mode used when spawning. */
   const [lastSpawnSessionMode, setLastSpawnSessionMode] =
     useState<SessionMode>("normal");
@@ -117,6 +110,7 @@ function App() {
    */
   const [previewPath, setPreviewPath] = useState<string | null>(null);
 
+  const planMode = useSessionPlanMode();
   const {
     managedList,
     managedForSession,
@@ -131,7 +125,9 @@ function App() {
     hydratePermissions,
     appendLocalLive,
     hydrateDiskLive,
-  } = useAgentEvents(selectedId);
+  } = useAgentEvents(selectedId, {
+    onCurrentModeUpdate: planMode.onAgentModeUpdate,
+  });
 
   const projectCwd = detail?.card.cwd ?? null;
   /**
@@ -209,12 +205,13 @@ function App() {
           getLastSpawnPermissionMode(),
         ]);
         setTaskPermissionModes(modes);
-        setPlanArmedBySession(planArmed);
+        planMode.hydrate(planArmed);
         setLastSpawnSessionMode(sessionModeFromPermission(last));
       } catch {
         /* non-tauri / first run */
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only hydrate
   }, []);
 
   /** Mode shown/edited for the selected task. Attached agent wins when present. */
@@ -233,12 +230,11 @@ function App() {
   }, [managedForSession, selectedId, taskPermissionModes]);
 
   /** Single Mode chip: planArmed + host permission (no second Mode map). */
-  const effectiveSessionMode: SessionMode = useMemo(() => {
-    const planArmed = selectedId
-      ? Boolean(planArmedBySession[selectedId])
-      : false;
-    return displaySessionMode(planArmed, effectivePermissionMode);
-  }, [selectedId, planArmedBySession, effectivePermissionMode]);
+  const planArmedSelected = planMode.isArmed(selectedId);
+  const effectiveSessionMode: SessionMode = useMemo(
+    () => displaySessionMode(planArmedSelected, effectivePermissionMode),
+    [planArmedSelected, effectivePermissionMode],
+  );
 
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
@@ -391,6 +387,8 @@ function App() {
         // Empty / null → backend treats as “no initial prompt”.
         prompt,
         permissionMode,
+        // ACP session mode (not host permission). Applied before initial prompt.
+        sessionModeId: next.planArmed ? "plan" : null,
       });
       upsertManaged(info);
       setLastSpawnSessionMode(opts.sessionMode);
@@ -401,15 +399,8 @@ function App() {
           [sessionId]: permissionMode,
         }));
         if (next.planArmed) {
-          setPlanArmedBySession((prev) => ({
-            ...prev,
-            [sessionId]: true,
-          }));
-          try {
-            await setTaskPlanArmed(sessionId, true);
-          } catch {
-            /* best-effort; Mode chip still shows from local state this session */
-          }
+          // Spawn already called session/set_mode("plan"); track Active.
+          await planMode.applyAfterSpawn(sessionId);
         }
         focusOnceSessionRef.current = sessionId;
         setSelectedId(sessionId);
@@ -462,6 +453,9 @@ function App() {
         ...prev,
         [info.sessionId!]: info.permissionMode,
       }));
+      // Re-apply local Plan Pending after attach (Grok session mode is not
+      // restored by host prefs alone — call ACP set_mode when armed).
+      await planMode.reapplyAfterAttach(info.handleId, info.sessionId);
     }
     setTab("timeline");
     setPinTimelineBottomSeq((n) => n + 1);
@@ -477,12 +471,40 @@ function App() {
   async function handleResolvePermission(
     item: PendingPermission,
     optionId: string,
+    comments?: string,
+    payload?: UserQuestionResolvePayload,
   ) {
     setPermBusyKey(item.requestKey);
     setError(null);
     try {
-      await resolvePermission(item.handleId, item.requestKey, optionId);
+      await resolvePermission(
+        item.handleId,
+        item.requestKey,
+        optionId,
+        comments,
+        payload ?? null,
+      );
       removePermission(item.requestKey);
+
+      if (item.kind === "planApproval") {
+        await planMode.onPlanApprovalResolved(
+          item.sessionId ?? selectedId,
+          optionId,
+        );
+        // TUI approve-with-comments: wire is still outcome:"approved" (no
+        // feedback field); review notes are a separate user interjection.
+        if (optionId === "approve" && comments?.trim() && item.handleId) {
+          try {
+            await promptAgent(
+              item.handleId,
+              `The user approved the plan with the following review comments:\n\n${comments.trim()}`,
+            );
+            setPinTimelineBottomSeq((n) => n + 1);
+          } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+          }
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -502,19 +524,16 @@ function App() {
    */
   async function handleSessionModeChange(mode: SessionMode) {
     const sessionId = selectedId;
-    const previousPlan = sessionId
-      ? Boolean(planArmedBySession[sessionId])
-      : false;
+    const previousPlan = planMode.isArmed(sessionId);
     const previousPerm = effectivePermissionMode;
     const next = applySessionModeChange(mode, previousPerm);
     const planChanged = next.planArmed !== previousPlan;
 
-    // Optimistic plan arming.
+    // Optimistic plan arming. Leaving Plan also drops Active.
     if (sessionId && planChanged) {
-      setPlanArmedBySession((prev) => ({
-        ...prev,
-        [sessionId]: next.planArmed,
-      }));
+      planMode.setArmedLocal(sessionId, next.planArmed, {
+        active: next.planArmed ? undefined : false,
+      });
     }
 
     const targetPerm = next.permission;
@@ -527,7 +546,6 @@ function App() {
       }));
     }
 
-    // Nothing to persist / sync.
     if (!planChanged && !permChanged) {
       return;
     }
@@ -535,7 +553,13 @@ function App() {
     setError(null);
     try {
       if (sessionId && planChanged) {
-        await setTaskPlanArmed(sessionId, next.planArmed);
+        const liveHandle =
+          managedForSession &&
+          managedForSession.status !== "stopped" &&
+          managedForSession.status !== "error"
+            ? managedForSession.handleId
+            : null;
+        await planMode.syncPlanArming(sessionId, next.planArmed, liveHandle);
       }
 
       if (permChanged && targetPerm) {
@@ -557,10 +581,9 @@ function App() {
       }
     } catch (e) {
       if (sessionId) {
-        setPlanArmedBySession((prev) => ({
-          ...prev,
-          [sessionId]: previousPlan,
-        }));
+        planMode.setArmedLocal(sessionId, previousPlan, {
+          active: previousPlan ? undefined : false,
+        });
         setTaskPermissionModes((prev) => ({
           ...prev,
           [sessionId]: previousPerm,
@@ -609,6 +632,7 @@ function App() {
       // Connect on first agent message (no attach switch). Local slashes above
       // already returned without needing ACP.
       let handleId = managedForSession?.handleId;
+      let sessionIdForPlan = managedForSession?.sessionId ?? selectedId;
       if (
         !handleId ||
         managedForSession?.status === "stopped" ||
@@ -625,7 +649,19 @@ function App() {
           return;
         }
         handleId = info.handleId;
+        sessionIdForPlan = info.sessionId ?? sessionId;
       }
+
+      const { modeError } = await planMode.ensurePlanModeForTurn(
+        handleId,
+        sessionIdForPlan,
+        trimmed,
+      );
+      if (modeError) {
+        // Still send the prompt; surface the mode error so it is not silent.
+        setError(modeError);
+      }
+
       await promptAgent(handleId, trimmed);
       setPinTimelineBottomSeq((n) => n + 1);
     } catch (e) {
@@ -759,8 +795,8 @@ function App() {
           sessionMode={effectiveSessionMode}
           onSessionModeChange={(m) => void handleSessionModeChange(m)}
           onSendPrompt={(t) => void handleSend(t)}
-          onResolvePermission={(item, opt) =>
-            void handleResolvePermission(item, opt)
+          onResolvePermission={(item, opt, comments, payload) =>
+            void handleResolvePermission(item, opt, comments, payload)
           }
           onStopAgent={
             selectedId && managedForSession && managedForSession.status !== "stopped"

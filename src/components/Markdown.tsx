@@ -1,4 +1,5 @@
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { hrefToFsPath, isFileLinkHref, looksLikePath } from "../utils/paths";
 
 interface Props {
@@ -14,7 +15,14 @@ export function Markdown({ children, className, onOpenFile }: Props) {
   return (
     <div className={`md ${className ?? ""}`}>
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
         components={{
+          // GFM tables: keep wide tables inside the message column.
+          table: ({ children: tableChildren }) => (
+            <div className="md-table-wrap">
+              <table>{tableChildren}</table>
+            </div>
+          ),
           // Explicit author links: allow single-segment names (README.md).
           a: ({ href, children: linkChildren }) => {
             if (onOpenFile && isFileLinkHref(href)) {

@@ -300,6 +300,30 @@ fn find_session_dir(session_id: &str) -> Result<(PathBuf, String)> {
     Err(SessionError::NotFound(session_id.to_string()))
 }
 
+/// Read Grok session `plan.md` if present (plan mode artifact).
+pub fn read_session_plan(session_id: &str) -> Result<Option<SessionPlan>> {
+    let (dir, _) = find_session_dir(session_id)?;
+    let path = dir.join("plan.md");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(&path)?;
+    let empty = content.trim().is_empty();
+    Ok(Some(SessionPlan {
+        path: path.display().to_string(),
+        content,
+        empty,
+    }))
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPlan {
+    pub path: String,
+    pub content: String,
+    pub empty: bool,
+}
+
 /// Resolve a path under a Grok session directory (e.g. generated `images/1.jpg`).
 ///
 /// Accepts project-relative paths or absolute paths that stay inside the session

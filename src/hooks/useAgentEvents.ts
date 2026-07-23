@@ -26,7 +26,18 @@ import {
 /** After last text chunk for a handle, mark its streaming cards settled. */
 const STREAM_SETTLE_MS = 320;
 
-export function useAgentEvents(selectedSessionId: string | null) {
+export interface AgentEventsOptions {
+  /** ACP current_mode_update (plan ↔ default). Prefer over window events. */
+  onCurrentModeUpdate?: (sessionId: string, modeId: string) => void;
+}
+
+export function useAgentEvents(
+  selectedSessionId: string | null,
+  options?: AgentEventsOptions,
+) {
+  const onCurrentModeUpdateRef = useRef(options?.onCurrentModeUpdate);
+  onCurrentModeUpdateRef.current = options?.onCurrentModeUpdate;
+
   const [managed, setManaged] = useState<Map<string, ManagedAgentInfo>>(
     () => new Map(),
   );
@@ -207,6 +218,24 @@ export function useAgentEvents(selectedSessionId: string | null) {
           return next;
         });
       });
+      // Grok current_mode_update (plan ↔ default) — host Mode chip.
+      // ACP schema uses `modeId`; some agents also send `currentModeId`.
+      const uMode = await listen<AgentUpdateEvent>("agent-update", (e) => {
+        if (cancelled) return;
+        const update = e.payload?.params?.update as
+          | {
+              sessionUpdate?: string;
+              currentModeId?: string;
+              modeId?: string;
+            }
+          | undefined;
+        if (update?.sessionUpdate !== "current_mode_update") return;
+        const modeId = update.modeId ?? update.currentModeId;
+        const sessionId = e.payload?.sessionId;
+        if (!sessionId || modeId == null) return;
+        onCurrentModeUpdateRef.current?.(sessionId, modeId);
+      });
+
       const u2 = await listen<AgentUpdateEvent>("agent-update", (e) => {
         if (cancelled) return;
         const { handleId, sessionId, params } = e.payload;
@@ -304,9 +333,9 @@ export function useAgentEvents(selectedSessionId: string | null) {
       });
 
       if (!cancelled) {
-        unsubs.push(u1, u2, u3, u4, u5, u6);
+        unsubs.push(u1, uMode, u2, u3, u4, u5, u6);
       } else {
-        [u1, u2, u3, u4, u5, u6].forEach((u) => u());
+        [u1, uMode, u2, u3, u4, u5, u6].forEach((u) => u());
       }
     }
 

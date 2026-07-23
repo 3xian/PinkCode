@@ -310,6 +310,325 @@
   gap: 8px;
 }
 
+/* Grok-aligned plan approval modal (x.ai/exit_plan_mode) */
+.plan-approval-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  /* Dim whole app; dialog is the interactive surface */
+  background: rgba(0, 0, 0, 0.48);
+  pointer-events: auto;
+}
+
+.plan-approval-dialog {
+  position: fixed;
+  /* CSS-centered until user drags (then .is-positioned + inline left/top) */
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(820px, calc(100vw - 32px));
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--bg-elevated);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  /* Left accent + floating shadow */
+  box-shadow:
+    inset 3px 0 0 var(--kind-plan, #a78bfa),
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 28px 80px rgba(0, 0, 0, 0.55);
+}
+
+.plan-approval-dialog.is-positioned {
+  transform: none;
+}
+
+.plan-approval-drag-handle {
+  flex-shrink: 0;
+  padding: 12px 16px 10px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--kind-plan, #a78bfa) 10%, transparent),
+    transparent
+  );
+}
+
+.plan-approval-drag-handle:active {
+  cursor: grabbing;
+}
+
+.plan-approval-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.plan-approval-grip {
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: -2px;
+  opacity: 0.7;
+  line-height: 1;
+}
+
+.plan-approval-mark {
+  color: var(--kind-plan, #a78bfa);
+  font-size: 12px;
+}
+
+.plan-approval-path {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-approval-body {
+  flex: 1 1 auto;
+  min-height: 120px;
+  max-height: min(56vh, 520px);
+  overflow: auto;
+  padding: 14px 16px;
+  background: var(--bg);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.plan-approval-empty {
+  margin: 0;
+  font-size: 12px;
+}
+
+.plan-approval-footer {
+  flex-shrink: 0;
+  padding: 12px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-elevated);
+}
+
+.plan-approval-comments textarea {
+  min-height: 52px;
+  resize: vertical;
+}
+
+.plan-approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Ask-user-question modal (x.ai/ask_user_question) */
+.user-question-dialog {
+  border-color: rgba(110, 168, 255, 0.35);
+  box-shadow:
+    inset 3px 0 0 var(--accent, #6ea8ff),
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 28px 80px rgba(0, 0, 0, 0.55);
+  width: min(640px, calc(100vw - 32px));
+}
+
+.user-question-drag-handle {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent, #6ea8ff) 10%, transparent),
+    transparent
+  );
+}
+
+.user-question-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--bg, #0c0f15);
+  background: var(--accent, #6ea8ff);
+  line-height: 1;
+}
+
+.user-question-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.user-question-block {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.user-question-header {
+  margin: 0 0 4px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.user-question-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.user-question-hint {
+  font-size: 11px;
+  margin: -4px 0 8px;
+}
+
+.user-question-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.user-question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+button.user-question-option:hover:not(:disabled),
+.user-question-option.selected {
+  border-color: color-mix(in srgb, var(--accent, #6ea8ff) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent, #6ea8ff) 10%, transparent);
+}
+
+.user-question-option.selected {
+  box-shadow: inset 2px 0 0 var(--accent, #6ea8ff);
+}
+
+.user-question-option-mark {
+  flex-shrink: 0;
+  width: 1.1em;
+  color: var(--accent, #6ea8ff);
+  opacity: 0.9;
+  line-height: 1.35;
+}
+
+.user-question-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.user-question-option-label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.user-question-option-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.user-question-other {
+  flex-direction: column;
+  gap: 6px;
+  cursor: default;
+}
+
+.user-question-other-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.user-question-other-input {
+  width: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.user-question-other-input:focus {
+  outline: none;
+  border-color: var(--accent, #6ea8ff);
+}
+
+.user-question-preview {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.user-question-preview-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.user-question-preview pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  color: var(--text);
+  max-height: 120px;
+  overflow: auto;
+}
+
+.user-question-progress {
+  font-size: 11px;
+  min-height: 1em;
+}
+
 .perm-card {
   border: none;
   border-radius: 0;
@@ -660,6 +979,23 @@
   font-size: 9px;
   opacity: 0.55;
   transform: translateY(0.5px);
+}
+
+.prompt-chip-shortcut {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+  user-select: none;
+  white-space: nowrap;
 }
 
 .prompt-chip-menu {

@@ -19,9 +19,17 @@ use crate::agent_types::{
     AttachRequest, ManagedAgentInfo, ManagedStatus, PendingPermission, PermissionKind,
     PermissionMode, PermissionOption, ResolvePermissionRequest, SpawnRequest,
 };
+use crate::ask_user_question::{
+    build_user_question, is_ask_user_question_method, is_user_question_accept_option,
+    resolve_user_question_response,
+};
 use crate::permission_policy::{
     build_tool_permission, decide_gate, is_allow_option, pick_allow_option, pick_reject_option,
     request_id_key, risk_for_path, GateDecision,
+};
+use crate::plan_approval::{
+    build_plan_approval, is_exit_plan_method, is_plan_approve_option,
+    resolve_plan_approval_response,
 };
 use crate::shell_stream::ShellStream;
 use crate::task_prefs;
@@ -66,6 +74,33 @@ impl AgentManager {
                 shell_stream: ShellStream::default(),
             }),
         }
+    }
+
+    /// ACP `session/set_mode` — e.g. `"plan"` / `"default"`.
+    ///
+    /// Required for Grok plan mode over ACP. Sending `/plan …` as prompt text
+    /// alone does not enter plan mode (the model sees plain user text).
+    pub fn set_session_mode(&self, handle_id: &str, mode_id: &str) -> Result<(), String> {
+        let mode_id = mode_id.trim();
+        if mode_id.is_empty() {
+            return Err("mode_id is empty".into());
+        }
+        let (session_id, client) = {
+            let agents = self.inner.agents.lock();
+            let agent = agents
+                .get(handle_id)
+                .ok_or_else(|| format!("unknown handle {handle_id}"))?;
+            let sid = agent
+                .info
+                .session_id
+                .clone()
+                .ok_or_else(|| "agent has no session_id".to_string())?;
+            (sid, Arc::clone(&agent.client))
+        };
+        client
+            .session_set_mode(&session_id, mode_id)
+            .map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     /// Change host-side permission mode for a live agent.
@@ -126,6 +161,8 @@ impl AgentManager {
                 handle_id: handle_id.to_string(),
                 request_key: key,
                 option_id,
+                comments: None,
+                payload: None,
             });
         }
     }
@@ -585,6 +622,19 @@ impl AgentManager {
                     }
                 }
             }
+            other if is_exit_plan_method(other) => {
+                // Always surface plan approval to the UI — never auto-skip (Grok TUI
+                // also requires an explicit approve / quit even under always-approve).
+                let pending =
+                    build_plan_approval(handle_id, session_id.clone(), request_id.clone(), &params);
+                Self::enqueue_permission(inner, handle_id, pending);
+            }
+            other if is_ask_user_question_method(other) => {
+                // Always surface Q&A — intentional user input, not a permission gate.
+                let pending =
+                    build_user_question(handle_id, session_id.clone(), request_id.clone(), &params);
+                Self::enqueue_permission(inner, handle_id, pending);
+            }
             other => {
                 // Unknown client methods: reject so agent can fall back.
                 let _ = client.respond_error(
@@ -707,7 +757,11 @@ impl AgentManager {
             }
         };
 
-        let allow = is_allow_option(&req.option_id, &pending.options);
+        let allow = match pending.kind {
+            PermissionKind::PlanApproval => is_plan_approve_option(&req.option_id),
+            PermissionKind::UserQuestion => is_user_question_accept_option(&req.option_id),
+            _ => is_allow_option(&req.option_id, &pending.options),
+        };
 
         let delivery = match pending.kind {
             PermissionKind::ToolPermission => {
@@ -781,6 +835,21 @@ impl AgentManager {
                         -32000,
                         "User denied file read in MarsBuild",
                     )
+                }
+            }
+            PermissionKind::PlanApproval => {
+                let comments = req.comments.as_deref().unwrap_or("");
+                match resolve_plan_approval_response(&req.option_id, comments) {
+                    // Upstream ExitPlanModeExtResponse: approved | cancelled | abandoned
+                    // (all normal JSON-RPC results — cancelled is NOT an RPC error).
+                    Ok(result) => client.respond_result(&pending.request_id, result),
+                    Err(message) => client.respond_error(&pending.request_id, -32000, &message),
+                }
+            }
+            PermissionKind::UserQuestion => {
+                match resolve_user_question_response(&req.option_id, req.payload.as_ref()) {
+                    Ok(result) => client.respond_result(&pending.request_id, result),
+                    Err(message) => client.respond_error(&pending.request_id, -32000, &message),
                 }
             }
             PermissionKind::Other => {
@@ -939,6 +1008,21 @@ impl AgentManager {
             a.info = info.clone();
         }
         Self::emit_status(&self.inner, &info);
+
+        // Activate plan (or other session mode) before the initial prompt so
+        // the first turn runs under plan constraints. Prefixing `/plan` in the
+        // prompt text is not enough over ACP.
+        if let Some(mode_id) = req
+            .session_mode_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            if let Err(e) = client.session_set_mode(&session_id, mode_id) {
+                // Non-fatal: still allow the session; UI keeps local Pending.
+                eprintln!("[marsbuild] session/set_mode({mode_id}) after spawn failed: {e}");
+            }
+        }
 
         if let Some(prompt) = req.prompt.filter(|p| !p.trim().is_empty()) {
             self.dispatch_prompt(&handle_id, &session_id, prompt, client);

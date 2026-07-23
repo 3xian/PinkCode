@@ -276,6 +276,8 @@ export const PERMISSION_KINDS = [
   "toolPermission",
   "fsWrite",
   "fsRead",
+  "planApproval",
+  "userQuestion",
   "other",
 ] as const;
 export type PermissionKind = (typeof PERMISSION_KINDS)[number];
@@ -308,6 +310,11 @@ export interface SpawnRequest {
   /** Legacy; prefer permissionMode. */
   alwaysApprove?: boolean | null;
   model?: string | null;
+  /**
+   * ACP session mode after `session/new` (e.g. `"plan"`).
+   * Independent of host permission mode — required for real plan mode.
+   */
+  sessionModeId?: string | null;
 }
 
 export interface AttachRequest {

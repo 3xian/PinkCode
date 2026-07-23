@@ -62,33 +62,28 @@
   white-space: nowrap;
 }
 
-.pill {
+/* Status row tags share one quiet chrome (PID / model / agent). */
+.pill,
+.pill.live,
+.pill.idle,
+.pill.muted-pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 11px;
-  border: none;
+  line-height: 1.4;
+  border: 1px solid var(--border);
   background: var(--bg-elevated);
-}
-
-.pill.live {
-  color: var(--live);
-  background: var(--live-dim);
-}
-
-.pill.idle {
   color: var(--text-muted);
 }
 
+/* Errors / awaiting only — same geometry, semantic tint */
 .pill.danger {
   color: var(--danger);
   background: var(--danger-dim);
-}
-
-.pill.muted-pill {
-  color: var(--text-muted);
+  border-color: rgba(255, 107, 122, 0.28);
 }
 
 .metric-grid {
@@ -229,7 +224,7 @@
   color: var(--chip-fg-active);
   background: var(--chip-bg-active);
   font-weight: 700;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chip-fg-active) 45%, transparent);
+  box-shadow: none;
 }
 
 .timeline-filter-count {
@@ -614,23 +609,36 @@
   color: #c4d0e8;
 }
 
-.tl-detail .md table {
-  border-collapse: collapse;
+/* GFM tables (remark-gfm) — scroll when wide, shared by timeline + compact md */
+.md .md-table-wrap {
   margin: 0.45em 0;
-  font-size: 12px;
-  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
-.tl-detail .md th,
-.tl-detail .md td {
+.md table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: max-content;
+  min-width: 100%;
+}
+
+.md th,
+.md td {
   border: 1px solid var(--border);
   padding: 4px 8px;
   text-align: left;
+  vertical-align: top;
 }
 
-.tl-detail .md th {
+.md th {
   background: var(--bg);
   font-weight: 600;
+  color: var(--text);
+}
+
+.md tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 /* Kind tint: full card background (uses --kind-* tokens shared with filters) */

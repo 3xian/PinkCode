@@ -14,5 +14,12 @@
     "bypassPermissions",
     "dontAsk"
   ],
-  "permissionKinds": ["toolPermission", "fsWrite", "fsRead", "other"]
+  "permissionKinds": [
+    "toolPermission",
+    "fsWrite",
+    "fsRead",
+    "planApproval",
+    "userQuestion",
+    "other"
+  ]
 }

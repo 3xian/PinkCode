@@ -319,6 +319,7 @@ export function PromptBar({
               accent={modeMeta.accent}
               glyph={modeGlyph(sessionMode)}
               options={SESSION_MODE_OPTIONS}
+              shortcut="Shift+Tab"
               disabled={busy || running || awaiting}
               onChange={onSessionModeChange}
             />

@@ -290,6 +290,21 @@ impl AcpClient {
         )
     }
 
+    /// ACP `session/set_mode` — switch agent operating mode (e.g. `plan`).
+    ///
+    /// Host Mode=Plan must call this; prefixing `/plan` in `session/prompt`
+    /// alone is treated as plain user text and does not activate plan mode.
+    pub fn session_set_mode(&self, session_id: &str, mode_id: &str) -> Result<Value> {
+        self.request(
+            "session/set_mode",
+            json!({
+                "sessionId": session_id,
+                "modeId": mode_id,
+            }),
+            Duration::from_secs(30),
+        )
+    }
+
     pub fn kill(&self) -> Result<()> {
         let mut child = self.child.lock();
         let _ = child.kill();

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   agentSlashForPermissionTransition,
+  applyAgentModeUpdate,
   applySessionModeChange,
   applySessionModeToPrompt,
   canSendModeSlash,
@@ -28,6 +29,38 @@ describe("applySessionModeToPrompt", () => {
     expect(applySessionModeToPrompt("plan", "/compact")).toBe("/compact");
     expect(applySessionModeToPrompt("normal", "add auth")).toBe("add auth");
     expect(applySessionModeToPrompt("auto", "add auth")).toBe("add auth");
+  });
+});
+
+describe("applyAgentModeUpdate", () => {
+  it("arms Plan when the agent enters plan mode", () => {
+    expect(applyAgentModeUpdate("plan", false)).toEqual({
+      planActive: true,
+      planArmed: true,
+    });
+    expect(applyAgentModeUpdate("plan", true)).toEqual({
+      planActive: true,
+      planArmed: true,
+    });
+  });
+
+  it("clears arming only when leaving an active agent plan", () => {
+    expect(applyAgentModeUpdate("default", true)).toEqual({
+      planActive: false,
+      planArmed: false,
+    });
+  });
+
+  it("preserves user Pending when agent still reports non-plan", () => {
+    // User selected Mode=Plan (Pending); agent has not activated yet.
+    expect(applyAgentModeUpdate("default", false)).toEqual({
+      planActive: false,
+      planArmed: null,
+    });
+    expect(applyAgentModeUpdate("code", false)).toEqual({
+      planActive: false,
+      planArmed: null,
+    });
   });
 });
 

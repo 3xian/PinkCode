@@ -75,6 +75,10 @@ pub struct SpawnRequest {
     pub permission_mode: Option<PermissionMode>,
     pub always_approve: Option<bool>,
     pub model: Option<String>,
+    /// ACP session mode id to apply after `session/new` (e.g. `"plan"`).
+    /// Independent of host permission mode. Empty/None → leave agent default.
+    #[serde(default)]
+    pub session_mode_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +96,10 @@ pub enum PermissionKind {
     ToolPermission,
     FsWrite,
     FsRead,
+    /// Grok `x.ai/exit_plan_mode` reverse-RPC — host shows plan preview.
+    PlanApproval,
+    /// Grok `x.ai/ask_user_question` reverse-RPC — multi-choice Q&A form.
+    UserQuestion,
     Other,
 }
 
@@ -126,6 +134,12 @@ pub struct ResolvePermissionRequest {
     pub handle_id: String,
     pub request_key: String,
     pub option_id: String,
+    /// Freeform notes for plan approval (approve-with-comments / request-changes).
+    #[serde(default)]
+    pub comments: Option<String>,
+    /// Structured payload for ask-user answers (and future rich resolves).
+    #[serde(default)]
+    pub payload: Option<Value>,
 }
 
 #[cfg(test)]
@@ -169,6 +183,8 @@ mod tests {
             PermissionKind::ToolPermission,
             PermissionKind::FsWrite,
             PermissionKind::FsRead,
+            PermissionKind::PlanApproval,
+            PermissionKind::UserQuestion,
             PermissionKind::Other,
         ];
         assert_eq!(json!(statuses), contract["managedStatuses"]);

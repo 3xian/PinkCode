@@ -22,6 +22,8 @@ interface Props<T extends string> {
   accent: ChipAccent;
   glyph: string;
   options: readonly ChipOption<T>[];
+  /** Shown to the right of the control (e.g. Shift+Tab). */
+  shortcut?: string;
   disabled?: boolean;
   onChange: (value: T) => void;
 }
@@ -35,6 +37,7 @@ export function PromptChipSelect<T extends string>({
   accent,
   glyph,
   options,
+  shortcut,
   disabled,
   onChange,
 }: Props<T>) {
@@ -130,6 +133,11 @@ export function PromptChipSelect<T extends string>({
           ▾
         </span>
       </button>
+      {shortcut ? (
+        <kbd className="prompt-chip-shortcut" aria-hidden>
+          {shortcut}
+        </kbd>
+      ) : null}
       {open && (
         <div
           className="prompt-chip-menu"

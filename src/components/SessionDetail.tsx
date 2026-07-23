@@ -24,6 +24,7 @@ import {
   formatTokens,
   shortPath,
 } from "../utils/format";
+import type { ResolvePermissionFn } from "../utils/permissionPayload";
 import { extractToolPath } from "../utils/paths";
 import { DiffPanel } from "./DiffPanel";
 import { FilePathLink } from "./FilePathLink";
@@ -47,7 +48,7 @@ interface Props {
   sessionMode: SessionMode;
   onSessionModeChange: (mode: SessionMode) => void;
   onSendPrompt: (text: string) => void;
-  onResolvePermission: (item: PendingPermission, optionId: string) => void;
+  onResolvePermission: ResolvePermissionFn;
   /** Stop the live agent for this task (confirm handled by parent). */
   onStopAgent?: () => void;
   /** Bump after connect/spawn to pin Timeline to the bottom. */

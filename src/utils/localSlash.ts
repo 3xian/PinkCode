@@ -1,6 +1,6 @@
 import type { SessionDetail, WeekUsage } from "../types";
 import { contextPct, formatTokens, formatTimeUntil } from "./format";
-import { getWeekUsage } from "../api";
+import { getSessionPlan, getWeekUsage } from "../api";
 import {
   isLocalSlashName,
   localSlashHelpLines,
@@ -85,8 +85,54 @@ export async function runLocalSlash(
       return {
         items: [userLine, formatHelpCard()],
       };
+    case "view-plan":
+    case "show-plan":
+    case "plan-view":
+      return {
+        items: [userLine, await formatViewPlanCard(ctx.detail)],
+      };
     default:
       return null;
+  }
+}
+
+async function formatViewPlanCard(
+  detail: SessionDetail | null,
+): Promise<LocalSlashItem> {
+  if (!detail?.card.id) {
+    return {
+      kind: "plan",
+      title: "Plan",
+      detail: "No session selected.",
+    };
+  }
+  try {
+    const plan = await getSessionPlan(detail.card.id);
+    if (!plan) {
+      return {
+        kind: "plan",
+        title: "Plan",
+        detail: "No plan.md for this session yet. Use /plan … to start planning.",
+      };
+    }
+    if (plan.empty) {
+      return {
+        kind: "plan",
+        title: "Plan · empty",
+        detail: `Path: ${plan.path}\n\n(plan.md exists but is empty)`,
+      };
+    }
+    return {
+      kind: "plan",
+      title: "Plan",
+      detail: `Path: ${plan.path}\n\n${plan.content}`,
+    };
+  } catch (e) {
+    return {
+      kind: "plan",
+      title: "Plan",
+      detail: e instanceof Error ? e.message : String(e),
+    };
   }
 }
 
@@ -199,6 +245,7 @@ function formatHelpCard(): LocalSlashItem {
     ...localSlashHelpLines(),
     "",
     "Agent commands (need attach): /compact /plan /model /effort …",
+    "Local plan: /view-plan (aliases /show-plan, /plan-view)",
     "Type / in the prompt for autocomplete.",
   ];
   return {

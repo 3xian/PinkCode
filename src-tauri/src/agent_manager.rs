@@ -1,36 +1,15 @@
-//! Multi-agent process manager: spawn / attach / prompt / stop / permissions via ACP.
-//!
-//! Permission modes mirror Grok Build's prompt policy:
-//! - `default` — ask the user on gated ops (Normal / ask)
-//! - `acceptEdits` — auto-allow file edits; ask for shell / other tools
-//! - `auto` — allow safe tools; ask on high-risk shell (spawn `--permission-mode auto`)
-//! - `bypassPermissions` — auto-allow (spawn with `grok --always-approve`)
-//! - `dontAsk` — auto-deny anything that would have prompted
-//!
-//! Process flags apply on spawn/attach. Live Mode changes update only this
-//! host's `decide_gate` (ACP permission responses). Do not inject `/auto` or
-//! `/always-approve` as `session/prompt` — those are local TUI toggles in Grok
-//! Build; forwarding them over ACP starts a turn and can run tools.
-
 use crate::acp::{AcpClient, NotifyFn};
-use crate::agent_fs::{read_text_file, write_text_file};
-use crate::agent_runtime::{find_grok_bin, now_iso, now_ms, truncate_text};
+use crate::agent_fs::write_text_file;
+use crate::agent_runtime::{find_grok_bin, now_iso, truncate_text};
 use crate::agent_types::{
     AttachRequest, ManagedAgentInfo, ManagedStatus, PendingPermission, PermissionKind,
-    PermissionMode, PermissionOption, ResolvePermissionRequest, SpawnRequest,
-};
-use crate::ask_user_question::{
-    build_user_question, is_ask_user_question_method, is_user_question_accept_option,
-    resolve_user_question_response,
+    PermissionMode, ResolvePermissionRequest, SpawnRequest,
 };
 use crate::permission_policy::{
-    build_tool_permission, decide_gate, is_allow_option, pick_allow_option, pick_reject_option,
-    request_id_key, risk_for_path, GateDecision,
+    decide_gate, is_allow_option, pick_allow_option, pick_reject_option, GateDecision,
 };
-use crate::plan_approval::{
-    build_plan_approval, is_exit_plan_method, is_plan_approve_option,
-    resolve_plan_approval_response,
-};
+use crate::rpc_handler::{self, HandleResult, ResponseAction};
+use crate::shell_emitter;
 use crate::shell_stream::ShellStream;
 use crate::task_prefs;
 use parking_lot::Mutex;
@@ -47,14 +26,14 @@ struct LiveAgent {
     client: Arc<AcpClient>,
 }
 
-struct Inner {
-    app: Mutex<Option<AppHandle>>,
+pub(crate) struct Inner {
+    pub(crate) app: Mutex<Option<AppHandle>>,
+    pub(crate) shell_stream: ShellStream,
     agents: Mutex<HashMap<String, LiveAgent>>,
     pending: Mutex<HashMap<String, PendingPermission>>,
-    /// Server→client requests that arrived before the agent was registered.
     early_requests: Mutex<Vec<(String, Value)>>,
     grok_bin: Mutex<Option<String>>,
-    shell_stream: ShellStream,
+    handlers: Vec<Box<dyn rpc_handler::RpcHandler>>,
 }
 
 #[derive(Clone)]
@@ -72,14 +51,11 @@ impl AgentManager {
                 early_requests: Mutex::new(Vec::new()),
                 grok_bin: Mutex::new(None),
                 shell_stream: ShellStream::default(),
+                handlers: rpc_handler::default_handlers(),
             }),
         }
     }
 
-    /// ACP `session/set_mode` — e.g. `"plan"` / `"default"`.
-    ///
-    /// Required for Grok plan mode over ACP. Sending `/plan …` as prompt text
-    /// alone does not enter plan mode (the model sees plain user text).
     pub fn set_session_mode(&self, handle_id: &str, mode_id: &str) -> Result<(), String> {
         let mode_id = mode_id.trim();
         if mode_id.is_empty() {
@@ -103,11 +79,6 @@ impl AgentManager {
         Ok(())
     }
 
-    /// Change host-side permission mode for a live agent.
-    ///
-    /// Updates MarsBuild's ACP auto-response and reconciles pending requests
-    /// that the new mode would no longer ask about. Does not prompt the agent
-    /// (Grok Build Mode toggles are local; see frontend `handleSessionModeChange`).
     pub fn set_permission_mode(
         &self,
         handle_id: &str,
@@ -131,9 +102,8 @@ impl AgentManager {
             .ok_or_else(|| format!("unknown handle {handle_id}"))
     }
 
-    /// Auto-resolve pending requests that the new mode no longer wants to ask about.
     fn reconcile_pending_for_mode(&self, handle_id: &str, mode: PermissionMode) {
-        let items: Vec<(String, GateDecision, String)> = {
+        let items: Vec<(String, String)> = {
             let pending = self.inner.pending.lock();
             pending
                 .values()
@@ -142,21 +112,18 @@ impl AgentManager {
                     let decision = decide_gate(mode, p);
                     match decision {
                         GateDecision::Ask => None,
-                        GateDecision::Allow => Some((
-                            p.request_key.clone(),
-                            decision,
-                            pick_allow_option(&p.options),
-                        )),
+                        GateDecision::Allow => {
+                            Some((p.request_key.clone(), pick_allow_option(&p.options)))
+                        }
                         GateDecision::Deny => Some((
                             p.request_key.clone(),
-                            decision,
                             pick_reject_option(&p.options, "reject-once"),
                         )),
                     }
                 })
                 .collect()
         };
-        for (key, _decision, option_id) in items {
+        for (key, option_id) in items {
             let _ = self.resolve_permission(ResolvePermissionRequest {
                 handle_id: handle_id.to_string(),
                 request_key: key,
@@ -167,15 +134,12 @@ impl AgentManager {
         }
     }
 
-    /// Kill process, clear pending permissions, keep agent in map as `Error`
-    /// so the UI can show the failure and the user can Stop to drop it.
     fn fail_registered_agent(
         inner: &Arc<Inner>,
         handle_id: &str,
         info: &mut ManagedAgentInfo,
         err: String,
     ) -> String {
-        // Drop queued permissions (agent is unusable).
         {
             let mut pending = inner.pending.lock();
             pending.retain(|_, p| p.handle_id != handle_id);
@@ -204,15 +168,32 @@ impl AgentManager {
         *self.inner.app.lock() = Some(app);
     }
 
-    fn emit(inner: &Inner, event: &str, payload: Value) {
+    pub(crate) fn emit(inner: &Inner, event: &str, payload: Value) {
         if let Some(app) = inner.app.lock().as_ref() {
             let _ = app.emit(event, payload);
         }
     }
 
-    fn emit_status(inner: &Inner, info: &ManagedAgentInfo) {
+    pub(crate) fn emit_status(inner: &Inner, info: &ManagedAgentInfo) {
         if let Ok(v) = serde_json::to_value(info) {
             Self::emit(inner, "agent-status", v);
+        }
+    }
+
+    fn send_action(client: &AcpClient, id: &Value, action: ResponseAction) -> Result<(), String> {
+        match action {
+            ResponseAction::Send(value) => {
+                client.respond_result(id, value).map_err(|e| e.to_string())
+            }
+            ResponseAction::SendError(code, msg) => client
+                .respond_error(id, code, &msg)
+                .map_err(|e| e.to_string()),
+            ResponseAction::WriteFile { path, content } => {
+                write_text_file(&path, &content).map_err(|e| e.to_string())?;
+                client
+                    .respond_result(id, Value::Null)
+                    .map_err(|e| e.to_string())
+            }
         }
     }
 
@@ -292,7 +273,6 @@ impl AgentManager {
                 return;
             }
 
-            // Server → client request
             if has_id && !method.is_empty() && !is_response_shape {
                 Self::handle_server_request(&inner, &handle_id, &msg);
                 return;
@@ -311,15 +291,101 @@ impl AgentManager {
                 "params": params,
             });
 
-            // Standard ACP + Grok x.ai extension (`_x.ai/session/update` for
-            // turn_completed, session_recap, compact, rewind, …).
             if method == "session/update" || method.ends_with("/session/update") {
                 Self::emit(&inner, "agent-update", payload.clone());
-                Self::maybe_emit_shell(&inner, &handle_id, &session_id, &params);
+                shell_emitter::maybe_emit_shell(
+                    &inner.shell_stream,
+                    &inner,
+                    &handle_id,
+                    &session_id,
+                    &params,
+                );
             } else if !method.is_empty() {
                 Self::emit(&inner, "agent-notification", payload);
             }
         })
+    }
+
+    fn dispatch_handle_request(
+        inner: &Arc<Inner>,
+        handle_id: &str,
+        request_id: Value,
+        method: &str,
+        params: Value,
+    ) {
+        let (client, permission_mode, session_hint) = {
+            let agents = inner.agents.lock();
+            match agents.get(handle_id) {
+                Some(a) => (
+                    Arc::clone(&a.client),
+                    a.info.permission_mode,
+                    a.info.session_id.clone(),
+                ),
+                None => {
+                    inner.early_requests.lock().push((
+                        handle_id.to_string(),
+                        json!({
+                            "id": request_id,
+                            "method": method,
+                            "params": params,
+                        }),
+                    ));
+                    return;
+                }
+            }
+        };
+
+        let session_id = params
+            .get("sessionId")
+            .and_then(|s| s.as_str())
+            .map(|s| s.to_string())
+            .or(session_hint);
+
+        let handler = rpc_handler::find_handler(&inner.handlers, method);
+        match handler {
+            Some(h) => match h.handle_request(handle_id, session_id, request_id.clone(), &params) {
+                HandleResult::Respond(value) => {
+                    let _ = client.respond_result(&request_id, value);
+                }
+                HandleResult::Gate(pending) => match decide_gate(permission_mode, &pending) {
+                    GateDecision::Allow => {
+                        let action = rpc_handler::build_allow_response(h, &pending);
+                        match action {
+                            Ok(a) => {
+                                let _ = Self::send_action(&client, &pending.request_id, a);
+                            }
+                            Err(e) => {
+                                let _ = client.respond_error(&request_id, -32000, &e);
+                            }
+                        }
+                    }
+                    GateDecision::Deny => {
+                        let action = rpc_handler::build_deny_response(h, &pending);
+                        match action {
+                            Ok(a) => {
+                                let _ = Self::send_action(&client, &pending.request_id, a);
+                            }
+                            Err(e) => {
+                                let _ = client.respond_error(&request_id, -32000, &e);
+                            }
+                        }
+                    }
+                    GateDecision::Ask => {
+                        Self::enqueue_permission(inner, handle_id, *pending);
+                    }
+                },
+                HandleResult::Error(code, msg) => {
+                    let _ = client.respond_error(&request_id, code, &msg);
+                }
+            },
+            None => {
+                let _ = client.respond_error(
+                    &request_id,
+                    -32601,
+                    &format!("MarsBuild does not implement {method}"),
+                );
+            }
+        }
     }
 
     fn handle_transport_closed(inner: &Arc<Inner>, handle_id: &str, reason: &str) {
@@ -371,126 +437,6 @@ impl AgentManager {
         }
     }
 
-    fn maybe_emit_shell(
-        inner: &Arc<Inner>,
-        handle_id: &str,
-        session_id: &Option<String>,
-        params: &Value,
-    ) {
-        let update = match params.get("update") {
-            Some(u) => u,
-            None => return,
-        };
-        let kind = update
-            .get("sessionUpdate")
-            .and_then(|s| s.as_str())
-            .unwrap_or("");
-        if kind != "tool_call" && kind != "tool_call_update" {
-            return;
-        }
-
-        let tool_meta_name = update
-            .pointer("/_meta/x.ai/tool/name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let tool_kind = update
-            .get("kind")
-            .and_then(|k| k.as_str())
-            .or_else(|| {
-                update
-                    .pointer("/_meta/x.ai/tool/kind")
-                    .and_then(|v| v.as_str())
-            })
-            .unwrap_or("");
-        let title = update.get("title").and_then(|t| t.as_str()).unwrap_or("");
-
-        // Keep in sync with frontend `isShellToolUpdate` in format.ts.
-        let is_shell = tool_meta_name == "run_terminal_command"
-            || tool_kind == "execute"
-            || title.contains("run_terminal")
-            || title.to_lowercase().contains("execute `");
-
-        if !is_shell && kind == "tool_call" {
-            // still not shell
-            let raw_cmd = update.pointer("/rawInput/command").and_then(|c| c.as_str());
-            if raw_cmd.is_none() {
-                return;
-            }
-        } else if !is_shell {
-            let has_bash_output =
-                update.pointer("/rawOutput/type").and_then(|t| t.as_str()) == Some("Bash");
-            if !has_bash_output {
-                return;
-            }
-        }
-
-        let tool_call_id = update
-            .get("toolCallId")
-            .and_then(|id| id.as_str())
-            .unwrap_or("")
-            .to_string();
-        let command = update
-            .pointer("/rawInput/command")
-            .and_then(|c| c.as_str())
-            .or_else(|| {
-                update
-                    .pointer("/rawOutput/command")
-                    .and_then(|c| c.as_str())
-            })
-            .unwrap_or("")
-            .to_string();
-        let status = update
-            .get("status")
-            .and_then(|s| s.as_str())
-            .unwrap_or(if kind == "tool_call" {
-                "pending"
-            } else {
-                "in_progress"
-            })
-            .to_string();
-        let output = update
-            .pointer("/rawOutput/output_for_prompt")
-            .and_then(|o| o.as_str())
-            .or_else(|| {
-                update
-                    .get("content")
-                    .and_then(|c| c.as_array())
-                    .and_then(|arr| {
-                        arr.iter().find_map(|block| {
-                            block.pointer("/content/text").and_then(|t| t.as_str())
-                        })
-                    })
-            })
-            .unwrap_or("")
-            .to_string();
-        let exit_code = update
-            .pointer("/rawOutput/exit_code")
-            .and_then(|c| c.as_i64());
-        let description = update
-            .pointer("/rawInput/description")
-            .and_then(|d| d.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        let shell_payload = json!({
-            "handleId": handle_id,
-            "sessionId": session_id,
-            "toolCallId": tool_call_id,
-            "command": command,
-            "description": description,
-            "status": status,
-            "output": output,
-            "exitCode": exit_code,
-            "ts": now_ms(),
-        });
-
-        let emit_inner = Arc::clone(inner);
-        inner.shell_stream.publish(
-            shell_payload,
-            Arc::new(move |payload| Self::emit(&emit_inner, "agent-shell", payload)),
-        );
-    }
-
     fn handle_server_request(inner: &Arc<Inner>, handle_id: &str, msg: &Value) {
         let method = msg
             .get("method")
@@ -499,151 +445,7 @@ impl AgentManager {
             .to_string();
         let request_id = msg.get("id").cloned().unwrap_or(Value::Null);
         let params = msg.get("params").cloned().unwrap_or(Value::Null);
-
-        let (client, permission_mode, session_hint) = {
-            let agents = inner.agents.lock();
-            match agents.get(handle_id) {
-                Some(a) => (
-                    Arc::clone(&a.client),
-                    a.info.permission_mode,
-                    a.info.session_id.clone(),
-                ),
-                None => {
-                    // Agent not registered yet (race with spawn) — buffer for drain after insert.
-                    inner
-                        .early_requests
-                        .lock()
-                        .push((handle_id.to_string(), msg.clone()));
-                    return;
-                }
-            }
-        };
-
-        let session_id = params
-            .get("sessionId")
-            .and_then(|s| s.as_str())
-            .map(|s| s.to_string())
-            .or(session_hint);
-
-        match method.as_str() {
-            "session/request_permission" => {
-                let pending = build_tool_permission(
-                    handle_id,
-                    session_id.clone(),
-                    request_id.clone(),
-                    &params,
-                );
-                match decide_gate(permission_mode, &pending) {
-                    GateDecision::Allow => {
-                        let oid = pick_allow_option(&pending.options);
-                        let _ = client.respond_result(
-                            &request_id,
-                            json!({ "outcome": { "outcome": "selected", "optionId": oid } }),
-                        );
-                    }
-                    GateDecision::Deny => {
-                        let oid = pick_reject_option(&pending.options, "reject-once");
-                        let _ = client.respond_result(
-                            &request_id,
-                            json!({ "outcome": { "outcome": "selected", "optionId": oid } }),
-                        );
-                    }
-                    GateDecision::Ask => {
-                        Self::enqueue_permission(inner, handle_id, pending);
-                    }
-                }
-            }
-            "fs/read_text_file" => {
-                // Reads are always fulfilled (Grok treats read-only tools as auto-safe).
-                let path = params.get("path").and_then(|p| p.as_str()).unwrap_or("");
-                match read_text_file(path, params.get("line"), params.get("limit")) {
-                    Ok(content) => {
-                        let _ = client.respond_result(&request_id, json!({ "content": content }));
-                    }
-                    Err(e) => {
-                        let _ = client.respond_error(&request_id, -32000, &e);
-                    }
-                }
-            }
-            "fs/write_text_file" => {
-                let path = params
-                    .get("path")
-                    .and_then(|p| p.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let content = params
-                    .get("content")
-                    .and_then(|c| c.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let pending = PendingPermission {
-                    request_key: format!("{handle_id}:{}", request_id_key(&request_id)),
-                    handle_id: handle_id.to_string(),
-                    session_id: session_id.clone(),
-                    request_id: request_id.clone(),
-                    kind: PermissionKind::FsWrite,
-                    method: method.clone(),
-                    title: "Write file".into(),
-                    detail: path.clone(),
-                    risk: risk_for_path(&path),
-                    options: vec![
-                        PermissionOption {
-                            option_id: "allow-once".into(),
-                            name: "Allow once".into(),
-                            kind: "allow_once".into(),
-                        },
-                        PermissionOption {
-                            option_id: "reject-once".into(),
-                            name: "Deny".into(),
-                            kind: "reject_once".into(),
-                        },
-                    ],
-                    raw_params: params.clone(),
-                    created_at_ms: now_ms(),
-                };
-                match decide_gate(permission_mode, &pending) {
-                    GateDecision::Allow => match write_text_file(&path, &content) {
-                        Ok(()) => {
-                            let _ = client.respond_result(&request_id, Value::Null);
-                        }
-                        Err(e) => {
-                            let _ = client.respond_error(&request_id, -32000, &e);
-                        }
-                    },
-                    GateDecision::Deny => {
-                        let _ = client.respond_error(
-                            &request_id,
-                            -32000,
-                            "Denied by permission mode (dontAsk)",
-                        );
-                    }
-                    GateDecision::Ask => {
-                        Self::enqueue_permission(inner, handle_id, pending);
-                    }
-                }
-            }
-            other if is_exit_plan_method(other) => {
-                // Always surface plan approval to the UI — never auto-skip (Grok TUI
-                // also requires an explicit approve / quit even under always-approve).
-                let pending =
-                    build_plan_approval(handle_id, session_id.clone(), request_id.clone(), &params);
-                Self::enqueue_permission(inner, handle_id, pending);
-            }
-            other if is_ask_user_question_method(other) => {
-                // Always surface Q&A — intentional user input, not a permission gate.
-                let pending =
-                    build_user_question(handle_id, session_id.clone(), request_id.clone(), &params);
-                Self::enqueue_permission(inner, handle_id, pending);
-            }
-            other => {
-                // Unknown client methods: reject so agent can fall back.
-                let _ = client.respond_error(
-                    &request_id,
-                    -32601,
-                    &format!("MarsBuild does not implement {other}"),
-                );
-            }
-        }
+        Self::dispatch_handle_request(inner, handle_id, request_id, &method, params);
     }
 
     fn enqueue_permission(inner: &Arc<Inner>, handle_id: &str, pending: PendingPermission) {
@@ -651,8 +453,6 @@ impl AgentManager {
         if let Ok(v) = serde_json::to_value(&pending) {
             Self::emit(inner, "agent-permission", v);
         }
-        // Hold agents lock while recomputing count so concurrent enqueues cannot
-        // write a stale pending_permission_count.
         let mut agents = inner.agents.lock();
         let count = {
             let mut map = inner.pending.lock();
@@ -666,7 +466,6 @@ impl AgentManager {
         }
     }
 
-    /// Process server→client requests that arrived before agent registration.
     fn drain_early_requests(inner: &Arc<Inner>, handle_id: &str) {
         let early: Vec<Value> = {
             let mut q = inner.early_requests.lock();
@@ -734,7 +533,6 @@ impl AgentManager {
         drop(pending_map);
 
         if pending.handle_id != req.handle_id {
-            // put back
             self.inner
                 .pending
                 .lock()
@@ -747,7 +545,6 @@ impl AgentManager {
             match agents.get(&req.handle_id).map(|a| Arc::clone(&a.client)) {
                 Some(c) => c,
                 None => {
-                    // Put back so a transient race does not drop the request forever.
                     self.inner
                         .pending
                         .lock()
@@ -757,110 +554,39 @@ impl AgentManager {
             }
         };
 
-        let allow = match pending.kind {
-            PermissionKind::PlanApproval => is_plan_approve_option(&req.option_id),
-            PermissionKind::UserQuestion => is_user_question_accept_option(&req.option_id),
-            _ => is_allow_option(&req.option_id, &pending.options),
+        let allow = match rpc_handler::find_handler_by_kind(&self.inner.handlers, pending.kind) {
+            Some(handler) => handler.is_allow_option(&req.option_id),
+            None => is_allow_option(&req.option_id, &pending.options),
         };
 
-        let delivery = match pending.kind {
-            PermissionKind::ToolPermission => {
+        let delivery = match rpc_handler::find_handler_by_kind(&self.inner.handlers, pending.kind) {
+            Some(handler) => {
+                match handler.build_response(
+                    &pending,
+                    &req.option_id,
+                    allow,
+                    req.comments.as_deref(),
+                    req.payload.as_ref(),
+                ) {
+                    Ok(action) => Self::send_action(&client, &pending.request_id, action),
+                    Err(msg) => client
+                        .respond_error(&pending.request_id, -32000, &msg)
+                        .map_err(|e| e.to_string()),
+                }
+            }
+            None => {
                 if allow {
-                    client.respond_result(
-                        &pending.request_id,
-                        json!({
-                            "outcome": {
-                                "outcome": "selected",
-                                "optionId": req.option_id,
-                            }
-                        }),
-                    )
+                    client
+                        .respond_result(&pending.request_id, Value::Null)
+                        .map_err(|e| e.to_string())
                 } else {
-                    // Prefer reject option id from request; fall back
-                    let reject_id = pick_reject_option(&pending.options, &req.option_id);
-                    client.respond_result(
-                        &pending.request_id,
-                        json!({
-                            "outcome": {
-                                "outcome": "selected",
-                                "optionId": reject_id,
-                            }
-                        }),
-                    )
-                }
-            }
-            PermissionKind::FsWrite => {
-                if allow {
-                    let path = pending
-                        .raw_params
-                        .get("path")
-                        .and_then(|p| p.as_str())
-                        .unwrap_or("");
-                    let content = pending
-                        .raw_params
-                        .get("content")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or("");
-                    match write_text_file(path, content) {
-                        Ok(()) => client.respond_result(&pending.request_id, Value::Null),
-                        Err(e) => client.respond_error(&pending.request_id, -32000, &e),
-                    }
-                } else {
-                    client.respond_error(
-                        &pending.request_id,
-                        -32000,
-                        "User denied file write in MarsBuild",
-                    )
-                }
-            }
-            PermissionKind::FsRead => {
-                if allow {
-                    let path = pending
-                        .raw_params
-                        .get("path")
-                        .and_then(|p| p.as_str())
-                        .unwrap_or("");
-                    match read_text_file(
-                        path,
-                        pending.raw_params.get("line"),
-                        pending.raw_params.get("limit"),
-                    ) {
-                        Ok(content) => client
-                            .respond_result(&pending.request_id, json!({ "content": content })),
-                        Err(e) => client.respond_error(&pending.request_id, -32000, &e),
-                    }
-                } else {
-                    client.respond_error(
-                        &pending.request_id,
-                        -32000,
-                        "User denied file read in MarsBuild",
-                    )
-                }
-            }
-            PermissionKind::PlanApproval => {
-                let comments = req.comments.as_deref().unwrap_or("");
-                match resolve_plan_approval_response(&req.option_id, comments) {
-                    // Upstream ExitPlanModeExtResponse: approved | cancelled | abandoned
-                    // (all normal JSON-RPC results — cancelled is NOT an RPC error).
-                    Ok(result) => client.respond_result(&pending.request_id, result),
-                    Err(message) => client.respond_error(&pending.request_id, -32000, &message),
-                }
-            }
-            PermissionKind::UserQuestion => {
-                match resolve_user_question_response(&req.option_id, req.payload.as_ref()) {
-                    Ok(result) => client.respond_result(&pending.request_id, result),
-                    Err(message) => client.respond_error(&pending.request_id, -32000, &message),
-                }
-            }
-            PermissionKind::Other => {
-                if allow {
-                    client.respond_result(&pending.request_id, Value::Null)
-                } else {
-                    client.respond_error(
-                        &pending.request_id,
-                        -32000,
-                        "User denied request in MarsBuild",
-                    )
+                    client
+                        .respond_error(
+                            &pending.request_id,
+                            -32000,
+                            "User denied request in MarsBuild",
+                        )
+                        .map_err(|e| e.to_string())
                 }
             }
         };
@@ -884,8 +610,6 @@ impl AgentManager {
                     .lock()
                     .insert(req.request_key.clone(), pending);
             } else if let Ok(value) = serde_json::to_value(&pending) {
-                // Transport shutdown may race this response after the request was
-                // temporarily removed from the map, so explicitly clear the UI.
                 Self::emit(
                     &self.inner,
                     "agent-permission-resolved",
@@ -899,7 +623,6 @@ impl AgentManager {
             return Err(format!("failed to deliver permission response: {error}"));
         }
 
-        // Update counts / status (recompute under agents lock to avoid stale counts)
         {
             let mut agents = self.inner.agents.lock();
             let count = self
@@ -1009,9 +732,6 @@ impl AgentManager {
         }
         Self::emit_status(&self.inner, &info);
 
-        // Activate plan (or other session mode) before the initial prompt so
-        // the first turn runs under plan constraints. Prefixing `/plan` in the
-        // prompt text is not enough over ACP.
         if let Some(mode_id) = req
             .session_mode_id
             .as_deref()
@@ -1019,7 +739,6 @@ impl AgentManager {
             .filter(|s| !s.is_empty())
         {
             if let Err(e) = client.session_set_mode(&session_id, mode_id) {
-                // Non-fatal: still allow the session; UI keeps local Pending.
                 eprintln!("[marsbuild] session/set_mode({mode_id}) after spawn failed: {e}");
             }
         }
@@ -1051,7 +770,6 @@ impl AgentManager {
             }
         }
 
-        // Explicit request wins; otherwise restore this task's saved mode.
         let permission_mode = match (req.permission_mode, req.always_approve) {
             (Some(m), _) => m,
             (None, Some(true)) => PermissionMode::BypassPermissions,
@@ -1152,7 +870,6 @@ impl AgentManager {
     ) {
         {
             let mut agents = self.inner.agents.lock();
-            // Recompute from pending map so we don't race a just-enqueued permission.
             let pending_count = self
                 .inner
                 .pending
@@ -1226,6 +943,20 @@ impl AgentManager {
 
     pub fn stop(&self, handle_id: &str) -> Result<ManagedAgentInfo, String> {
         self.inner.shell_stream.clear_handle(handle_id);
+
+        let session_id = {
+            let agents = self.inner.agents.lock();
+            agents
+                .get(handle_id)
+                .and_then(|a| a.info.session_id.clone())
+        };
+
+        if let Some(ref sid) = session_id {
+            let agents = self.inner.agents.lock();
+            if let Some(agent) = agents.get(handle_id) {
+                let _ = agent.client.session_cancel(sid, "user");
+            }
+        }
 
         let cancelled: Vec<PendingPermission> = {
             let mut pending = self.inner.pending.lock();

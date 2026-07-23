@@ -1,13 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  agentSlashForPermissionTransition,
   applyAgentModeUpdate,
   applySessionModeChange,
   applySessionModeToPrompt,
-  canSendModeSlash,
   cycleSessionMode,
   displaySessionMode,
-  permissionRing,
   sessionModeFromPermission,
 } from "./sessionMode";
 
@@ -127,49 +124,4 @@ describe("planArmed + permission model", () => {
   });
 });
 
-describe("agentSlashForPermissionTransition", () => {
-  it("maps ring transitions to Grok toggle slashes", () => {
-    expect(agentSlashForPermissionTransition("default", "auto")).toBe("/auto");
-    expect(
-      agentSlashForPermissionTransition("default", "bypassPermissions"),
-    ).toBe("/always-approve");
-    expect(agentSlashForPermissionTransition("auto", "bypassPermissions")).toBe(
-      "/always-approve",
-    );
-    expect(agentSlashForPermissionTransition("bypassPermissions", "auto")).toBe(
-      "/auto",
-    );
-    expect(agentSlashForPermissionTransition("auto", "default")).toBe("/auto");
-    expect(
-      agentSlashForPermissionTransition("bypassPermissions", "default"),
-    ).toBe("/always-approve");
-  });
 
-  it("skips no-ops and fine-grained-only moves", () => {
-    expect(agentSlashForPermissionTransition("default", "acceptEdits")).toBe(
-      null,
-    );
-    expect(agentSlashForPermissionTransition("acceptEdits", "dontAsk")).toBe(
-      null,
-    );
-    expect(agentSlashForPermissionTransition("auto", "auto")).toBe(null);
-  });
-});
-
-describe("permissionRing + canSendModeSlash", () => {
-  it("collapses fine-grained to ask", () => {
-    expect(permissionRing("default")).toBe("ask");
-    expect(permissionRing("acceptEdits")).toBe("ask");
-    expect(permissionRing("dontAsk")).toBe("ask");
-    expect(permissionRing("auto")).toBe("auto");
-    expect(permissionRing("bypassPermissions")).toBe("yolo");
-  });
-
-  it("treats ready as the only idle status for mode-related gates", () => {
-    expect(canSendModeSlash("ready")).toBe(true);
-    expect(canSendModeSlash("running")).toBe(false);
-    expect(canSendModeSlash("awaitingPermission")).toBe(false);
-    expect(canSendModeSlash("stopped")).toBe(false);
-    expect(canSendModeSlash(null)).toBe(false);
-  });
-});

@@ -250,6 +250,12 @@ impl AcpClient {
                 "clientCapabilities": {
                     "fs": { "readTextFile": true, "writeTextFile": true },
                     "terminal": false,
+                    // Meta capabilities aligned with Grok pager.
+                    "meta": {
+                        "x.ai/incrementalBashOutput": true,
+                        "x.ai/bashOutputNoColor": true,
+                        "x.ai/hunkTracker": { "mode": "agent_only" },
+                    }
                 }
             }),
             Duration::from_secs(30),
@@ -302,6 +308,33 @@ impl AcpClient {
                 "modeId": mode_id,
             }),
             Duration::from_secs(30),
+        )
+    }
+
+    /// Send a JSON-RPC notification (no `id`, no response expected).
+    pub fn notify(&self, method: &str, params: Value) -> Result<()> {
+        let msg = json!({
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+        });
+        let mut stdin = self.stdin.lock();
+        writeln!(stdin, "{msg}")?;
+        stdin.flush()?;
+        Ok(())
+    }
+
+    /// ACP `session/cancel` — cancel in-flight turn gracefully.
+    ///
+    /// This is a notification (no response). The agent cancels the current turn,
+    /// flushes hunks, and remains alive for future prompts.
+    pub fn session_cancel(&self, session_id: &str, reason: &str) -> Result<()> {
+        self.notify(
+            "session/cancel",
+            json!({
+                "sessionId": session_id,
+                "reason": reason,
+            }),
         )
     }
 

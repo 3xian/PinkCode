@@ -49,3 +49,6 @@ _win_probe*
 # Reasonix
 .reasonix/
 
+# Agent instructions
+AGENTS.md
+

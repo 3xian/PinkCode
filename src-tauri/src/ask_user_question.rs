@@ -30,10 +30,6 @@ pub const OPT_ACCEPT: &str = "accepted";
 pub const OPT_SKIP_INTERVIEW: &str = "skip_interview";
 pub const OPT_CHAT_ABOUT_THIS: &str = "chat_about_this";
 
-pub fn is_ask_user_question_method(method: &str) -> bool {
-    method == "x.ai/ask_user_question" || method.ends_with("/ask_user_question")
-}
-
 /// Build a pending user-question request from the reverse-RPC params.
 pub fn build_user_question(
     handle_id: &str,
@@ -448,12 +444,5 @@ mod tests {
         assert_eq!(skip, json!({ "outcome": "skip_interview" }));
         let chat = resolve_user_question_response(OPT_CHAT_ABOUT_THIS, None).unwrap();
         assert_eq!(chat, json!({ "outcome": "chat_about_this" }));
-    }
-
-    #[test]
-    fn method_match() {
-        assert!(is_ask_user_question_method("x.ai/ask_user_question"));
-        assert!(is_ask_user_question_method("_x.ai/ask_user_question"));
-        assert!(!is_ask_user_question_method("x.ai/exit_plan_mode"));
     }
 }

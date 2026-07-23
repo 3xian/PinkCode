@@ -55,10 +55,9 @@ UI label *“Ask before tools (Grok default / ask)”* means **②**, not **①*
 
 ### H→A
 
-- [ ] **`session/cancel` for Stop**  
-  Grok: cancel in-flight turn without killing the process (`acp_agent::cancel`).  
-  MarsBuild today: `stopAgent` → kill process.  
-  Also clear parked permission / plan / question reverse-RPCs cleanly.
+- [x] **`session/cancel` for Stop**  
+  `AcpClient::session_cancel` sends cancellation notification before `kill()`,  
+  allowing the agent to flush state cleanly.
 
 ### A→H — keep correct (regress; do not regress)
 
@@ -101,9 +100,9 @@ MarsBuild today: `fs` read/write true, `terminal: false`, **no** x.ai meta.
 
 Pager advertises (see pager `client_capabilities_meta`):
 
-- [ ] `x.ai/incrementalBashOutput: true` — better Shell streaming  
-- [ ] `x.ai/bashOutputNoColor: true` — cleaner Live output  
-- [ ] `x.ai/hunkTracker: { mode }` — Diff / hunk productization  
+- [x] `x.ai/incrementalBashOutput: true` — better Shell streaming  
+- [x] `x.ai/bashOutputNoColor: true` — cleaner Live output  
+- [x] `x.ai/hunkTracker: { mode }` — Diff / hunk productization  
 - [ ] `x.ai/gitHeadChanged: true` — Workspace HEAD follow  
 
 **Do not** advertise without implementing the reverse path:

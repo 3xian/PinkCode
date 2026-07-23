@@ -1,0 +1,2 @@
+[permissions]
+allow = ["Bash(git -C:*)", "Bash(git -C D:\\code\\MarsBuild tag --sort=-v:refname | Select-Object -First 5)"]

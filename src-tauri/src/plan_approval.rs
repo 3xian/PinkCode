@@ -37,10 +37,6 @@ pub const OPT_APPROVE: &str = "approve";
 pub const OPT_REQUEST_CHANGES: &str = "request-changes";
 pub const OPT_ABANDON: &str = "abandon";
 
-pub fn is_exit_plan_method(method: &str) -> bool {
-    method == "x.ai/exit_plan_mode" || method.ends_with("/exit_plan_mode")
-}
-
 /// Build a pending plan-approval request from the reverse-RPC params.
 pub fn build_plan_approval(
     handle_id: &str,
@@ -252,12 +248,5 @@ mod tests {
         let empty = resolve_plan_approval_response(OPT_REQUEST_CHANGES, "  ").unwrap();
         assert_eq!(empty["outcome"], "cancelled");
         assert!(empty.get("feedback").is_none());
-    }
-
-    #[test]
-    fn method_detection() {
-        assert!(is_exit_plan_method("x.ai/exit_plan_mode"));
-        assert!(is_exit_plan_method("_x.ai/exit_plan_mode"));
-        assert!(!is_exit_plan_method("session/request_permission"));
     }
 }

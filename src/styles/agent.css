@@ -47,18 +47,24 @@
   color: var(--warn);
 }
 
-.policy-presets {
+.policy-presets,
+.policy-unbind {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 0 12px 10px;
 }
 
+/* Shared card base */
+.policy-card,
+.perm-card {
+  border: none;
+  border-radius: 0;
+  background: var(--bg-elevated);
+}
+
 .policy-card {
   text-align: left;
-  border: none;
-  background: var(--bg-elevated);
-  border-radius: 0;
   padding: 8px 10px;
 }
 
@@ -94,13 +100,6 @@
   margin-top: 8px;
 }
 
-.policy-unbind {
-  padding: 0 12px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 .policy-bindings {
   padding: 0 14px 10px;
 }
@@ -113,7 +112,12 @@
   padding: 4px 0;
 }
 
-.binding-name {
+/* Text truncation — shared */
+.binding-name,
+.plan-approval-path,
+.slash-menu-desc,
+.slash-menu-hint-arg,
+.prompt-chip-value {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -173,11 +177,19 @@
   overflow: hidden;
 }
 
-.shell-card-top {
+/* Shared flex-wrap row */
+.shell-card-top,
+.perm-card-top,
+.policy-context-source,
+.drag-dialog-header,
+.drag-dialog-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
   align-items: center;
+  gap: 8px;
+}
+
+.shell-card-top {
   padding: 0;
 }
 
@@ -281,10 +293,15 @@
   overflow: auto;
 }
 
-.perm-gate-header {
+/* Shared flex-center */
+.perm-gate-header,
+.policy-name {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.perm-gate-header {
   margin-bottom: 8px;
   font-size: 12px;
 }
@@ -310,65 +327,167 @@
   gap: 8px;
 }
 
-/* Grok-aligned plan approval modal (x.ai/exit_plan_mode) */
-.plan-approval-overlay {
+.perm-card {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+
+.perm-card.risk-high {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+.perm-card.risk-low {
+  box-shadow: inset 3px 0 0 var(--live);
+}
+
+.risk-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 0;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.risk-badge.risk-high {
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+
+.risk-badge.risk-medium {
+  color: var(--warn);
+}
+
+.risk-badge.risk-low {
+  color: var(--live);
+  background: var(--live-dim);
+}
+
+.perm-kind {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.perm-title {
+  font-weight: 650;
+}
+
+.perm-detail {
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.perm-preview {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 0;
+  background: #080a0e;
+  border: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.perm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* ── Drag-dialog skeleton ───────────────────────────────────────
+   Shared by PlanApprovalModal and UserQuestionModal.
+   Each variant overrides colours / width via its own modifier class. */
+.drag-dialog-overlay {
   position: fixed;
   inset: 0;
   z-index: 80;
-  /* Dim whole app; dialog is the interactive surface */
   background: rgba(0, 0, 0, 0.48);
   pointer-events: auto;
 }
 
-.plan-approval-dialog {
+.drag-dialog {
   position: fixed;
   /* CSS-centered until user drags (then .is-positioned + inline left/top) */
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: min(820px, calc(100vw - 32px));
   max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px);
   display: flex;
   flex-direction: column;
   gap: 0;
   background: var(--bg-elevated);
-  border: 1px solid rgba(167, 139, 250, 0.35);
-  /* Left accent + floating shadow */
-  box-shadow:
-    inset 3px 0 0 var(--kind-plan, #a78bfa),
-    0 0 0 1px rgba(0, 0, 0, 0.35),
-    0 28px 80px rgba(0, 0, 0, 0.55);
 }
 
-.plan-approval-dialog.is-positioned {
+.drag-dialog.is-positioned {
   transform: none;
 }
 
-.plan-approval-drag-handle {
+.drag-dialog-handle {
   flex-shrink: 0;
   padding: 12px 16px 10px;
   cursor: grab;
   user-select: none;
   touch-action: none;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.drag-dialog-handle:active {
+  cursor: grabbing;
+}
+
+.drag-dialog-header {
+  font-size: 13px;
+}
+
+.drag-dialog-body {
+  flex: 1 1 auto;
+  min-height: 120px;
+  max-height: min(56vh, 520px);
+  overflow: auto;
+  padding: 14px 16px;
+  background: var(--bg);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.drag-dialog-footer {
+  flex-shrink: 0;
+  padding: 12px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-elevated);
+}
+
+/* ── Plan approval (x.ai/exit_plan_mode) ─────────────────────── */
+.plan-approval-dialog {
+  width: min(820px, calc(100vw - 32px));
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  box-shadow:
+    inset 3px 0 0 var(--kind-plan, #a78bfa),
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 28px 80px rgba(0, 0, 0, 0.55);
+}
+
+.plan-approval-drag-handle {
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--kind-plan, #a78bfa) 10%, transparent),
     transparent
   );
-}
-
-.plan-approval-drag-handle:active {
-  cursor: grabbing;
-}
-
-.plan-approval-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
 }
 
 .plan-approval-grip {
@@ -388,20 +507,6 @@
   margin-top: 6px;
   font-size: 11px;
   color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plan-approval-body {
-  flex: 1 1 auto;
-  min-height: 120px;
-  max-height: min(56vh, 520px);
-  overflow: auto;
-  padding: 14px 16px;
-  background: var(--bg);
-  font-size: 12px;
-  line-height: 1.45;
 }
 
 .plan-approval-empty {
@@ -409,35 +514,19 @@
   font-size: 12px;
 }
 
-.plan-approval-footer {
-  flex-shrink: 0;
-  padding: 12px 16px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: var(--bg-elevated);
-}
-
 .plan-approval-comments textarea {
   min-height: 52px;
   resize: vertical;
 }
 
-.plan-approval-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-/* Ask-user-question modal (x.ai/ask_user_question) */
+/* ── Ask-user modal (x.ai/ask_user_question) ─────────────────── */
 .user-question-dialog {
+  width: min(640px, calc(100vw - 32px));
   border-color: rgba(110, 168, 255, 0.35);
   box-shadow:
     inset 3px 0 0 var(--accent, #6ea8ff),
     0 0 0 1px rgba(0, 0, 0, 0.35),
     0 28px 80px rgba(0, 0, 0, 0.55);
-  width: min(640px, calc(100vw - 32px));
 }
 
 .user-question-drag-handle {
@@ -629,94 +718,6 @@ button.user-question-option:hover:not(:disabled),
   min-height: 1em;
 }
 
-.perm-card {
-  border: none;
-  border-radius: 0;
-  background: var(--bg-elevated);
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  box-shadow: inset 3px 0 0 var(--warn);
-}
-
-.perm-card.risk-high {
-  box-shadow: inset 3px 0 0 var(--danger);
-}
-
-.perm-card.risk-low {
-  box-shadow: inset 3px 0 0 var(--live);
-}
-
-.perm-card-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.risk-badge {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 0;
-  background: var(--bg-hover);
-  color: var(--text-muted);
-}
-
-.risk-badge.risk-high {
-  color: var(--danger);
-  background: var(--danger-dim);
-}
-
-.risk-badge.risk-medium {
-  color: var(--warn);
-}
-
-.risk-badge.risk-low {
-  color: var(--live);
-  background: var(--live-dim);
-}
-
-.perm-kind {
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.perm-title {
-  font-weight: 650;
-}
-
-.perm-detail {
-  font-size: 12px;
-  color: var(--text-muted);
-  word-break: break-all;
-}
-
-.perm-preview {
-  margin: 0;
-  padding: 8px 10px;
-  border-radius: 0;
-  background: #080a0e;
-  border: none;
-  font-family: var(--mono);
-  font-size: 11px;
-  max-height: 120px;
-  overflow: auto;
-  white-space: pre-wrap;
-}
-
-.perm-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
 /* Prompt bar — single composer card: textarea + bottom toolbar */
 .prompt-bar {
   padding: 10px 14px 12px;
@@ -788,24 +789,6 @@ button.user-question-option:hover:not(:disabled),
   font-size: 12px;
   font-weight: 600;
   color: var(--accent);
-}
-
-.slash-menu-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.slash-menu-hint-arg {
-  font-family: var(--mono);
-  font-size: 10px;
-  opacity: 0.75;
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .prompt-composer:focus-within {
@@ -967,13 +950,6 @@ button.user-question-option:hover:not(:disabled),
   opacity: 0.95;
 }
 
-.prompt-chip-value {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  letter-spacing: 0.01em;
-}
-
 .prompt-chip-caret {
   flex-shrink: 0;
   font-size: 9px;
@@ -1078,4 +1054,3 @@ button.user-question-option:hover:not(:disabled),
     transform: none;
   }
 }
-

@@ -45,49 +45,11 @@ export function planPathOf(item: PendingPermission): string {
 }
 
 /**
- * Questions already normalized by the host; tolerate a thin fallback for
- * older payloads that only nest under `source`.
+ * Questions already normalized by the Rust-side `normalize_questions`.
  */
 export function questionsOf(item: PendingPermission): AgentQuestion[] {
-  const raw = item.rawParams as {
-    questions?: unknown;
-    source?: { questions?: unknown };
-  } | null;
-  const list = Array.isArray(raw?.questions)
-    ? raw!.questions
-    : Array.isArray(raw?.source?.questions)
-      ? raw!.source!.questions
-      : [];
-
-  return list.map((q) => {
-    const obj = (q ?? {}) as Record<string, unknown>;
-    const optionsRaw = Array.isArray(obj.options) ? obj.options : [];
-    const options: AgentQuestionOption[] = optionsRaw
-      .map((o) => {
-        if (typeof o === "string") {
-          return { label: o, description: "", preview: null };
-        }
-        const opt = (o ?? {}) as Record<string, unknown>;
-        return {
-          label: String(opt.label ?? opt.name ?? opt.value ?? ""),
-          description: String(opt.description ?? opt.desc ?? ""),
-          preview:
-            typeof opt.preview === "string"
-              ? opt.preview
-              : opt.preview == null
-                ? null
-                : String(opt.preview),
-        };
-      })
-      .filter((o) => o.label.trim().length > 0);
-
-    return {
-      header: String(obj.header ?? obj.title ?? ""),
-      question: String(obj.question ?? obj.text ?? obj.prompt ?? ""),
-      multiSelect: Boolean(obj.multiSelect ?? obj.multi_select),
-      options,
-    };
-  });
+  const raw = item.rawParams as { questions?: AgentQuestion[] } | null;
+  return raw?.questions ?? [];
 }
 
 export function previewContent(item: PendingPermission): string | null {

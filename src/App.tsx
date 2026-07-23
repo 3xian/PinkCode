@@ -529,11 +529,8 @@ function App() {
     const next = applySessionModeChange(mode, previousPerm);
     const planChanged = next.planArmed !== previousPlan;
 
-    // Optimistic plan arming. Leaving Plan also drops Active.
     if (sessionId && planChanged) {
-      planMode.setArmedLocal(sessionId, next.planArmed, {
-        active: next.planArmed ? undefined : false,
-      });
+      planMode.setArmedLocal(sessionId, next.planArmed);
     }
 
     const targetPerm = next.permission;
@@ -581,9 +578,7 @@ function App() {
       }
     } catch (e) {
       if (sessionId) {
-        planMode.setArmedLocal(sessionId, previousPlan, {
-          active: previousPlan ? undefined : false,
-        });
+        planMode.setArmedLocal(sessionId, previousPlan);
         setTaskPermissionModes((prev) => ({
           ...prev,
           [sessionId]: previousPerm,

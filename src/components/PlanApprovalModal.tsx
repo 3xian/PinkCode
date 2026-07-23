@@ -30,23 +30,23 @@ export function PlanApprovalModal({ item, busy, onResolve }: Props) {
   } = useDraggableDialog();
 
   return (
-    <div className="plan-approval-overlay" role="presentation">
+    <div className="drag-dialog-overlay" role="presentation">
       <div
         ref={dialogRef}
-        className={`plan-approval-dialog${pos ? " is-positioned" : ""}`}
+        className={`drag-dialog plan-approval-dialog${pos ? " is-positioned" : ""}`}
         style={dialogStyle}
         role="dialog"
         aria-modal="true"
         aria-labelledby={`plan-approval-title-${item.requestKey}`}
       >
         <div
-          className="plan-approval-drag-handle"
+          className="drag-dialog-handle plan-approval-drag-handle"
           onPointerDown={onDragPointerDown}
           onPointerMove={onDragPointerMove}
           onPointerUp={onDragPointerUp}
           onPointerCancel={onDragPointerUp}
         >
-          <div className="plan-approval-header">
+          <div className="drag-dialog-header">
             <span className="plan-approval-grip" aria-hidden title="Drag">
               ⋮⋮
             </span>
@@ -63,7 +63,7 @@ export function PlanApprovalModal({ item, busy, onResolve }: Props) {
           )}
         </div>
 
-        <div className="plan-approval-body">
+        <div className="drag-dialog-body">
           {planMarkdown.trim() ? (
             <Markdown className="compact">{planMarkdown}</Markdown>
           ) : (
@@ -74,7 +74,7 @@ export function PlanApprovalModal({ item, busy, onResolve }: Props) {
           )}
         </div>
 
-        <div className="plan-approval-footer">
+        <div className="drag-dialog-footer">
           <label className="plan-approval-comments field">
             <span>Comments (optional)</span>
             <textarea
@@ -85,7 +85,7 @@ export function PlanApprovalModal({ item, busy, onResolve }: Props) {
               onChange={(e) => setComments(e.target.value)}
             />
           </label>
-          <div className="perm-actions plan-approval-actions">
+          <div className="perm-actions drag-dialog-actions">
             <button
               type="button"
               className="btn primary"

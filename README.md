@@ -92,8 +92,7 @@ powershell -ExecutionPolicy Bypass -File scripts/windows-setup.ps1
 npm install
 npm run tauri:dev          # development
 npm run tauri:build        # local installer under src-tauri/target/release/bundle/
-npm run check              # frontend tests + production build
-cd src-tauri && cargo test # Rust tests
+npm run check              # frontend + Rust (fmt/clippy/test) — same as CI
 ```
 
 **Env (optional)**

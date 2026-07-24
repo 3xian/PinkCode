@@ -141,8 +141,8 @@ function TokenUsageChart({
         >
           <defs>
             <linearGradient id="tokenStroke" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#7c3aed" />
-              <stop offset="100%" stopColor="#a78bfa" />
+              <stop offset="0%" stopColor="var(--accent)" />
+              <stop offset="100%" stopColor="var(--title-selected)" />
             </linearGradient>
           </defs>
           {chart && (

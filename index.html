@@ -6,14 +6,17 @@
     <link rel="apple-touch-icon" href="/logo-512.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PinkCode</title>
-    <!-- Paint immediately so cold start is not a pure black window -->
+    <!--
+      Cold-start paint before CSS loads. Keep in sync with tokens.css Dawn:
+      base #faf4ed, subtle #797593, highlightHigh #cecacd, rose #d7827e
+    -->
     <style>
       html,
       body {
         margin: 0;
         height: 100%;
-        background: #0b0d12;
-        color: #8b93a7;
+        background: #faf4ed;
+        color: #797593;
         font-family: "Segoe UI", system-ui, sans-serif;
       }
       #root {
@@ -27,7 +30,7 @@
         align-items: center;
         justify-content: center;
         gap: 10px;
-        background: #0b0d12;
+        background: #faf4ed;
         z-index: 9999;
         pointer-events: none;
         transition: opacity 0.2s ease;
@@ -38,8 +41,8 @@
       #boot-splash .mark {
         width: 28px;
         height: 28px;
-        border: 2px solid #2e3545;
-        border-top-color: #6ea8ff;
+        border: 2px solid #cecacd;
+        border-top-color: #d7827e;
         border-radius: 50%;
         animation: boot-spin 0.7s linear infinite;
       }

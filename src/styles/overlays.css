@@ -2,7 +2,7 @@
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: color-mix(in srgb, var(--text) 32%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -16,7 +16,7 @@
   border: none;
   border-radius: 0;
   padding: 16px 18px 18px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -83,7 +83,7 @@
   font: inherit;
   outline: none;
   resize: vertical;
-  color-scheme: dark;
+  color-scheme: light;
   box-sizing: border-box;
 }
 
@@ -149,7 +149,7 @@
   word-break: break-word;
   background: var(--bg);
   color: var(--text-muted);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
 }
 
 /* Shared compact markdown density (modals, dense panels). */
@@ -181,7 +181,7 @@
   margin: 0.15em 0;
 }
 .md.compact a {
-  color: var(--accent, #6ea8ff);
+  color: var(--link);
 }
 .md.compact .md-table-wrap {
   margin: 0 0 0.55em;
@@ -198,13 +198,14 @@
 
 .update-progress-track {
   height: 6px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--hl-low);
+  border: 1px solid var(--border);
   overflow: hidden;
 }
 
 .update-progress-fill {
   height: 100%;
-  background: var(--accent, #6ea8ff);
+  background: linear-gradient(90deg, var(--accent), var(--title-selected));
   transition: width 0.15s ease;
 }
 

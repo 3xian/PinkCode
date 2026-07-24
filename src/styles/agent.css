@@ -70,7 +70,7 @@
 
 .policy-card.active {
   background: var(--accent-dim);
-  box-shadow: inset 0 0 0 1px rgba(110, 168, 255, 0.35);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .policy-name {
@@ -245,7 +245,7 @@
   white-space: pre-wrap;
   max-height: 280px;
   overflow: auto;
-  color: #c8d0e0;
+  color: var(--text);
 }
 
 .shell-collapse-bar {
@@ -284,8 +284,8 @@
 .perm-gate {
   background: linear-gradient(
     180deg,
-    rgba(255, 107, 122, 0.12) 0%,
-    rgba(15, 18, 24, 0.95) 100%
+    var(--danger-dim) 0%,
+    color-mix(in srgb, var(--bg) 95%, transparent) 100%
   );
   padding: 10px 14px 12px;
   flex-shrink: 0;
@@ -389,8 +389,8 @@
   margin: 0;
   padding: 8px 10px;
   border-radius: 0;
-  background: #080a0e;
-  border: none;
+  background: var(--hl-low);
+  border: 1px solid var(--border);
   font-family: var(--mono);
   font-size: 11px;
   max-height: 120px;
@@ -412,7 +412,7 @@
   position: fixed;
   inset: 0;
   z-index: 80;
-  background: rgba(0, 0, 0, 0.48);
+  background: color-mix(in srgb, var(--text) 32%, transparent);
   pointer-events: auto;
 }
 
@@ -440,7 +440,7 @@
   cursor: grab;
   user-select: none;
   touch-action: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border);
 }
 
 .drag-dialog-handle:active {
@@ -468,24 +468,23 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--border);
   background: var(--bg-elevated);
 }
 
 /* ── Plan approval (x.ai/exit_plan_mode) ─────────────────────── */
 .plan-approval-dialog {
   width: min(820px, calc(100vw - 32px));
-  border: 1px solid rgba(167, 139, 250, 0.35);
+  border: 1px solid color-mix(in srgb, var(--kind-plan) 40%, var(--border));
   box-shadow:
-    inset 3px 0 0 var(--kind-plan, #a78bfa),
-    0 0 0 1px rgba(0, 0, 0, 0.35),
-    0 28px 80px rgba(0, 0, 0, 0.55);
+    inset 3px 0 0 var(--kind-plan),
+    var(--shadow-lg);
 }
 
 .plan-approval-drag-handle {
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--kind-plan, #a78bfa) 10%, transparent),
+    color-mix(in srgb, var(--kind-plan) 10%, transparent),
     transparent
   );
 }
@@ -499,7 +498,7 @@
 }
 
 .plan-approval-mark {
-  color: var(--kind-plan, #a78bfa);
+  color: var(--kind-plan);
   font-size: 12px;
 }
 
@@ -522,17 +521,16 @@
 /* ── Ask-user modal (x.ai/ask_user_question) ─────────────────── */
 .user-question-dialog {
   width: min(640px, calc(100vw - 32px));
-  border-color: rgba(110, 168, 255, 0.35);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   box-shadow:
-    inset 3px 0 0 var(--accent, #6ea8ff),
-    0 0 0 1px rgba(0, 0, 0, 0.35),
-    0 28px 80px rgba(0, 0, 0, 0.55);
+    inset 3px 0 0 var(--accent),
+    var(--shadow-lg);
 }
 
 .user-question-drag-handle {
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--accent, #6ea8ff) 10%, transparent),
+    color-mix(in srgb, var(--accent) 10%, transparent),
     transparent
   );
 }
@@ -546,8 +544,8 @@
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
-  color: var(--bg, #0c0f15);
-  background: var(--accent, #6ea8ff);
+  color: var(--on-accent);
+  background: var(--accent);
   line-height: 1;
 }
 
@@ -602,7 +600,7 @@
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background: color-mix(in srgb, var(--hl-low) 55%, transparent);
   color: var(--text);
   font: inherit;
   text-align: left;
@@ -614,18 +612,18 @@
 
 button.user-question-option:hover:not(:disabled),
 .user-question-option.selected {
-  border-color: color-mix(in srgb, var(--accent, #6ea8ff) 55%, var(--border));
-  background: color-mix(in srgb, var(--accent, #6ea8ff) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .user-question-option.selected {
-  box-shadow: inset 2px 0 0 var(--accent, #6ea8ff);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .user-question-option-mark {
   flex-shrink: 0;
   width: 1.1em;
-  color: var(--accent, #6ea8ff);
+  color: var(--accent);
   opacity: 0.9;
   line-height: 1.35;
 }
@@ -684,7 +682,7 @@ button.user-question-option:hover:not(:disabled),
 
 .user-question-other-input:focus {
   outline: none;
-  border-color: var(--accent, #6ea8ff);
+  border-color: var(--accent);
 }
 
 .user-question-preview {
@@ -692,7 +690,7 @@ button.user-question-option:hover:not(:disabled),
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background: color-mix(in srgb, var(--hl-low) 55%, transparent);
 }
 
 .user-question-preview-label {
@@ -721,7 +719,8 @@ button.user-question-option:hover:not(:disabled),
 /* Prompt bar — single composer card: textarea + bottom toolbar */
 .prompt-bar {
   padding: 10px 14px 12px;
-  background: #0c0f15;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -730,7 +729,7 @@ button.user-question-option:hover:not(:disabled),
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--border);
   box-shadow: 0 0 0 0 transparent;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
@@ -746,7 +745,7 @@ button.user-question-option:hover:not(:disabled),
   overflow-y: auto;
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
-  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-md);
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -772,7 +771,7 @@ button.user-question-option:hover:not(:disabled),
   color: var(--text);
   font: inherit;
   cursor: pointer;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border);
 }
 
 .slash-menu-item:last-child {
@@ -821,7 +820,7 @@ button.user-question-option:hover:not(:disabled),
   justify-content: space-between;
   gap: 10px;
   padding: 6px 8px 8px;
-  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+  border-top: 1px solid var(--border);
 }
 
 /* Mode + Permissions chip pair */
@@ -835,8 +834,8 @@ button.user-question-option:hover:not(:disabled),
 
 .prompt-chip {
   --chip-fg: var(--text);
-  --chip-border: var(--border-strong, rgba(255, 255, 255, 0.12));
-  --chip-bg: rgba(255, 255, 255, 0.03);
+  --chip-border: var(--border-strong);
+  --chip-bg: rgb(var(--rp-overlay-rgb) / 0.65);
   --chip-glow: transparent;
   --chip-accent: var(--text-muted);
   position: relative;
@@ -848,34 +847,34 @@ button.user-question-option:hover:not(:disabled),
 
 .prompt-chip.accent-plan {
   --chip-accent: var(--kind-plan);
-  --chip-border: rgba(167, 139, 250, 0.45);
+  --chip-border: color-mix(in srgb, var(--kind-plan) 45%, transparent);
   --chip-bg: var(--kind-plan-dim);
-  --chip-glow: rgba(167, 139, 250, 0.18);
-  --chip-fg: #e9ddff;
+  --chip-glow: color-mix(in srgb, var(--kind-plan) 18%, transparent);
+  --chip-fg: var(--text);
 }
 
 .prompt-chip.accent-auto {
   --chip-accent: var(--kind-shell);
-  --chip-border: rgba(45, 212, 191, 0.4);
+  --chip-border: color-mix(in srgb, var(--kind-shell) 40%, transparent);
   --chip-bg: var(--kind-shell-dim);
-  --chip-glow: rgba(45, 212, 191, 0.14);
-  --chip-fg: #c7fff6;
+  --chip-glow: color-mix(in srgb, var(--kind-shell) 14%, transparent);
+  --chip-fg: var(--text);
 }
 
 .prompt-chip.accent-yolo {
   --chip-accent: var(--warn);
-  --chip-border: rgba(240, 180, 41, 0.45);
+  --chip-border: color-mix(in srgb, var(--warn) 45%, transparent);
   --chip-bg: var(--kind-event-dim);
-  --chip-glow: rgba(240, 180, 41, 0.16);
-  --chip-fg: #ffe6a8;
+  --chip-glow: color-mix(in srgb, var(--warn) 16%, transparent);
+  --chip-fg: var(--warn);
 }
 
 .prompt-chip.accent-danger {
   --chip-accent: var(--danger);
-  --chip-border: rgba(255, 107, 122, 0.4);
+  --chip-border: color-mix(in srgb, var(--danger) 40%, transparent);
   --chip-bg: var(--danger-dim);
-  --chip-glow: rgba(255, 107, 122, 0.12);
-  --chip-fg: #ffc9cf;
+  --chip-glow: color-mix(in srgb, var(--danger) 12%, transparent);
+  --chip-fg: var(--accent);
 }
 
 .prompt-chip-label {
@@ -899,10 +898,10 @@ button.user-question-option:hover:not(:disabled),
   border: 1px solid var(--chip-border);
   border-radius: 999px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 60%),
+    linear-gradient(180deg, rgb(var(--spec-rgb) / 0.45), transparent 60%),
     var(--chip-bg);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgb(var(--spec-rgb) / 0.5),
     0 0 0 0 var(--chip-glow);
   color: var(--chip-fg);
   font: inherit;
@@ -919,21 +918,21 @@ button.user-question-option:hover:not(:disabled),
 .prompt-chip-trigger:hover:not(:disabled) {
   border-color: var(--chip-accent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    var(--inset-spec),
     0 0 0 3px var(--chip-glow);
 }
 
 .prompt-chip-trigger:focus-visible {
   border-color: var(--chip-accent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    var(--inset-spec),
     0 0 0 2px var(--chip-accent);
 }
 
 .prompt-chip.open .prompt-chip-trigger {
   border-color: var(--chip-accent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    var(--inset-spec),
     0 0 0 3px var(--chip-glow);
 }
 
@@ -963,7 +962,7 @@ button.user-question-option:hover:not(:disabled),
   padding: 1px 5px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--hl-low);
   color: var(--text-muted);
   font-family: inherit;
   font-size: 10px;
@@ -985,8 +984,8 @@ button.user-question-option:hover:not(:disabled),
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
   box-shadow:
-    0 -10px 28px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.03);
+    var(--shadow-md),
+    0 0 0 1px var(--border);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1014,7 +1013,7 @@ button.user-question-option:hover:not(:disabled),
 }
 
 .prompt-chip-option.selected {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--hl-low);
   box-shadow: inset 2px 0 0 var(--chip-accent);
 }
 

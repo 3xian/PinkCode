@@ -119,7 +119,7 @@ describe("live timeline reducer", () => {
     );
     expect(items[0].toolStatus).toBe("completed");
     expect(items[0].title).toBe(
-      "Read `D:\\code\\PinkCode\\src\\utils\\format.ts` ☑️",
+      "Read `D:\\code\\PinkCode\\src\\utils\\format.ts` ✓",
     );
     expect(items[0].title).not.toMatch(/call-f8b05138/);
     expect(items[0].detail ?? "").not.toMatch(/^call-/);

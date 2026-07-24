@@ -83,7 +83,7 @@
 .pill.danger {
   color: var(--danger);
   background: var(--danger-dim);
-  border-color: rgba(255, 107, 122, 0.28);
+  border-color: rgb(var(--danger-rgb) / 0.28);
 }
 
 .metric-grid {
@@ -199,7 +199,7 @@
 .timeline-filter-chip {
   --chip-fg: var(--text-muted);
   --chip-bg: transparent;
-  --chip-bg-active: rgba(255, 255, 255, 0.12);
+  --chip-bg-active: var(--kind-plan-dim);
   --chip-fg-active: var(--text);
   border: none;
   background: var(--chip-bg);
@@ -246,46 +246,46 @@
 .timeline-filter-chip.filter-user {
   --chip-fg: var(--kind-user);
   --chip-bg-active: color-mix(in srgb, var(--kind-user) 38%, transparent);
-  --chip-fg-active: #f3ebff;
+  --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-agent {
   --chip-fg: var(--kind-agent);
   --chip-bg-active: color-mix(in srgb, var(--kind-agent) 36%, transparent);
-  --chip-fg-active: #e8fff3;
+  --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-thought {
   --chip-fg: var(--kind-thought);
   --chip-bg-active: color-mix(in srgb, var(--kind-thought) 34%, transparent);
-  --chip-fg-active: #e8ebf2;
+  --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-tool {
   --chip-fg: var(--kind-tool);
   --chip-bg-active: color-mix(in srgb, var(--kind-tool) 38%, transparent);
-  --chip-fg-active: #eaf3ff;
+  --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-shell {
   --chip-fg: var(--kind-shell);
   --chip-bg-active: color-mix(in srgb, var(--kind-shell) 36%, transparent);
-  --chip-fg-active: #e6fffb;
+  --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-event {
   --chip-fg: var(--kind-event);
   --chip-bg-active: color-mix(in srgb, var(--kind-event) 38%, transparent);
-  --chip-fg-active: #fff6db;
+  --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-plan {
   --chip-fg: var(--kind-plan);
   --chip-bg-active: color-mix(in srgb, var(--kind-plan) 38%, transparent);
-  --chip-fg-active: #f3edff;
+  --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-unknown {
   --chip-fg: var(--kind-unknown);
   --chip-bg-active: color-mix(in srgb, var(--kind-unknown) 32%, transparent);
-  --chip-fg-active: #eef0f5;
+  --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-all {
   --chip-fg: var(--text-muted);
-  --chip-bg-active: rgba(255, 255, 255, 0.16);
+  --chip-bg-active: var(--kind-plan-dim);
   --chip-fg-active: var(--text);
 }
 
@@ -368,8 +368,8 @@
   margin: 0;
   /* Side edges of the group (1px hairline via box-shadow) */
   box-shadow:
-    inset 1px 0 0 rgba(255, 255, 255, 0.05),
-    inset -1px 0 0 rgba(255, 255, 255, 0.05);
+    inset 1px 0 0 var(--border),
+    inset -1px 0 0 var(--border);
 }
 
 /* —— Group start (first of a kind run, or single card) —— */
@@ -378,9 +378,9 @@
   border-top-right-radius: 12px;
   padding-top: 11px;
   box-shadow:
-    inset 1px 0 0 rgba(255, 255, 255, 0.05),
-    inset -1px 0 0 rgba(255, 255, 255, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    inset 1px 0 0 var(--border),
+    inset -1px 0 0 var(--border),
+    inset 0 1px 0 rgb(var(--spec-rgb) / 0.85);
 }
 
 /* —— Group end (last of a kind run, or single card) —— */
@@ -390,11 +390,11 @@
   padding-bottom: 11px;
   margin-bottom: 12px;
   box-shadow:
-    inset 1px 0 0 rgba(255, 255, 255, 0.05),
-    inset -1px 0 0 rgba(255, 255, 255, 0.05),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
-    0 6px 18px rgba(0, 0, 0, 0.34),
-    0 1px 0 rgba(0, 0, 0, 0.2);
+    inset 1px 0 0 var(--border),
+    inset -1px 0 0 var(--border),
+    inset 0 -1px 0 var(--border-strong),
+    var(--shadow-md),
+    var(--shadow-text-hairline);
 }
 
 /* Single card: full radius + full chrome (start + end rules both match) */
@@ -403,17 +403,17 @@
   padding-top: 11px;
   padding-bottom: 11px;
   box-shadow:
-    0 4px 14px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(255, 255, 255, 0.05);
+    var(--shadow-sm),
+    0 0 0 1px var(--border);
 }
 
 /* —— Middle / continue rows: soft seam, tighter padding —— */
 .tl-item.tl-stack-continue {
   padding-top: 7px;
   box-shadow:
-    inset 1px 0 0 rgba(255, 255, 255, 0.05),
-    inset -1px 0 0 rgba(255, 255, 255, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    inset 1px 0 0 var(--border),
+    inset -1px 0 0 var(--border),
+    inset 0 1px 0 color-mix(in srgb, var(--border) 70%, transparent);
 }
 
 .tl-item.tl-stack-has-next {
@@ -423,20 +423,20 @@
 /* Group start that continues: top chrome without drop shadow (shadow lives on end) */
 .tl-item:not(.tl-stack-continue).tl-stack-has-next {
   box-shadow:
-    inset 1px 0 0 rgba(255, 255, 255, 0.05),
-    inset -1px 0 0 rgba(255, 255, 255, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    inset 1px 0 0 var(--border),
+    inset -1px 0 0 var(--border),
+    inset 0 1px 0 rgb(var(--spec-rgb) / 0.85);
 }
 
 /* Continue + end: seam + outer bottom shadow */
 .tl-item.tl-stack-continue:not(.tl-stack-has-next) {
   box-shadow:
-    inset 1px 0 0 rgba(255, 255, 255, 0.05),
-    inset -1px 0 0 rgba(255, 255, 255, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
-    0 6px 18px rgba(0, 0, 0, 0.34),
-    0 1px 0 rgba(0, 0, 0, 0.2);
+    inset 1px 0 0 var(--border),
+    inset -1px 0 0 var(--border),
+    inset 0 1px 0 color-mix(in srgb, var(--border) 70%, transparent),
+    inset 0 -1px 0 var(--border-strong),
+    var(--shadow-md),
+    var(--shadow-text-hairline);
 }
 
 .tl-kind {
@@ -561,12 +561,13 @@
 }
 
 .tl-detail .md a {
-  color: var(--accent);
+  color: var(--link);
   text-decoration: none;
 }
 
 .tl-detail .md a:hover {
   text-decoration: underline;
+  color: var(--link-hover);
 }
 
 .tl-detail .md hr {
@@ -583,17 +584,18 @@
 .tl-detail .md .md-inline-code {
   font-family: var(--mono);
   font-size: 11.5px;
-  background: var(--bg);
+  background: var(--hl-low);
   padding: 1px 5px;
   border-radius: 0;
-  color: #c4d0e8;
+  color: var(--pine); /* RP-ish for code literals */
 }
 
 .tl-detail .md .md-pre {
   margin: 0.45em 0;
   padding: 8px 10px;
   border-radius: 0;
-  background: var(--bg);
+  background: var(--hl-low);
+  border: 1px solid var(--border);
   overflow-x: auto;
   font-family: var(--mono);
   font-size: 11.5px;
@@ -606,7 +608,7 @@
   font-size: inherit;
   background: none;
   padding: 0;
-  color: #c4d0e8;
+  color: var(--text);
 }
 
 /* GFM tables (remark-gfm) — scroll when wide, shared by timeline + compact md */
@@ -632,21 +634,21 @@
 }
 
 .md th {
-  background: var(--bg);
+  background: var(--hl-low);
   font-weight: 600;
   color: var(--text);
 }
 
 .md tr:nth-child(even) td {
-  background: rgba(255, 255, 255, 0.02);
+  background: color-mix(in srgb, var(--hl-low) 70%, transparent);
 }
 
-/* Kind tint: full card background (uses --kind-* tokens shared with filters) */
+/* Kind tint: wash into surface (Dawn cards, not flat base) */
 .tl-item.kind-tool {
   background: linear-gradient(
     135deg,
     var(--kind-tool-dim),
-    rgba(18, 21, 28, 0.92)
+    var(--bg-elevated)
   );
   color: var(--text);
 }
@@ -659,7 +661,7 @@
   background: linear-gradient(
     135deg,
     var(--kind-user-dim),
-    rgba(18, 21, 28, 0.92)
+    var(--bg-elevated)
   );
 }
 
@@ -671,7 +673,7 @@
   background: linear-gradient(
     135deg,
     var(--kind-agent-dim),
-    rgba(18, 21, 28, 0.92)
+    var(--bg-elevated)
   );
 }
 
@@ -683,19 +685,23 @@
   background: linear-gradient(
     135deg,
     var(--kind-thought-dim),
-    rgba(18, 21, 28, 0.9)
+    var(--bg-elevated)
   );
-  opacity: 0.92;
+  opacity: 0.94;
 }
 
 .tl-item.kind-thought .tl-kind {
   color: var(--kind-thought);
 }
 
-/* Shell: full-card terminal black (not a nested panel on elevated chrome) */
+/* Shell: pine wash — terminal feel without pure black */
 .tl-item.kind-shell {
-  background: #0a0c11;
-  color: #c8d0e0;
+  background: linear-gradient(
+    135deg,
+    var(--kind-shell-dim),
+    var(--hl-low)
+  );
+  color: var(--text);
 }
 
 .tl-item.kind-shell .tl-kind {
@@ -708,14 +714,14 @@
 
 .tl-item.kind-shell .muted,
 .tl-item.kind-shell .tl-meta {
-  color: rgba(200, 208, 224, 0.55);
+  color: var(--text-muted);
 }
 
 .tl-item.kind-event {
   background: linear-gradient(
     135deg,
     var(--kind-event-dim),
-    rgba(18, 21, 28, 0.92)
+    var(--bg-elevated)
   );
 }
 
@@ -727,7 +733,7 @@
   background: linear-gradient(
     135deg,
     var(--kind-plan-dim),
-    rgba(18, 21, 28, 0.92)
+    var(--bg-elevated)
   );
 }
 
@@ -739,7 +745,7 @@
   background: linear-gradient(
     135deg,
     var(--kind-unknown-dim),
-    rgba(18, 21, 28, 0.92)
+    var(--bg-elevated)
   );
 }
 
@@ -796,7 +802,7 @@
 .tl-title.is-file-link,
 .tl-detail-path.is-file-link,
 .md-file-link {
-  color: #8eb0ff;
+  color: var(--link);
   cursor: pointer;
   text-decoration: none;
 }
@@ -807,7 +813,7 @@
 .tl-detail-path.is-file-link:hover,
 .md-file-link:hover {
   text-decoration: underline;
-  color: #b6cbff;
+  color: var(--link-hover);
 }
 
 .tl-detail-path {
@@ -843,7 +849,7 @@ img.md-file-image {
 }
 
 img.md-file-image:hover {
-  outline: 1px solid #8eb0ff;
+  outline: 1px solid var(--link);
   outline-offset: 2px;
 }
 
@@ -879,8 +885,8 @@ img.md-file-image:hover {
   margin: 0;
   padding: 12px;
   border-radius: 0;
-  background: #080a0e;
-  border: none;
+  background: var(--hl-low);
+  border: 1px solid var(--border);
   overflow: auto;
   font-family: var(--mono);
   font-size: 11px;

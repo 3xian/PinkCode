@@ -110,7 +110,7 @@
 
 .workspace-tab.active {
   color: var(--text);
-  border-bottom-color: var(--accent, #6c8cff);
+  border-bottom-color: var(--accent);
 }
 
 /* Equal height upper (Files/Git) and lower (Preview) panes. */
@@ -151,17 +151,19 @@
 .file-tree-section {
   flex: 1 1 auto;
   min-height: 0;
+  padding-top: 10px;
 }
 
 .git-changes-section {
   flex: 1 1 auto;
   min-height: 0;
+  padding-top: 10px;
 }
 
 .file-preview-section {
   flex: 1;
   min-height: 0;
-  background: #000;
+  background: var(--bg);
 }
 
 .file-preview-empty {
@@ -196,7 +198,7 @@
   border: none;
   border-bottom: none;
   box-sizing: border-box;
-  background: color-mix(in srgb, var(--bg-elevated, #12151c) 55%, #000);
+  background: color-mix(in srgb, var(--bg-elevated) 70%, var(--border));
 }
 
 .panel-header.file-preview-header .file-preview-title,
@@ -236,7 +238,7 @@
   line-height: 1;
   letter-spacing: 0.02em;
   /* Distinct from path — cooler/dimmer so size doesn't compete with path */
-  color: color-mix(in srgb, var(--accent, #6ea8ff) 55%, var(--text-muted));
+  color: color-mix(in srgb, var(--accent) 55%, var(--text-muted));
   white-space: nowrap;
 }
 
@@ -300,7 +302,7 @@
   overflow: auto;
   font-size: 11.5px;
   line-height: 1.45;
-  color: #c8d0e0;
+  color: var(--text);
   white-space: pre;
   tab-size: 2;
   user-select: text;
@@ -315,13 +317,13 @@
   justify-content: center;
   padding: 14px 12px;
   background:
-    linear-gradient(45deg, #141820 25%, transparent 25%),
-    linear-gradient(-45deg, #141820 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #141820 75%),
-    linear-gradient(-45deg, transparent 75%, #141820 75%);
+    linear-gradient(45deg, var(--bg-hover) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--bg-hover) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--bg-hover) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--bg-hover) 75%);
   background-size: 16px 16px;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
-  background-color: #0a0c10;
+  background-color: var(--bg-elevated);
 }
 
 .file-preview-image {
@@ -330,7 +332,7 @@
   object-fit: contain;
   display: block;
   image-rendering: auto;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-md);
 }
 
 .workspace-split {
@@ -381,7 +383,7 @@
 }
 
 .file-tree-row.is-selected {
-  background: color-mix(in srgb, var(--accent, #6c8cff) 18%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--text);
 }
 
@@ -408,7 +410,7 @@
   padding: 4px 0;
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
   color: var(--text);
@@ -466,7 +468,7 @@
 }
 
 .git-change.is-selected {
-  background: color-mix(in srgb, var(--accent, #6c8cff) 18%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .git-badge {
@@ -515,7 +517,7 @@
 }
 
 .detail-panel {
-  background: #000;
+  background: var(--bg);
   padding: 0;
   overflow: hidden;
   min-width: 0; /* allow title ellipsis inside grid track */
@@ -630,17 +632,17 @@
 .session-card:hover {
   background: transparent;
   box-shadow:
-    0 4px 14px rgba(0, 0, 0, 0.38),
-    0 1px 0 rgba(255, 255, 255, 0.04);
+    var(--shadow-sm),
+    0 1px 0 rgb(var(--spec-rgb) / 0.65);
 }
 
-/* Selected: soft wash only — no border (left edge reserved for run-state bar) */
+/* Selected: soft rose wash — no border (left edge reserved for run-state bar) */
 .session-card.selected {
   background: linear-gradient(
     90deg,
-    rgba(110, 168, 255, 0.16) 0%,
-    rgba(110, 168, 255, 0.08) 45%,
-    rgba(110, 168, 255, 0.02) 80%,
+    color-mix(in srgb, var(--accent) 16%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 8%, transparent) 45%,
+    color-mix(in srgb, var(--accent) 2%, transparent) 80%,
     transparent 100%
   );
 }
@@ -648,14 +650,14 @@
 .session-card.selected:hover {
   background: linear-gradient(
     90deg,
-    rgba(110, 168, 255, 0.2) 0%,
-    rgba(110, 168, 255, 0.1) 45%,
-    rgba(110, 168, 255, 0.03) 80%,
+    color-mix(in srgb, var(--accent) 20%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 10%, transparent) 45%,
+    color-mix(in srgb, var(--accent) 3%, transparent) 80%,
     transparent 100%
   );
   box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(110, 168, 255, 0.08);
+    var(--shadow-sm),
+    0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 /*

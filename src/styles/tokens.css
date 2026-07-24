@@ -1,0 +1,150 @@
+/*
+ * Rosé Pine Dawn — single source of truth for UI paint.
+ * https://rosepinetheme.com/palette/
+ *
+ * Hex + space-separated RGB channels so alpha can be:
+ *   rgb(var(--text-rgb) / 0.12)
+ * Feature CSS must not hardcode Dawn hex / raw palette rgba.
+ */
+:root {
+  color-scheme: light;
+
+  /* ── Role RGB (for alpha) ─────────────────────────────────── */
+  --rp-base-rgb: 250 244 237;
+  --rp-surface-rgb: 255 250 243;
+  --rp-overlay-rgb: 242 233 225;
+  --rp-hl-low-rgb: 244 237 232;
+  --rp-hl-med-rgb: 223 218 217;
+  --rp-hl-high-rgb: 206 202 205;
+  --rp-muted-rgb: 152 147 165;
+  --rp-subtle-rgb: 121 117 147;
+  --rp-text-rgb: 87 82 121;
+  --rp-love-rgb: 180 99 122;
+  --rp-gold-rgb: 234 157 52;
+  --rp-rose-rgb: 215 130 126;
+  --rp-pine-rgb: 40 105 131;
+  --rp-foam-rgb: 86 148 159;
+  --rp-iris-rgb: 144 122 169;
+
+  /* ── Surfaces ─────────────────────────────────────────────── */
+  --bg: #faf4ed; /* base */
+  --bg-elevated: #fffaf3; /* surface */
+  --bg-panel: #fffaf3;
+  --bg-hover: #f2e9e1; /* overlay */
+  --hl-low: #f4ede8; /* highlightLow */
+  --border: #dfdad9; /* highlightMed */
+  --border-strong: #cecacd; /* highlightHigh */
+
+  /* ── Type ─────────────────────────────────────────────────── */
+  --text: #575279;
+  --text-rgb: var(--rp-text-rgb);
+  --text-muted: #797593; /* subtle */
+  --muted: #9893a5;
+
+  /* ── Semantic ─────────────────────────────────────────────── */
+  --accent: #d7827e; /* rose */
+  --accent-rgb: var(--rp-rose-rgb);
+  --accent-dim: rgb(var(--accent-rgb) / 0.14);
+  --on-accent: #faf4ed; /* base on solid rose fills */
+  --title-selected: #907aa9; /* iris */
+  --title-selected-rgb: var(--rp-iris-rgb);
+  --live: #56949f; /* foam */
+  --live-rgb: var(--rp-foam-rgb);
+  --live-dim: rgb(var(--live-rgb) / 0.15);
+  --danger: #b4637a; /* love */
+  --danger-rgb: var(--rp-love-rgb);
+  --danger-dim: rgb(var(--danger-rgb) / 0.14);
+  --warn: #ea9d34; /* gold */
+  --warn-rgb: var(--rp-gold-rgb);
+  --warn-dim: rgb(var(--warn-rgb) / 0.14);
+  --link: #56949f; /* foam */
+  --link-hover: #907aa9; /* iris */
+  --pine: #286983;
+  --pine-rgb: var(--rp-pine-rgb);
+  --add: #56949f; /* foam */
+  --del: #b4637a; /* love */
+
+  /* ── Timeline kinds (each distinct; tool ≠ accent) ────────── */
+  --kind-user: #907aa9; /* iris */
+  --kind-user-dim: rgb(var(--rp-iris-rgb) / 0.16);
+  --kind-agent: #56949f; /* foam */
+  --kind-agent-dim: rgb(var(--rp-foam-rgb) / 0.14);
+  --kind-thought: #9893a5; /* muted */
+  --kind-thought-dim: rgb(var(--rp-muted-rgb) / 0.2);
+  /* tool ≠ accent (rose); both system-ish use pine (icons/labels distinguish) */
+  --kind-tool: #286983; /* pine */
+  --kind-tool-dim: rgb(var(--rp-pine-rgb) / 0.12);
+  --kind-shell: #286983; /* pine — terminal */
+  --kind-shell-dim: rgb(var(--rp-pine-rgb) / 0.12);
+  --kind-event: #ea9d34; /* gold */
+  --kind-event-dim: rgb(var(--rp-gold-rgb) / 0.14);
+  --kind-plan: #907aa9; /* iris */
+  --kind-plan-dim: rgb(var(--rp-iris-rgb) / 0.16);
+  --kind-unknown: #9893a5;
+  --kind-unknown-dim: rgb(var(--rp-muted-rgb) / 0.12);
+
+  /* ── Elevation (text-tinted, not pure black) ───────────────── */
+  --shadow-sm: 0 2px 8px rgb(var(--text-rgb) / 0.08);
+  --shadow-md: 0 6px 18px rgb(var(--text-rgb) / 0.1);
+  --shadow-lg: 0 16px 48px rgb(var(--text-rgb) / 0.16);
+  --shadow-text-hairline: 0 1px 0 rgb(var(--text-rgb) / 0.05);
+  /* Specular white (light-mode glass only; not a palette role) */
+  --spec: #ffffff;
+  --spec-rgb: 255 255 255;
+  --inset-spec: inset 0 1px 0 rgb(var(--spec-rgb) / 0.55);
+
+  /* ── Battery (usage widget) ───────────────────────────────── */
+  --battery-label-color: var(--text);
+  --battery-label-shadow:
+    0 0 2px var(--bg-elevated),
+    1px 0 0 var(--bg-elevated),
+    -1px 0 0 var(--bg-elevated),
+    0 1px 0 var(--bg-elevated),
+    0 -1px 0 var(--bg-elevated);
+  --battery-fill: linear-gradient(
+    180deg,
+    var(--accent) 0%,
+    var(--title-selected) 40%,
+    var(--text-muted) 75%,
+    var(--border-strong) 100%
+  );
+  --battery-fill-mid: linear-gradient(
+    180deg,
+    var(--title-selected) 0%,
+    var(--text-muted) 55%,
+    var(--border-strong) 100%
+  );
+  --battery-fill-low: linear-gradient(
+    180deg,
+    var(--accent) 0%,
+    var(--danger) 55%,
+    var(--muted) 100%
+  );
+  --battery-fill-critical: linear-gradient(
+    180deg,
+    var(--danger) 0%,
+    var(--accent) 45%,
+    var(--muted) 100%
+  );
+  --battery-sheen: linear-gradient(
+    180deg,
+    rgb(var(--spec-rgb) / 0.28) 0%,
+    transparent 22%
+  );
+
+  /* ── Chrome ───────────────────────────────────────────────── */
+  --radius: 0;
+  --font: "Segoe UI", system-ui, -apple-system, "SF Pro Text", sans-serif;
+  --mono: Consolas, "Cascadia Mono", "Segoe UI Mono", ui-monospace, "SF Mono",
+    Menlo, Monaco, "Liberation Mono", "DejaVu Sans Mono", monospace;
+  --scrollbar-size: 8px;
+  --scrollbar-thumb: rgb(var(--rp-muted-rgb) / 0.4);
+  --scrollbar-thumb-hover: rgb(var(--rp-subtle-rgb) / 0.55);
+  --scrollbar-thumb-active: rgb(var(--accent-rgb) / 0.55);
+
+  /*
+   * Boot splash / native window (cannot read CSS vars): keep in sync:
+   * index.html background #faf4ed, accent #d7827e, border #cecacd
+   * tauri.conf.json backgroundColor [250, 244, 237, 255], theme Light
+   */
+}

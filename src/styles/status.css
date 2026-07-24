@@ -94,9 +94,9 @@
   margin: -4px 0 0 -4px;
   border-radius: 50%;
   /* Fully opaque fill so the line never shows through as a “hollow” ring */
-  background: #a78bfa;
-  border: 1.5px solid #1a1030;
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.3);
+  background: var(--title-selected);
+  border: 1.5px solid var(--bg);
+  box-shadow: 0 0 0 2px rgb(var(--title-selected-rgb) / 0.3);
   opacity: 1;
   transition:
     transform 0.12s ease,
@@ -105,7 +105,7 @@
 
 .token-chart-dot-active {
   transform: scale(1.35);
-  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.45);
+  box-shadow: 0 0 0 3px rgb(var(--title-selected-rgb) / 0.45);
 }
 
 /* Proximity tooltip: date / tokens / turns near the hovered point */
@@ -116,10 +116,10 @@
   transform: translate(-50%, calc(-100% - 10px));
   pointer-events: none;
   padding: 5px 8px;
-  border: 1px solid rgba(167, 139, 250, 0.35);
+  border: 1px solid color-mix(in srgb, var(--title-selected) 35%, var(--border));
   border-radius: 6px;
-  background: rgba(18, 14, 28, 0.94);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  background: color-mix(in srgb, var(--bg-elevated) 96%, transparent);
+  box-shadow: var(--shadow-md);
   white-space: nowrap;
   font-size: 10px;
   line-height: 1.35;
@@ -134,7 +134,7 @@
 
 .token-chart-tip-date {
   font-weight: 600;
-  color: #c4b5fd;
+  color: var(--title-selected);
   margin-bottom: 2px;
 }
 
@@ -168,12 +168,12 @@
 }
 
 .week-battery.clickable:hover .usage-battery-shell {
-  border-color: rgba(210, 200, 255, 0.65);
+  border-color: color-mix(in srgb, var(--title-selected) 65%, var(--border));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -2px 6px rgba(0, 0, 0, 0.25),
-    0 0 14px rgba(139, 92, 246, 0.28),
-    0 4px 10px rgba(0, 0, 0, 0.25);
+    var(--inset-spec),
+    inset 0 -2px 6px rgb(var(--text-rgb) / 0.1),
+    0 0 14px rgb(var(--title-selected-rgb) / 0.28),
+    var(--shadow-sm);
 }
 
 .week-battery.clickable:focus-visible {
@@ -181,10 +181,10 @@
 }
 
 .week-battery.clickable:focus-visible .usage-battery-shell {
-  border-color: rgba(196, 181, 253, 0.85);
+  border-color: color-mix(in srgb, var(--title-selected) 85%, var(--border));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    0 0 0 2px rgba(155, 123, 255, 0.35);
+    var(--inset-spec),
+    0 0 0 2px rgb(var(--title-selected-rgb) / 0.35);
 }
 
 .week-battery-hint {
@@ -201,28 +201,29 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 42px;
-  height: 60px;
+  /* Compact, but wide enough that "100%" stays on one line at pct font-size */
+  width: 36px;
+  height: 52px;
   flex-shrink: 0;
 }
 
 /* Metallic positive terminal */
 .usage-battery-nub {
-  width: 14px;
-  height: 5px;
+  width: 12px;
+  height: 4px;
   margin-bottom: -1px;
   border-radius: 2px 2px 0 0;
   background: linear-gradient(
     180deg,
-    rgba(230, 225, 255, 0.55) 0%,
-    rgba(160, 150, 200, 0.35) 40%,
-    rgba(80, 75, 110, 0.5) 100%
+    color-mix(in srgb, var(--bg-elevated) 80%, var(--title-selected)) 0%,
+    color-mix(in srgb, var(--border) 50%, var(--title-selected)) 40%,
+    color-mix(in srgb, var(--muted) 55%, var(--title-selected)) 100%
   );
-  border: 1.25px solid rgba(210, 205, 240, 0.5);
+  border: 1.25px solid color-mix(in srgb, var(--title-selected) 35%, var(--border));
   border-bottom: none;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    0 -1px 2px rgba(0, 0, 0, 0.2);
+    inset 0 1px 0 rgb(var(--spec-rgb) / 0.65),
+    0 -1px 2px rgb(var(--text-rgb) / 0.12);
   box-sizing: border-box;
   z-index: 2;
 }
@@ -234,26 +235,26 @@
   min-height: 0;
 }
 
-/* Outer glass shell — transparent 3D body */
+/* Outer glass shell */
 .usage-battery-shell {
   position: absolute;
   inset: 0;
-  border-radius: 8px;
-  border: 1.5px solid rgba(200, 205, 240, 0.45);
+  border-radius: 7px;
+  border: 1.5px solid color-mix(in srgb, var(--title-selected) 28%, var(--border));
   background: linear-gradient(
     145deg,
-    rgba(255, 255, 255, 0.14) 0%,
-    rgba(255, 255, 255, 0.04) 28%,
-    rgba(20, 24, 40, 0.2) 62%,
-    rgba(8, 10, 18, 0.35) 100%
+    rgb(var(--spec-rgb) / 0.7) 0%,
+    color-mix(in srgb, var(--bg-elevated) 70%, transparent) 28%,
+    color-mix(in srgb, var(--bg-hover) 80%, transparent) 62%,
+    color-mix(in srgb, var(--border) 55%, transparent) 100%
   );
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    inset 0 -2px 6px rgba(0, 0, 0, 0.22),
-    inset 2px 0 6px rgba(255, 255, 255, 0.08),
-    inset -3px 0 8px rgba(0, 0, 0, 0.2),
-    0 4px 12px rgba(0, 0, 0, 0.3),
-    0 1px 0 rgba(255, 255, 255, 0.06);
+    inset 0 1px 0 rgb(var(--spec-rgb) / 0.7),
+    inset 0 -2px 6px rgb(var(--text-rgb) / 0.08),
+    inset 2px 0 6px rgb(var(--spec-rgb) / 0.35),
+    inset -3px 0 8px rgb(var(--text-rgb) / 0.06),
+    var(--shadow-sm),
+    0 1px 0 rgb(var(--spec-rgb) / 0.4);
   padding: 3px;
   box-sizing: border-box;
   overflow: hidden;
@@ -263,10 +264,10 @@
   position: relative;
   width: 100%;
   height: 100%;
-  border-radius: 5px;
+  border-radius: 4px;
   overflow: hidden;
-  background: rgba(6, 8, 16, 0.28);
-  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.25);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  box-shadow: inset 0 0 12px rgb(var(--text-rgb) / 0.06);
 }
 
 /* Left specular — glass thickness */
@@ -280,8 +281,8 @@
   border-radius: 999px;
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.5) 0%,
-    rgba(255, 255, 255, 0.14) 50%,
+    rgb(var(--spec-rgb) / 0.5) 0%,
+    rgb(var(--spec-rgb) / 0.14) 50%,
     transparent 100%
   );
   pointer-events: none;
@@ -298,13 +299,13 @@
   border-radius: 999px;
   background: linear-gradient(
     180deg,
-    rgba(0, 0, 0, 0.15) 0%,
-    rgba(0, 0, 0, 0.28) 100%
+    rgb(var(--text-rgb) / 0.12) 0%,
+    rgb(var(--text-rgb) / 0.22) 100%
   );
   pointer-events: none;
 }
 
-/* Purple charge level (remaining %) */
+/* Charge level (remaining %) */
 .usage-battery-fill {
   position: absolute;
   left: 0;
@@ -314,22 +315,10 @@
   height: 0%;
   z-index: 1;
   transition: height 0.5s cubic-bezier(0.33, 1, 0.68, 1);
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.35) 0%,
-      transparent 22%
-    ),
-    linear-gradient(
-      105deg,
-      rgba(255, 255, 255, 0.16) 0%,
-      transparent 32%,
-      rgba(40, 10, 90, 0.15) 100%
-    ),
-    linear-gradient(180deg, #c4b5fd 0%, #a78bfa 30%, #8b5cf6 65%, #5b21b6 100%);
+  background: var(--battery-sheen), var(--battery-fill);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    0 0 14px rgba(139, 92, 246, 0.35);
+    inset 0 1px 0 rgb(var(--spec-rgb) / 0.45),
+    0 0 14px rgb(var(--title-selected-rgb) / 0.3);
 }
 
 .usage-battery-fill-sheen {
@@ -340,7 +329,7 @@
   height: 6px;
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.4) 0%,
+    rgb(var(--spec-rgb) / 0.4) 0%,
     transparent 100%
   );
   pointer-events: none;
@@ -350,28 +339,28 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: 5px;
+  top: 4px;
   bottom: 0;
   z-index: 5;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-  color: #f8f5ff;
-  text-shadow:
-    0 0 8px rgba(20, 10, 40, 0.95),
-    0 1px 2px rgba(0, 0, 0, 0.75);
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--battery-label-color);
+  text-shadow: var(--battery-label-shadow);
   pointer-events: none;
   white-space: nowrap;
-  padding: 0 2px;
+  overflow: hidden;
+  padding: 0 1px;
 }
 
 .usage-battery-pct.muted {
   color: var(--text-muted);
-  text-shadow: none;
+  text-shadow: var(--battery-label-shadow);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -382,30 +371,24 @@
 
 /* Charge color as remaining drops */
 .week-battery.level-mid .usage-battery-fill {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, transparent 22%),
-    linear-gradient(180deg, #a855f7 0%, #7c3aed 50%, #5b21b6 100%);
+  background: var(--battery-sheen), var(--battery-fill-mid);
 }
 
 .week-battery.level-low .usage-battery-fill {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, transparent 22%),
-    linear-gradient(180deg, #c026d3 0%, #9333ea 50%, #6d28d9 100%);
+  background: var(--battery-sheen), var(--battery-fill-low);
 }
 
 .week-battery.level-critical .usage-battery-fill {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, transparent 22%),
-    linear-gradient(180deg, #e11d48 0%, #a21caf 45%, #7e22ce 100%);
+  background: var(--battery-sheen), var(--battery-fill-critical);
 }
 
 .week-battery.level-critical .usage-battery-shell {
-  border-color: rgba(232, 121, 249, 0.4);
+  border-color: rgb(var(--danger-rgb) / 0.4);
 }
 
 .week-battery.loading .usage-battery-shell,
 .week-battery.error .usage-battery-shell {
-  border-color: rgba(139, 147, 167, 0.35);
+  border-color: rgb(var(--rp-muted-rgb) / 0.4);
 }
 
 .panel-header-left {
@@ -500,7 +483,7 @@
 
 .btn.primary {
   background: var(--accent);
-  color: #0b0d12;
+  color: var(--on-accent);
   border-color: transparent;
 }
 
@@ -516,7 +499,7 @@
 }
 
 .btn.danger-btn:hover:not(:disabled) {
-  background: rgba(255, 107, 122, 0.22);
+  background: rgb(var(--danger-rgb) / 0.22);
 }
 
 .header-actions {

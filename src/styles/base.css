@@ -1,62 +1,4 @@
-:root {
-  color-scheme: dark;
-  --bg: #0b0d12;
-  --bg-elevated: #12151c;
-  --bg-panel: #0f1218;
-  --bg-hover: #1a1f2b;
-  --border: #232833;
-  --border-strong: #2e3545;
-  --text: #e8ecf4;
-  --text-muted: #8b93a7;
-  --accent: #6ea8ff;
-  --accent-dim: rgba(110, 168, 255, 0.14);
-  /* Selected task title (card + detail header) */
-  --title-selected: #a78bfa;
-  --live: #3dd68c;
-  --live-dim: rgba(61, 214, 140, 0.15);
-  --danger: #ff6b7a;
-  --danger-dim: rgba(255, 107, 122, 0.14);
-  --warn: #f0b429;
-  /* Timeline kind accents (cards + filter chips) */
-  --kind-user: #c4a5ff;
-  --kind-user-dim: rgba(196, 165, 255, 0.16);
-  --kind-agent: #3dd68c;
-  --kind-agent-dim: rgba(61, 214, 140, 0.14);
-  --kind-thought: #9aa3b8;
-  --kind-thought-dim: rgba(90, 98, 117, 0.28);
-  --kind-tool: #6ea8ff;
-  --kind-tool-dim: rgba(110, 168, 255, 0.16);
-  /* Shell = teal (terminal); Event = amber — keep distinct */
-  --kind-shell: #2dd4bf;
-  --kind-shell-dim: rgba(45, 212, 191, 0.14);
-  --kind-event: #f0b429;
-  --kind-event-dim: rgba(240, 180, 41, 0.16);
-  --kind-plan: #a78bfa;
-  --kind-plan-dim: rgba(167, 139, 250, 0.16);
-  --kind-unknown: #8b93a7;
-  --kind-unknown-dim: rgba(139, 147, 167, 0.12);
-  --add: #3dd68c;
-  --del: #ff6b7a;
-  --radius: 0;
-  /*
-   * UI fonts: only OS-bundled faces (no web font / no user install).
-   * Windows: Segoe UI ships with every modern install.
-   */
-  --font: "Segoe UI", system-ui, -apple-system, "SF Pro Text", sans-serif;
-  /*
-   * Mono: Consolas is on all Windows since Vista — prefer it over Courier.
-   * Later names cover macOS / Linux when Consolas is absent.
-   * Do NOT list unloaded webfonts (IBM Plex / SF Mono-only stacks fall back
-   * to Courier New on Windows WebView2 and look poor).
-   */
-  --mono: Consolas, "Cascadia Mono", "Segoe UI Mono", ui-monospace, "SF Mono",
-    Menlo, Monaco, "Liberation Mono", "DejaVu Sans Mono", monospace;
-  /* mac-like thin scrollbars (WebView2 / Chromium on Windows) */
-  --scrollbar-size: 8px;
-  --scrollbar-thumb: rgba(255, 255, 255, 0.14);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.26);
-  --scrollbar-thumb-active: rgba(255, 255, 255, 0.34);
-}
+@import "./tokens.css";
 
 * {
   box-sizing: border-box;
@@ -76,7 +18,6 @@ body {
   font-size: 13px;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
-  /* Firefox / newer engines */
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
@@ -103,7 +44,6 @@ body {
   background-color: var(--scrollbar-thumb);
   border: 2px solid transparent;
   background-clip: padding-box;
-  /* Keep slight round only on the thumb — reads as a capsule rail, not a card corner */
   border-radius: 999px;
   min-height: 32px;
 }
@@ -140,12 +80,10 @@ code,
 .mono,
 pre {
   font-family: var(--mono);
-  /* Consolas reads clearer slightly larger than body; avoid sub-pixel mush. */
   font-size: 0.95em;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
   letter-spacing: 0.015em;
-  /* Windows ClearType: auto is usually crisper than forced antialias on mono. */
   -webkit-font-smoothing: auto;
 }
 
@@ -154,7 +92,5 @@ pre {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  /* Limit paint invalidation when the OS moves/resizes the window. */
   contain: layout style;
 }
-

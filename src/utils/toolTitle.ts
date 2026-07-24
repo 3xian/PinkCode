@@ -19,7 +19,7 @@ export interface ToolCardParts {
   status?: string;
   /** Optional secondary line (path etc.). */
   detail?: string;
-  /** Display title: base + status suffix (completed → ☑️). */
+  /** Display title: base + status suffix (completed → ✓). */
   title: string;
 }
 
@@ -27,7 +27,7 @@ export interface ToolCardParts {
 export function formatToolStatusSuffix(status?: string): string {
   const st = status?.trim();
   if (!st) return "";
-  if (st.toLowerCase() === "completed") return "☑️";
+  if (st.toLowerCase() === "completed") return "✓";
   return `· ${st}`;
 }
 

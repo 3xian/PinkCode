@@ -1,4 +1,4 @@
-# MarsBuild TODO — Grok Build host parity
+# PinkCode TODO — Grok Build host parity
 
 Protocol and control-plane backlog derived from a read-only audit of
 [xai-org/grok-build](https://github.com/xai-org/grok-build) (local ref
@@ -8,7 +8,7 @@ Protocol and control-plane backlog derived from a read-only audit of
 in [PLAN.md](./PLAN.md). This file is the **ACP / reverse-RPC / capability**
 checklist so we do not re-guess wire behavior.
 
-**Positioning:** MarsBuild is a desktop mission control for external `grok`
+**Positioning:** PinkCode is a desktop mission control for external `grok`
 (ACP host). Do not re-implement the agent loop.
 
 | Priority | Meaning |
@@ -39,7 +39,7 @@ checklist so we do not re-guess wire behavior.
 
 ## Three different “ask” (do not conflate)
 
-| # | Name | What it is | Wire / surface | MarsBuild |
+| # | Name | What it is | Wire / surface | PinkCode |
 |---|------|------------|----------------|-----------|
 | **①** | **ACP SessionMode `ask`** | Agent session mode: Q&A-oriented, **read-only / no tool use** (`PromptMode::Ask`) | `session/set_mode({ modeId: "ask" })` | **Missing** — no Mode chip entry |
 | **②** | **Permission ring “ask”** | Host gate: ask user before tools (Default) | Host `PermissionMode`; *not* `set_mode` | **Present** as Normal / default |
@@ -96,7 +96,7 @@ UI label *“Ask before tools (Grok default / ask)”* means **②**, not **①*
 
 ### Initialize `clientCapabilities.meta`
 
-MarsBuild today: `fs` read/write true, `terminal: false`, **no** x.ai meta.
+PinkCode today: `fs` read/write true, `terminal: false`, **no** x.ai meta.
 
 Pager advertises (see pager `client_capabilities_meta`):
 
@@ -152,7 +152,7 @@ Pager advertises (see pager `client_capabilities_meta`):
 
 ## Ignore (unless product explicitly wants them)
 
-Do **not** treat as core MarsBuild work. Prefer not advertising related capabilities.
+Do **not** treat as core PinkCode work. Prefer not advertising related capabilities.
 
 | Area | Examples |
 |------|----------|
@@ -218,7 +218,7 @@ Then return to [PLAN.md](./PLAN.md) product sprint (status density, keyboard app
 | Agent capabilities ads | `…/mvp_agent/acp_agent.rs` InitializeResponse |
 | Cancel | `…/mvp_agent/acp_agent.rs` `cancel` |
 
-MarsBuild counterparts: `src-tauri/src/acp.rs`, `agent_manager.rs`,
+PinkCode counterparts: `src-tauri/src/acp.rs`, `agent_manager.rs`,
 `permission_policy.rs`, `plan_approval.rs`, `ask_user_question.rs`,
 `src/utils/sessionMode.ts`, `src/hooks/useAgentEvents.ts`.
 
@@ -226,7 +226,7 @@ MarsBuild counterparts: `src-tauri/src/acp.rs`, `agent_manager.rs`,
 
 ## Explicit non-goals (protocol)
 
-- Re-implement Grok agent loop or sampler inside MarsBuild  
+- Re-implement Grok agent loop or sampler inside PinkCode  
 - Full multi-client leader / cloud control plane  
 - Advertising capabilities we do not implement  
 - Treating permission “ask” (②) as SessionMode `ask` (①)  

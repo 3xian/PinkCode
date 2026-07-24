@@ -32,7 +32,7 @@ use crate::agent_types::{PendingPermission, PermissionKind, PermissionOption};
 use crate::json_util::str_field;
 use serde_json::{json, Value};
 
-/// Option ids used by the MarsBuild plan-approval UI / resolve path.
+/// Option ids used by the PinkCode plan-approval UI / resolve path.
 pub const OPT_APPROVE: &str = "approve";
 pub const OPT_REQUEST_CHANGES: &str = "request-changes";
 pub const OPT_ABANDON: &str = "abandon";

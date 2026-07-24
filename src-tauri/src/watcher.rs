@@ -36,18 +36,18 @@ fn run_loop(app: AppHandle) {
     }) {
         Ok(w) => w,
         Err(e) => {
-            eprintln!("[marsbuild] sessions watcher unavailable: {e}");
+            eprintln!("[pinkcode] sessions watcher unavailable: {e}");
             return;
         }
     };
 
     if let Err(e) = watcher.watch(&sessions_dir, RecursiveMode::Recursive) {
-        eprintln!("[marsbuild] watch {} failed: {e}", sessions_dir.display());
+        eprintln!("[pinkcode] watch {} failed: {e}", sessions_dir.display());
     }
     // Non-recursive on ~/.grok so active_sessions.json creates/writes are seen
     // without re-walking the whole sessions tree twice.
     if let Err(e) = watcher.watch(&home, RecursiveMode::NonRecursive) {
-        eprintln!("[marsbuild] watch {} failed: {e}", home.display());
+        eprintln!("[pinkcode] watch {} failed: {e}", home.display());
     }
 
     let mut last_event_at: Option<Instant> = None;
@@ -75,7 +75,7 @@ fn run_loop(app: AppHandle) {
                 last_event_at = Some(Instant::now());
             }
             Ok(Err(e)) => {
-                eprintln!("[marsbuild] watch error: {e}");
+                eprintln!("[pinkcode] watch error: {e}");
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if let Some(t) = last_event_at {

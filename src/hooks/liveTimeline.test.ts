@@ -68,7 +68,7 @@ describe("live timeline reducer", () => {
             toolCallId: "call-f8b05138-361f-4d22-96a9-d3d94930cd93-0",
             title: "read_file",
             rawInput: {
-              target_file: "D:\\code\\MarsBuild\\src\\utils\\format.ts",
+              target_file: "D:\\code\\PinkCode\\src\\utils\\format.ts",
             },
             _meta: {
               "x.ai/tool": {
@@ -87,10 +87,10 @@ describe("live timeline reducer", () => {
           update: {
             sessionUpdate: "tool_call_update",
             toolCallId: "call-f8b05138-361f-4d22-96a9-d3d94930cd93-0",
-            title: "Read `D:\\code\\MarsBuild\\src\\utils\\format.ts`",
+            title: "Read `D:\\code\\PinkCode\\src\\utils\\format.ts`",
             kind: "read",
             locations: [
-              { path: "D:\\code\\MarsBuild\\src\\utils\\format.ts" },
+              { path: "D:\\code\\PinkCode\\src\\utils\\format.ts" },
             ],
           },
         },
@@ -115,11 +115,11 @@ describe("live timeline reducer", () => {
       "call-f8b05138-361f-4d22-96a9-d3d94930cd93-0",
     );
     expect(items[0].toolBase).toBe(
-      "Read `D:\\code\\MarsBuild\\src\\utils\\format.ts`",
+      "Read `D:\\code\\PinkCode\\src\\utils\\format.ts`",
     );
     expect(items[0].toolStatus).toBe("completed");
     expect(items[0].title).toBe(
-      "Read `D:\\code\\MarsBuild\\src\\utils\\format.ts` ☑️",
+      "Read `D:\\code\\PinkCode\\src\\utils\\format.ts` ☑️",
     );
     expect(items[0].title).not.toMatch(/call-f8b05138/);
     expect(items[0].detail ?? "").not.toMatch(/^call-/);

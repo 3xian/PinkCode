@@ -169,7 +169,7 @@ mod tests {
         let other = pending(
             PermissionKind::FsWrite,
             "Write file",
-            r"D:\code\MarsBuild\README.md",
+            r"D:\code\PinkCode\README.md",
         );
         assert!(!is_session_plan_file_write(&other));
         assert_eq!(
@@ -203,7 +203,7 @@ mod tests {
     fn powershell_set_content_plan_md_no_longer_auto_allowed() {
         // Shell fallback to plan.md writes are not auto-allowed — only structured
         // tool paths (fs/write, write tool) are. The user sees a permission prompt.
-        let cmd = r#"$dir = "D:\.grok\sessions\D%3A%5Ccode%5CMarsBuild\019f8e69-615f-74c1-9144-00079fb363da"; New-Item -ItemType Directory -Force -Path $dir | Out-Null; Set-Content -Path "$dir\plan.md" -Encoding utf8 -Value @'
+        let cmd = r#"$dir = "D:\.grok\sessions\D%3A%5Ccode%5CPinkCode\019f8e69-615f-74c1-9144-00079fb363da"; New-Item -ItemType Directory -Force -Path $dir | Out-Null; Set-Content -Path "$dir\plan.md" -Encoding utf8 -Value @'
 # plan body
 '@; Get-Item "$dir\plan.md" | Format-List FullName, Length"#;
 
@@ -232,7 +232,7 @@ mod tests {
 
     #[test]
     fn arbitrary_shell_still_asks() {
-        let cmd = r#"Remove-Item -Recurse D:\code\MarsBuild\dist"#;
+        let cmd = r#"Remove-Item -Recurse D:\code\PinkCode\dist"#;
         let mut p = pending(PermissionKind::ToolPermission, "Execute", cmd);
         p.risk = "high".into();
         p.raw_params = serde_json::json!({

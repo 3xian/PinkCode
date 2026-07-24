@@ -1,6 +1,6 @@
-//! Per-task (Grok session) preferences persisted by MarsBuild.
+//! Per-task (Grok session) preferences persisted by PinkCode.
 //!
-//! Stored under `~/.marsbuild/task_prefs.json` so permission mode and Plan
+//! Stored under `~/.pinkcode/task_prefs.json` so permission mode and Plan
 //! arming survive restarts and re-attach, independent of Grok's own session files.
 
 use crate::agent_types::PermissionMode;
@@ -35,7 +35,7 @@ static STORE: OnceLock<Store> = OnceLock::new();
 fn prefs_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".marsbuild")
+        .join(".pinkcode")
 }
 
 fn store() -> &'static Store {
@@ -155,7 +155,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("marsbuild_prefs_test_{t}_{n}.json"))
+        std::env::temp_dir().join(format!("pinkcode_prefs_test_{t}_{n}.json"))
     }
 
     #[test]

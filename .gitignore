@@ -38,8 +38,8 @@ src-tauri/icons/_preview*.png
 .env
 .env.*
 
-# Local MarsBuild data (if ever created in-repo)
-.marsbuild/
+# Local PinkCode data (if ever created in-repo)
+.pinkcode/
 .mimocode/
 .vscode/
 

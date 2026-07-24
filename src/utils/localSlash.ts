@@ -6,7 +6,7 @@ import {
   localSlashHelpLines,
 } from "./slashCommands";
 
-/** Live cards produced by a MarsBuild-handled slash command. */
+/** Live cards produced by a PinkCode-handled slash command. */
 export interface LocalSlashItem {
   kind: string;
   title: string;
@@ -20,7 +20,7 @@ export interface LocalSlashResult {
 }
 
 /**
- * True when the prompt is a leading slash command that MarsBuild can answer
+ * True when the prompt is a leading slash command that PinkCode can answer
  * without sending it through ACP (Grok pager builtins like `/usage`).
  */
 export function isLocalSlashCommand(text: string): boolean {
@@ -241,7 +241,7 @@ function formatSessionInfoCard(detail: SessionDetail | null): LocalSlashItem {
 
 function formatHelpCard(): LocalSlashItem {
   const lines = [
-    "MarsBuild local commands (like Grok TUI pager builtins):",
+    "PinkCode local commands (like Grok TUI pager builtins):",
     ...localSlashHelpLines(),
     "",
     "Agent commands (need attach): /compact /plan /model /effort …",

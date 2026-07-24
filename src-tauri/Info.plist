@@ -2,12 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Shown when MarsBuild lists a project under a protected user folder. -->
+	<!-- Shown when PinkCode lists a project under a protected user folder. -->
 	<key>NSDocumentsFolderUsageDescription</key>
-	<string>MarsBuild shows files and Git changes for Grok project folders. Access is only needed when a task’s working directory is inside Documents.</string>
+	<string>PinkCode shows files and Git changes for Grok project folders. Access is only needed when a task’s working directory is inside Documents.</string>
 	<key>NSDesktopFolderUsageDescription</key>
-	<string>MarsBuild shows files and Git changes for Grok project folders. Access is only needed when a task’s working directory is on the Desktop.</string>
+	<string>PinkCode shows files and Git changes for Grok project folders. Access is only needed when a task’s working directory is on the Desktop.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
-	<string>MarsBuild shows files and Git changes for Grok project folders. Access is only needed when a task’s working directory is in Downloads.</string>
+	<string>PinkCode shows files and Git changes for Grok project folders. Access is only needed when a task’s working directory is in Downloads.</string>
 </dict>
 </plist>

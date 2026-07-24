@@ -925,7 +925,7 @@ mod tests {
     #[test]
     fn corrupt_session_metadata_is_isolated() {
         let dir = std::env::temp_dir().join(format!(
-            "marsbuild-session-metadata-{}-{}",
+            "pinkcode-session-metadata-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -947,7 +947,7 @@ mod tests {
     #[test]
     fn jsonl_tail_reads_last_valid_records_across_blocks() {
         let path = std::env::temp_dir().join(format!(
-            "marsbuild-tail-{}-{}.jsonl",
+            "pinkcode-tail-{}-{}.jsonl",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)

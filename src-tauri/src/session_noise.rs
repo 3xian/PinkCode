@@ -107,7 +107,7 @@ mod tests {
         let temp = std::env::temp_dir();
         assert!(is_system_temp_cwd(&temp.display().to_string()));
         assert!(is_system_temp_cwd(
-            &temp.join("marsbuild-probe").display().to_string()
+            &temp.join("pinkcode-probe").display().to_string()
         ));
         // Windows short-path style temp (common under Grok session groups).
         assert!(is_system_temp_cwd(r"C:\Users\ADMINI~1\AppData\Local\Temp\"));
@@ -116,7 +116,7 @@ mod tests {
         ));
         assert!(is_system_temp_cwd("/tmp"));
         assert!(is_system_temp_cwd("/tmp/foo"));
-        assert!(!is_system_temp_cwd(r"D:\code\MarsBuild"));
+        assert!(!is_system_temp_cwd(r"D:\code\PinkCode"));
         assert!(!is_system_temp_cwd(r"D:\code\my-temp-project"));
         // Project folder merely named Temp is not system temp.
         assert!(!is_system_temp_cwd(r"D:\code\Temp"));
@@ -164,7 +164,7 @@ mod tests {
         assert!(!is_noise_session(&worked));
 
         let real = SessionCard {
-            cwd: r"D:\code\MarsBuild".into(),
+            cwd: r"D:\code\PinkCode".into(),
             ..idle
         };
         assert!(!is_noise_session(&real));

@@ -1,6 +1,6 @@
 //! Grok CLI session credentials (`~/.grok/auth.json`).
 //!
-//! MarsBuild is not a login UI — it reuses tokens written by `grok login` and
+//! PinkCode is not a login UI — it reuses tokens written by `grok login` and
 //! silently refreshes OIDC access tokens the same way the CLI does, so callers
 //! (billing, …) do not fail after `key` expires until the user opens `grok`.
 
@@ -212,7 +212,7 @@ pub fn refresh_access_token(agent: &ureq::Agent) -> Result<String, String> {
         .post(&token_endpoint(&refresh.issuer))
         .set("Content-Type", "application/x-www-form-urlencoded")
         .set("Accept", "application/json")
-        .set("User-Agent", "marsbuild")
+        .set("User-Agent", "pinkcode")
         .send_string(&body)
     {
         Ok(r) => r,

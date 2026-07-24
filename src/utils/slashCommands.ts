@@ -13,7 +13,7 @@ export interface SlashCommandDef {
 }
 
 /**
- * Canonical Grok / MarsBuild slash registry.
+ * Canonical Grok / PinkCode slash registry.
  * Local commands run in-process; agent commands need ACP attach.
  */
 export const GROK_SLASH_COMMANDS: SlashCommandDef[] = [
@@ -40,7 +40,7 @@ export const GROK_SLASH_COMMANDS: SlashCommandDef[] = [
   },
   {
     name: "help",
-    description: "List MarsBuild local commands",
+    description: "List PinkCode local commands",
     fulfillment: "local",
   },
   { name: "new", description: "Start a new session", fulfillment: "agent" },

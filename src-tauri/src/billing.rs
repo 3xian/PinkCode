@@ -120,7 +120,7 @@ fn proxy_from_env() -> Option<ureq::Proxy> {
             match ureq::Proxy::new(val) {
                 Ok(p) => return Some(p),
                 Err(e) => {
-                    eprintln!("[marsbuild] ignore invalid {key}={val:?}: {e}");
+                    eprintln!("[pinkcode] ignore invalid {key}={val:?}: {e}");
                 }
             }
         }
@@ -143,7 +143,7 @@ fn call_billing(agent: &ureq::Agent, token: &str) -> Result<ureq::Response, Bill
         .get(BILLING_URL)
         .set("Authorization", &format!("Bearer {token}"))
         .set("Accept", "application/json")
-        .set("User-Agent", "marsbuild")
+        .set("User-Agent", "pinkcode")
         .set("x-grok-client-mode", "billing")
         .call()
     {

@@ -29,7 +29,7 @@ const api = "https://api.github.com";
 const headers = {
   Accept: "application/vnd.github+json",
   Authorization: `Bearer ${token}`,
-  "User-Agent": "MarsBuild-rewrite-updater-json",
+  "User-Agent": "PinkCode-rewrite-updater-json",
   "X-GitHub-Api-Version": "2022-11-28",
 };
 

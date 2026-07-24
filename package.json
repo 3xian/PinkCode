@@ -1,5 +1,5 @@
 {
-  "name": "marsbuild",
+  "name": "pinkcode",
   "version": "0.2.1",
   "description": "Desktop mission control for Grok agents.",
   "type": "module",
@@ -11,13 +11,13 @@
   ],
   "author": "david <david@gplab.cn>",
   "license": "UNLICENSED",
-  "homepage": "https://github.com/3xian/MarsBuild#readme",
+  "homepage": "https://github.com/3xian/PinkCode#readme",
   "bugs": {
-    "url": "https://github.com/3xian/MarsBuild/issues"
+    "url": "https://github.com/3xian/PinkCode/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/3xian/MarsBuild.git"
+    "url": "git+ssh://git@github.com/3xian/PinkCode.git"
   },
   "files": [
     ".nvmrc",

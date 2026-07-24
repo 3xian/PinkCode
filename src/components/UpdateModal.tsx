@@ -104,7 +104,7 @@ export function UpdateModal({ update, onDismiss }: Props) {
             </div>
           ) : (
             <p className="muted small update-notes-fallback">
-              A newer MarsBuild build is ready. Download and install without
+              A newer PinkCode build is ready. Download and install without
               leaving the app.
             </p>
           )}

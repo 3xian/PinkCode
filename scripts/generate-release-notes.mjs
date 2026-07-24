@@ -32,7 +32,7 @@ if (!token || !repo || !tag) {
 const headers = {
   Accept: "application/vnd.github+json",
   Authorization: `Bearer ${token}`,
-  "User-Agent": "MarsBuild-generate-release-notes",
+  "User-Agent": "PinkCode-generate-release-notes",
   "X-GitHub-Api-Version": "2022-11-28",
   "Content-Type": "application/json",
 };

@@ -140,7 +140,7 @@ impl AcpClient {
             // Notify the manager before waking request waiters so their error path
             // cannot briefly move an already-dead agent back to Ready.
             on_notify(json!({
-                "method": "_marsbuild/transport_closed",
+                "method": "_pinkcode/transport_closed",
                 "params": { "reason": "ACP stdout closed" }
             }));
             fail_pending_requests(&pending_reader, "ACP transport closed");
@@ -243,7 +243,7 @@ impl AcpClient {
             json!({
                 "protocolVersion": 1,
                 "clientInfo": {
-                    "name": "marsbuild",
+                    "name": "pinkcode",
                     "version": env!("CARGO_PKG_VERSION"),
                 },
                 // Advertise FS so Grok routes file ops through us — enables write gate.

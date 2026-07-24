@@ -183,7 +183,7 @@ impl RpcHandler for FsWriteHandler {
         } else {
             Ok(ResponseAction::SendError(
                 -32000,
-                "User denied file write in MarsBuild".into(),
+                "User denied file write in PinkCode".into(),
             ))
         }
     }
@@ -212,7 +212,7 @@ impl RpcHandler for FsReadHandler {
         } else {
             Ok(ResponseAction::SendError(
                 -32000,
-                "User denied file read in MarsBuild".into(),
+                "User denied file read in PinkCode".into(),
             ))
         }
     }

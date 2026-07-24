@@ -95,7 +95,7 @@ function App() {
   const [pinTimelineBottomSeq, setPinTimelineBottomSeq] = useState(0);
   const [controlBusy, setControlBusy] = useState(false);
   const [permBusyKey, setPermBusyKey] = useState<string | null>(null);
-  /** Per-task permission modes loaded from disk (`~/.marsbuild/task_prefs.json`). */
+  /** Per-task permission modes loaded from disk (`~/.pinkcode/task_prefs.json`). */
   const [taskPermissionModes, setTaskPermissionModes] = useState<
     Record<string, PermissionMode>
   >({});
@@ -815,7 +815,7 @@ function App() {
               <p className="muted small">
                 This project is under a macOS-protected folder (Documents,
                 Desktop, or Downloads). Load files only when you need them so
-                MarsBuild does not request access on every launch.
+                PinkCode does not request access on every launch.
               </p>
               <button
                 className="btn primary"

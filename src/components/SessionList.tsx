@@ -143,7 +143,7 @@ function resolveCardState(opts: {
   managed: boolean;
   diskActive: boolean;
 }): CardState {
-  // 1) MarsBuild ACP attached
+  // 1) PinkCode ACP attached
   if (opts.managed) return "live";
   // 2) Grok lists session active on disk, not attached here
   if (opts.diskActive) return "disk-active";
@@ -154,7 +154,7 @@ function resolveCardState(opts: {
 function stateTitle(state: CardState): string {
   switch (state) {
     case "live":
-      return "Live in MarsBuild";
+      return "Live in PinkCode";
     case "disk-active":
       return "Active in Grok Build — send a message here to connect";
     case "idle":

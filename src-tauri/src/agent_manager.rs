@@ -264,7 +264,7 @@ impl AgentManager {
             let has_id = msg.get("id").is_some();
             let is_response_shape = msg.get("result").is_some() || msg.get("error").is_some();
 
-            if method == "_marsbuild/transport_closed" {
+            if method == "_pinkcode/transport_closed" {
                 let reason = msg
                     .pointer("/params/reason")
                     .and_then(Value::as_str)
@@ -382,7 +382,7 @@ impl AgentManager {
                 let _ = client.respond_error(
                     &request_id,
                     -32601,
-                    &format!("MarsBuild does not implement {method}"),
+                    &format!("PinkCode does not implement {method}"),
                 );
             }
         }
@@ -584,7 +584,7 @@ impl AgentManager {
                         .respond_error(
                             &pending.request_id,
                             -32000,
-                            "User denied request in MarsBuild",
+                            "User denied request in PinkCode",
                         )
                         .map_err(|e| e.to_string())
                 }
@@ -739,7 +739,7 @@ impl AgentManager {
             .filter(|s| !s.is_empty())
         {
             if let Err(e) = client.session_set_mode(&session_id, mode_id) {
-                eprintln!("[marsbuild] session/set_mode({mode_id}) after spawn failed: {e}");
+                eprintln!("[pinkcode] session/set_mode({mode_id}) after spawn failed: {e}");
             }
         }
 

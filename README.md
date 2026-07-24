@@ -1,9 +1,9 @@
 <!-- Relative path so GitHub does not rewrite via camo (often broken in CN). -->
 <p align="center">
-  <img src="docs/logo.png" alt="MarsBuild" width="128" />
+  <img src="docs/logo.png" alt="PinkCode" width="128" />
 </p>
 
-<h1 align="center">MarsBuild</h1>
+<h1 align="center">PinkCode</h1>
 
 <p align="center">
   <strong>Desktop mission control for Grok agents.</strong>
@@ -28,7 +28,7 @@ A desktop console for [Grok Build](https://x.ai): multi-task board, ACP timeline
 ## Screenshot
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="MarsBuild — tasks, Timeline, workspace" width="100%" />
+  <img src="docs/screenshot.png" alt="PinkCode — tasks, Timeline, workspace" width="100%" />
 </p>
 
 ## What it does
@@ -40,18 +40,18 @@ A desktop console for [Grok Build](https://x.ai): multi-task board, ACP timeline
 | **File changes** | Agent hunks from `hunk_records.jsonl`. |
 | **Raw** | Tail of on-disk ACP `session/update` records. |
 | **Workspace** | Project file tree + Git porcelain status (right rail). |
-| **Mode** | Grok Shift+Tab ring: **Normal → Plan → Auto → Always-approve**. Plan is orthogonal to permission (next free-text becomes `/plan …`). When the agent calls `exit_plan_mode`, MarsBuild shows a **plan approval** panel (Approve / Request changes / Quit) via Grok’s `x.ai/exit_plan_mode` reverse-RPC. `/view-plan` is local. Auto / Always-approve update the **host ACP gate only** (no `session/prompt` side effects). |
-| **Permissions** | Host gate also supports Accept edits and Don't ask (New Task spawn). Per-task prefs under `~/.marsbuild` (permission + Plan arming). |
+| **Mode** | Grok Shift+Tab ring: **Normal → Plan → Auto → Always-approve**. Plan is orthogonal to permission (next free-text becomes `/plan …`). When the agent calls `exit_plan_mode`, PinkCode shows a **plan approval** panel (Approve / Request changes / Quit) via Grok’s `x.ai/exit_plan_mode` reverse-RPC. `/view-plan` is local. Auto / Always-approve update the **host ACP gate only** (no `session/prompt` side effects). |
+| **Permissions** | Host gate also supports Accept edits and Don't ask (New Task spawn). Per-task prefs under `~/.pinkcode` (permission + Plan arming). |
 | **Usage** | Week remaining (Grok billing API) + recent day token series from local sessions. |
-| **Updates** | Checks GitHub Releases on startup; optional download & install. Title bar shows `MarsBuild <version>`. |
+| **Updates** | Checks GitHub Releases on startup; optional download & install. Title bar shows `PinkCode <version>`. |
 
-Prebuilt installers: **[Releases](https://github.com/3xian/MarsBuild/releases)** (Windows x64 NSIS, macOS Apple Silicon & Intel). Linux: build from source (no CI installer yet).
+Prebuilt installers: **[Releases](https://github.com/3xian/PinkCode/releases)** (Windows x64 NSIS, macOS Apple Silicon & Intel). Linux: build from source (no CI installer yet).
 
 ## Quick start
 
 ### 1. Install Grok Build first
 
-MarsBuild attaches to [Grok Build](https://grok.com/build) over ACP — install the CLI before running MarsBuild.
+PinkCode attaches to [Grok Build](https://grok.com/build) over ACP — install the CLI before running PinkCode.
 
 **Windows (PowerShell):**
 
@@ -86,7 +86,7 @@ winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passi
 powershell -ExecutionPolicy Bypass -File scripts/windows-setup.ps1
 ```
 
-### 3. Build and run MarsBuild
+### 3. Build and run PinkCode
 
 ```bash
 npm install
@@ -101,7 +101,7 @@ npm run check              # frontend + Rust (fmt/clippy/test) — same as CI
 |----------|---------|
 | `GROK_BIN` | Path to `grok` / `grok.exe` |
 | `GROK_HOME` | Grok data root (default `~/.grok`) |
-| `MARSBUILD_HOME` | MarsBuild prefs root (default `~/.marsbuild`) |
+| `PINKCODE_HOME` | PinkCode prefs root (default `~/.pinkcode`) |
 
 ## Architecture
 

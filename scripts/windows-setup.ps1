@@ -1,8 +1,8 @@
-# MarsBuild — Windows 11 dev environment check / setup hints
+# PinkCode — Windows 11 dev environment check / setup hints
 # Run: powershell -ExecutionPolicy Bypass -File scripts\windows-setup.ps1
 
 $ErrorActionPreference = "Continue"
-Write-Host "=== MarsBuild Windows setup check ===" -ForegroundColor Cyan
+Write-Host "=== PinkCode Windows setup check ===" -ForegroundColor Cyan
 
 function Ok($msg) { Write-Host "[OK]  $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "[!!]  $msg" -ForegroundColor Yellow }

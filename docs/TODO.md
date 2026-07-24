@@ -23,58 +23,33 @@ checklist so we do not re-guess wire behavior.
 
 ---
 
-## Done (protocol / plan path)
-
-- [x] ACP `session/set_mode` for real Plan (`modeId: "plan"`) — not `/plan` text alone
-- [x] `x.ai/exit_plan_mode` wire: `{ outcome: "approved" \| "cancelled" \| "abandoned", feedback? }`
-- [x] Approve path: host does **not** race with mid-approve `set_mode("default")`
-- [x] `plan.md` session file: host auto-allow (FS write + write tools + shell materialization)
-- [x] `x.ai/ask_user_question` wire: answers map + tagged `outcome` (accept / cancel / chat / skip)
-- [x] Blocking reverse-RPC trio + FS: `session/request_permission`, `fs/read_text_file`, `fs/write_text_file`
-- [x] `session/update` + `_x.ai/session/update` → Live; shell heuristic; `current_mode_update` for Plan chip
-- [x] Host Mode ring: Normal → Plan → Auto → Always-approve (Plan orthogonal to permission prefs)
-
----
-
-## Three different “ask” (do not conflate)
+## Three different "ask" (do not conflate)
 
 | # | Name | What it is | Wire / surface | PinkCode |
 |---|------|------------|----------------|-----------|
 | **①** | **ACP SessionMode `ask`** | Agent session mode: Q&A-oriented, **read-only / no tool use** (`PromptMode::Ask`) | `session/set_mode({ modeId: "ask" })` | **Missing** — no Mode chip entry |
-| **②** | **Permission ring “ask”** | Host gate: ask user before tools (Default) | Host `PermissionMode`; *not* `set_mode` | **Present** as Normal / default |
+| **②** | **Permission ring "ask"** | Host gate: ask user before tools (Default) | Host `PermissionMode`; *not* `set_mode` | **Present** as Normal / default |
 | **③** | **`ask_user_question` tool** | Multi-choice form reverse-RPC | `x.ai/ask_user_question` | **Present** |
 
 Grok ACP session mode ids are only: `default` \| `plan` \| `ask`
 (`xai-grok-tools` `types/session_mode.rs`).  
-UI label *“Ask before tools (Grok default / ask)”* means **②**, not **①**.
+UI label *"Ask before tools (Grok default / ask)"* means **②**, not **①**.
 
 ---
 
 ## Must
 
-### H→A
+### Permission optionId / kind matrix
 
-- [x] **`session/cancel` for Stop**  
-  `AcpClient::session_cancel` sends cancellation notification before `kill()`,  
-  allowing the agent to flush state cleanly.
+- [ ] **FollowupMessage support** — allow user to reject but send follow-up message  
+  via `meta.followup_message` on `RejectOnce` response. Agent classifies as `Followup`.
 
-### A→H — keep correct (regress; do not regress)
+- [ ] **Cancelled decision** — distinguish user cancellation (Cmd+C / close dialog) from rejection.  
+  `Decision::Cancelled` → `PermissionDecision::Cancelled` → `StopReason::Cancelled`.
 
-- [x] `session/request_permission` → `{ outcome: { outcome: "selected", optionId } }`
-- [x] `x.ai/exit_plan_mode` / `x.ai/ask_user_question` / `fs/*` as above
+### Plan state machine edge cases
 
-### A→H — still verify
-
-- [ ] **Permission optionId / kind matrix**  
-  Align `allow_once` / `allow_always` / `reject_*` / follow-up options with agent
-  classification (Allow / Deny / Cancelled / Followup).  
-  Host Auto / AcceptEdits / Bypass risk heuristics vs Grok risk tables.  
-  Anchor: shell tool permission paths + leader `is_interaction_request`.
-  - [x] `enable-always-approve` option: identified as Desktop client, activates YOLO on select,
-    sends `x.ai/yolo_mode_changed` to shell (v0.2.3)
-
-- [ ] **Plan state machine edge cases** (after core wire fix)  
-  Approve / Request changes (`cancelled`+feedback) / Abandon; mid-turn
+- [ ] Approve / Request changes (`cancelled`+feedback) / Abandon; mid-turn
   `set_mode(plan)`; user leaves Plan via Mode chip → `set_mode(default)`.  
   Host must not force `set_mode(default)` on Approve.
 
@@ -86,10 +61,10 @@ UI label *“Ask before tools (Grok default / ask)”* means **②**, not **①*
 
 - [ ] **Mode chip + Shift+Tab: expose Ask**  
   Call `session/set_mode("ask")` on enter; `set_mode("default")` (or plan) on leave.  
-  Do **not** implement Ask as “permission = default only”.
+  Do **not** implement Ask as "permission = default only".
 
 - [ ] **`current_mode_update` for `modeId: "ask"`**  
-  Show Ask on chip; do not only treat non-`plan` as “left plan”.
+  Show Ask on chip; do not only treat non-`plan` as "left plan".
 
 - [ ] **Cycle order**  
   Confirm against Grok TUI (e.g. Normal → Ask → Plan → Auto → Always-approve, or
@@ -97,13 +72,6 @@ UI label *“Ask before tools (Grok default / ask)”* means **②**, not **①*
 
 ### Initialize `clientCapabilities.meta`
 
-PinkCode today: `fs` read/write true, `terminal: false`, `clientIdentifier: "grok-desktop"`.
-
-Pager advertises (see pager `client_capabilities_meta`):
-
-- [x] `x.ai/incrementalBashOutput: true` — better Shell streaming  
-- [x] `x.ai/bashOutputNoColor: true` — cleaner Live output  
-- [x] `x.ai/hunkTracker: { mode }` — Diff / hunk productization  
 - [ ] `x.ai/gitHeadChanged: true` — Workspace HEAD follow  
 
 **Do not** advertise without implementing the reverse path:
@@ -116,7 +84,7 @@ Pager advertises (see pager `client_capabilities_meta`):
 
 ### H→A methods
 
-- [ ] **`x.ai/interject`** (or document “prompt only between turns”)  
+- [ ] **`x.ai/interject`** (or document "prompt only between turns")  
   Mid-turn user text; plan approve-with-comments follow-up.
 
 - [ ] **`x.ai/queue/*`** (remove / reorder / clear / edit / interject) — queue UX  
@@ -133,9 +101,6 @@ Pager advertises (see pager `client_capabilities_meta`):
 
 ### A→H notifications (listen / map)
 
-- [x] **`x.ai/yolo_mode_changed`** — sync Mode chip with agent yolo/auto  
-  Sent when permission mode changes (activate_always_approve, UI toggle).
-  Shell auto-approves subsequent permissions.
 - [ ] **`x.ai/session_notification`** — pending_interaction, subagent_*, interaction_resolved  
 - [ ] **`x.ai/fs_notify` / git head** — after capability ads  
 - [ ] **Structured `session/update` kinds** — plan / todo / goal / turn_completed / recap (PLAN: Live cards)  
@@ -144,8 +109,6 @@ Pager advertises (see pager `client_capabilities_meta`):
 ### Permission product
 
 - [ ] Allow session / Persist rule (PLAN)  
-- [x] Bypass ≡ always-approve — `enable-always-approve` option activates BypassPermissions mode,
-  sends `x.ai/yolo_mode_changed` to shell (v0.2.3)  
 - [ ] Keep: plan approval **never** auto-skipped under Always-approve  
 
 ### Shell
@@ -171,38 +134,6 @@ Do **not** treat as core PinkCode work. Prefer not advertising related capabilit
 | Full TUI chrome | line-comment plan UI, pager scrollback, announcements chrome |
 
 Unknown reverse methods today: JSON-RPC `-32601`. Acceptable when capability not advertised; agent hooks fail-open.
-
----
-
-## Blocking reverse-RPC inventory (source of truth)
-
-Shared interactive modals (leader `is_interaction_request` / `pending_interaction`):
-
-| Method | Priority | Status |
-|--------|----------|--------|
-| `session/request_permission` | Must | Done — verify option matrix |
-| `x.ai/ask_user_question` | Must | Done |
-| `x.ai/exit_plan_mode` | Must | Done |
-| `fs/read_text_file` | Must (fs advertised) | Done |
-| `fs/write_text_file` | Must (fs advertised) | Done + plan.md gate |
-| `x.ai/hooks/run` | Ignore unless hooks registered | Reject → agent fail-open |
-| `x.ai/folder_trust/request` | Ignore unless capability | Not sent if not advertised |
-| `x.ai/mcp/sdk_call` | Ignore unless SDK MCP | Same |
-
----
-
-## Recommended implementation order
-
-1. ~~**`session/cancel`** (Stop without kill)~~ ✅  
-2. **Permission optionId / kind matrix** — partially done (`enable-always-approve` ✅, remaining: FollowupMessage, Cancelled decision)  
-3. ~~**Initialize meta:** `incrementalBashOutput` + `bashOutputNoColor`~~ ✅  
-4. **SessionMode `ask`** on Mode chip + `current_mode_update`  
-5. ~~**`x.ai/yolo_mode_changed`** ↔ Mode chip~~ ✅  
-6. **`x.ai/interject`** (or document queue limits)  
-7. **Structured session/update → Live** (plan/todo/subagent) — pairs with PLAN P1  
-8. Document unknown reverse-RPC policy (`-32601` + fail-open) in code comments / this file  
-
-Then return to [PLAN.md](./PLAN.md) product sprint (status density, keyboard approvals, palette).
 
 ---
 
@@ -233,4 +164,4 @@ PinkCode counterparts: `src-tauri/src/acp.rs`, `agent_manager.rs`,
 - Re-implement Grok agent loop or sampler inside PinkCode  
 - Full multi-client leader / cloud control plane  
 - Advertising capabilities we do not implement  
-- Treating permission “ask” (②) as SessionMode `ask` (①)  
+- Treating permission "ask" (②) as SessionMode `ask` (①)  

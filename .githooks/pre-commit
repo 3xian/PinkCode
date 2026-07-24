@@ -1,0 +1,23 @@
+#!/bin/sh
+#
+# Pre-commit hook: run cargo fmt + clippy before allowing commit.
+# Install: git config core.hooksPath .githooks
+#
+
+echo "==> Running cargo fmt --check..."
+if ! cargo fmt --manifest-path src-tauri/Cargo.toml --check; then
+  echo ""
+  echo "cargo fmt found issues. Auto-formatting..."
+  cargo fmt --manifest-path src-tauri/Cargo.toml
+  echo "Formatted. Please re-stage and commit."
+  exit 1
+fi
+
+echo "==> Running cargo clippy..."
+if ! cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings 2>/dev/null; then
+  echo ""
+  echo "cargo clippy found warnings. Please fix them."
+  exit 1
+fi
+
+echo "==> Rust checks passed."

@@ -19,6 +19,7 @@
         "minWidth": 1100,
         "minHeight": 700,
         "dragDropEnabled": false,
+        "theme": "Dark",
         "backgroundColor": [11, 13, 18, 255]
       }
     ],

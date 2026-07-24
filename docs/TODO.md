@@ -57,23 +57,6 @@ UI label *"Ask before tools (Grok default / ask)"* means **②**, not **①**.
 
 ## Should
 
-### Session mode `ask` (①) — PinkCode-specific, not in Grok Build
-
-Note: `SessionMode::Ask` exists in Grok Build's type system but has **no UI entry**
-in the TUI/Pager. It can only be set programmatically via ACP. PinkCode may choose
-to expose it as a feature, but this is **not** Grok Build parity work.
-
-- [ ] **Mode chip + Shift+Tab: expose Ask** (if desired)  
-  Call `session/set_mode("ask")` on enter; `set_mode("default")` (or plan) on leave.  
-  Do **not** implement Ask as "permission = default only".
-
-- [ ] **`current_mode_update` for `modeId: "ask"`**  
-  Show Ask on chip; do not only treat non-`plan` as "left plan".
-
-- [ ] **Cycle order** (if adding Ask)  
-  Decide placement (e.g. Normal → Ask → Plan → Auto → Always-approve).  
-  Document in `sessionMode.ts`.
-
 ### Initialize `clientCapabilities.meta`
 
 - [ ] `x.ai/gitHeadChanged: true` — Workspace HEAD follow  

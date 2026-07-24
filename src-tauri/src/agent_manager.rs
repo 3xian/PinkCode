@@ -649,7 +649,9 @@ impl AgentManager {
 
         // enable-always-approve: after sending the response, activate YOLO mode.
         if is_enable_always_approve(&req.option_id) {
-            if let Err(e) = self.set_permission_mode(&req.handle_id, PermissionMode::BypassPermissions) {
+            if let Err(e) =
+                self.set_permission_mode(&req.handle_id, PermissionMode::BypassPermissions)
+            {
                 eprintln!("[pinkcode] failed to activate YOLO mode: {e}");
             }
         }

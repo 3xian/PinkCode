@@ -70,6 +70,8 @@ UI label *“Ask before tools (Grok default / ask)”* means **②**, not **①*
   classification (Allow / Deny / Cancelled / Followup).  
   Host Auto / AcceptEdits / Bypass risk heuristics vs Grok risk tables.  
   Anchor: shell tool permission paths + leader `is_interaction_request`.
+  - [x] `enable-always-approve` option: identified as Desktop client, activates YOLO on select,
+    sends `x.ai/yolo_mode_changed` to shell (v0.2.3)
 
 - [ ] **Plan state machine edge cases** (after core wire fix)  
   Approve / Request changes (`cancelled`+feedback) / Abandon; mid-turn
@@ -95,7 +97,7 @@ UI label *“Ask before tools (Grok default / ask)”* means **②**, not **①*
 
 ### Initialize `clientCapabilities.meta`
 
-PinkCode today: `fs` read/write true, `terminal: false`, **no** x.ai meta.
+PinkCode today: `fs` read/write true, `terminal: false`, `clientIdentifier: "grok-desktop"`.
 
 Pager advertises (see pager `client_capabilities_meta`):
 
@@ -131,7 +133,9 @@ Pager advertises (see pager `client_capabilities_meta`):
 
 ### A→H notifications (listen / map)
 
-- [ ] **`x.ai/yolo_mode_changed`** — sync Mode chip with agent yolo/auto  
+- [x] **`x.ai/yolo_mode_changed`** — sync Mode chip with agent yolo/auto  
+  Sent when permission mode changes (activate_always_approve, UI toggle).
+  Shell auto-approves subsequent permissions.
 - [ ] **`x.ai/session_notification`** — pending_interaction, subagent_*, interaction_resolved  
 - [ ] **`x.ai/fs_notify` / git head** — after capability ads  
 - [ ] **Structured `session/update` kinds** — plan / todo / goal / turn_completed / recap (PLAN: Live cards)  
@@ -140,7 +144,8 @@ Pager advertises (see pager `client_capabilities_meta`):
 ### Permission product
 
 - [ ] Allow session / Persist rule (PLAN)  
-- [ ] Bypass ≡ always-approve (bash included?) — document + tests  
+- [x] Bypass ≡ always-approve — `enable-always-approve` option activates BypassPermissions mode,
+  sends `x.ai/yolo_mode_changed` to shell (v0.2.3)  
 - [ ] Keep: plan approval **never** auto-skipped under Always-approve  
 
 ### Shell
@@ -188,11 +193,11 @@ Shared interactive modals (leader `is_interaction_request` / `pending_interactio
 
 ## Recommended implementation order
 
-1. **`session/cancel`** (Stop without kill)  
-2. **Permission optionId / kind matrix** tests against Grok wire  
-3. **Initialize meta:** `incrementalBashOutput` + `bashOutputNoColor` (optional hunk/git)  
+1. ~~**`session/cancel`** (Stop without kill)~~ ✅  
+2. **Permission optionId / kind matrix** — partially done (`enable-always-approve` ✅, remaining: FollowupMessage, Cancelled decision)  
+3. ~~**Initialize meta:** `incrementalBashOutput` + `bashOutputNoColor`~~ ✅  
 4. **SessionMode `ask`** on Mode chip + `current_mode_update`  
-5. **`x.ai/yolo_mode_changed`** ↔ Mode chip  
+5. ~~**`x.ai/yolo_mode_changed`** ↔ Mode chip~~ ✅  
 6. **`x.ai/interject`** (or document queue limits)  
 7. **Structured session/update → Live** (plan/todo/subagent) — pairs with PLAN P1  
 8. Document unknown reverse-RPC policy (`-32601` + fail-open) in code comments / this file  

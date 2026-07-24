@@ -103,7 +103,8 @@ UI label *"Ask before tools (Grok default / ask)"* means **②**, not **①**.
 
 - [ ] **`x.ai/session_notification`** — pending_interaction, subagent_*, interaction_resolved  
 - [ ] **`x.ai/fs_notify` / git head** — after capability ads  
-- [ ] **Structured `session/update` kinds** — plan / todo / goal / turn_completed / recap (PLAN: Live cards)  
+- [ ] **Structured `session/update` kinds** — goal_updated / turn_completed / session_recap (PLAN: Live cards)  
+  Note: Plan mode state uses `SessionMode` (`handle_session_mode`), not a session update kind.
 - [ ] **`prompt_complete` / running state** — prefer explicit signals over heuristics  
 
 ### Permission product

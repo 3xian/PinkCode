@@ -5,6 +5,15 @@ use serde_json::Value;
 // Plan-file auto-allow lives in plan_file_policy.
 use crate::plan_file_policy::is_session_plan_file_write;
 
+/// Option ID for the "enable-always-approve" option prepended by Grok Build
+/// for TUI/Pager/Desktop clients. Selecting this enables YOLO mode.
+pub const ENABLE_ALWAYS_APPROVE_OPTION_ID: &str = "enable-always-approve";
+
+/// Returns true if the given option ID is the enable-always-approve option.
+pub fn is_enable_always_approve(option_id: &str) -> bool {
+    option_id == ENABLE_ALWAYS_APPROVE_OPTION_ID
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GateDecision {
     Allow,
@@ -125,6 +134,10 @@ pub fn pick_allow_option(options: &[PermissionOption]) -> String {
     options
         .iter()
         .find(|option| {
+            // Skip enable-always-approve — it's a YOLO toggle, not a regular allow option.
+            if is_enable_always_approve(&option.option_id) {
+                return false;
+            }
             option.kind.contains("allow_once")
                 || option.option_id == "allow-once"
                 || (option.option_id.contains("allow") && option.option_id.contains("once"))

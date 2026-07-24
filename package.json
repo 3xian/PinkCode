@@ -1,6 +1,6 @@
 {
   "name": "pinkcode",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Desktop mission control for Grok agents.",
   "type": "module",
   "keywords": [
@@ -52,6 +52,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "icons:regen": "python scripts/regen-app-icons.py",
+    "icons:regen:node": "node scripts/generate-icons.mjs",
     "icons:windows-export": "python scripts/regen-app-icons.py --windows-export"
   },
   "dependencies": {
@@ -70,6 +71,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "sharp": "^0.35.3",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
     "vitest": "^4.1.10"

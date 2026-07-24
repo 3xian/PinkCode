@@ -6,7 +6,8 @@ use crate::agent_types::{
     PermissionMode, ResolvePermissionRequest, SpawnRequest,
 };
 use crate::permission_policy::{
-    decide_gate, is_allow_option, pick_allow_option, pick_reject_option, GateDecision,
+    decide_gate, is_allow_option, is_enable_always_approve, pick_allow_option, pick_reject_option,
+    GateDecision,
 };
 use crate::rpc_handler::{self, HandleResult, ResponseAction};
 use crate::shell_emitter;
@@ -84,22 +85,45 @@ impl AgentManager {
         handle_id: &str,
         mode: PermissionMode,
     ) -> Result<ManagedAgentInfo, String> {
-        let session_id = {
+        let (session_id, client, changed) = {
             let mut agents = self.inner.agents.lock();
             let agent = agents
                 .get_mut(handle_id)
                 .ok_or_else(|| format!("unknown handle {handle_id}"))?;
+            let changed = agent.info.permission_mode != mode;
             agent.info.permission_mode = mode;
             agent.info.always_approve = mode.spawns_always_approve();
             Self::emit_status(&self.inner, &agent.info);
-            agent.info.session_id.clone()
+            let session_id = agent.info.session_id.clone();
+            let client = Arc::clone(&agent.client);
+            (session_id, client, changed)
         };
         if let Some(sid) = session_id.as_deref() {
             task_prefs::set_permission_mode(sid, mode);
         }
+        if changed {
+            Self::notify_mode_changed(&client, mode);
+        }
         self.reconcile_pending_for_mode(handle_id, mode);
         self.get(handle_id)
             .ok_or_else(|| format!("unknown handle {handle_id}"))
+    }
+
+    /// Send x.ai/yolo_mode_changed notification to shell so its permission
+    /// manager stays in sync with the host-side mode.
+    fn notify_mode_changed(client: &AcpClient, mode: PermissionMode) {
+        let params = json!({
+            "yolo_mode": mode == PermissionMode::BypassPermissions,
+            "auto_mode": mode == PermissionMode::Auto,
+            "permission_mode": match mode {
+                PermissionMode::BypassPermissions => "always-approve",
+                PermissionMode::Auto => "auto",
+                _ => "ask",
+            },
+        });
+        if let Err(e) = client.notify("x.ai/yolo_mode_changed", params) {
+            eprintln!("[pinkcode] failed to send yolo_mode_changed notification: {e}");
+        }
     }
 
     fn reconcile_pending_for_mode(&self, handle_id: &str, mode: PermissionMode) {
@@ -621,6 +645,13 @@ impl AgentManager {
                 );
             }
             return Err(format!("failed to deliver permission response: {error}"));
+        }
+
+        // enable-always-approve: after sending the response, activate YOLO mode.
+        if is_enable_always_approve(&req.option_id) {
+            if let Err(e) = self.set_permission_mode(&req.handle_id, PermissionMode::BypassPermissions) {
+                eprintln!("[pinkcode] failed to activate YOLO mode: {e}");
+            }
         }
 
         {

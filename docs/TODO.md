@@ -1,8 +1,7 @@
 # PinkCode TODO — Grok Build host parity
 
 Protocol and control-plane backlog derived from a read-only audit of
-[xai-org/grok-build](https://github.com/xai-org/grok-build) (local ref
-`D:\code\grok-build-ref`, `SOURCE_REV` pin when present).
+[xai-org/grok-build](https://github.com/xai-org/grok-build) (`SOURCE_REV` pin when present).
 
 **Product UX roadmap** (status footer, command palette, multi-surface, …) lives
 in [PLAN.md](./PLAN.md). This file is the **ACP / reverse-RPC / capability**

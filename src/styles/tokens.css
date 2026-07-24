@@ -18,7 +18,7 @@
   --rp-hl-high-rgb: 206 202 205;
   --rp-muted-rgb: 152 147 165;
   --rp-subtle-rgb: 121 117 147;
-  --rp-text-rgb: 87 82 121;
+  --rp-text-rgb: 70 66 97;
   --rp-love-rgb: 180 99 122;
   --rp-gold-rgb: 234 157 52;
   --rp-rose-rgb: 215 130 126;
@@ -36,7 +36,7 @@
   --border-strong: #cecacd; /* highlightHigh */
 
   /* ── Type ─────────────────────────────────────────────────── */
-  --text: #575279;
+  --text: #464261;
   --text-rgb: var(--rp-text-rgb);
   --text-muted: #797593; /* subtle */
   --muted: #9893a5;

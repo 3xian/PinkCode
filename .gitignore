@@ -1,5 +1,12 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.tsbuildinfo
+
 # Logs
-logs
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,15 +14,15 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Environment
+.env
+.env.*
 *.local
 
-# Editor directories and files
-.vscode/*
+# Editor & OS
+.vscode/
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
@@ -24,31 +31,28 @@ dist-ssr
 *.sw?
 
 # Tauri / Rust
-src-tauri/target
-src-tauri/gen
-src-tauri/WixTools
-*.rs.bk
-# Desktop-only; `tauri icon` also emits these by default.
+src-tauri/target/
+src-tauri/gen/
+src-tauri/WixTools/
 src-tauri/icons/ios/
 src-tauri/icons/android/
-# Local icon preview scratch files
 src-tauri/icons/_preview*.png
+*.rs.bk
 
-# Env
-.env
-.env.*
+# Test
+coverage/
 
-# Local PinkCode data (if ever created in-repo)
+# Pack
+*.tgz
+
+# Turborepo
+.turbo/
+
+# Local tools
 .pinkcode/
 .mimocode/
-.vscode/
-
-# Local Windows probe artifacts
-_win_probe*
-
-# Reasonix
 .reasonix/
+_win_probe*
 
 # Agent instructions
 AGENTS.md
-

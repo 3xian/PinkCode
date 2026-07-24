@@ -256,6 +256,14 @@ impl AcpClient {
                         "x.ai/bashOutputNoColor": true,
                         "x.ai/hunkTracker": { "mode": "agent_only" },
                     }
+                },
+                // Identify as Desktop client so shell prepends enable-always-approve
+                // on permission prompts (Grok parity).
+                // NOTE: This top-level "meta" is different from clientCapabilities.meta
+                // above. Grok Build reads clientIdentifier from arguments.meta (top-level),
+                // not from clientCapabilities.meta.
+                "meta": {
+                    "clientIdentifier": "grok-desktop"
                 }
             }),
             Duration::from_secs(30),

@@ -1,6 +1,6 @@
 [package]
 name = "pinkcode"
-version = "0.2.3"
+version = "0.2.4"
 description = "Desktop control plane for Grok Build multi-task observability"
 authors = ["PinkCode"]
 edition = "2021"

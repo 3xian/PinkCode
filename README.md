@@ -122,4 +122,4 @@ PinkCode communicates with Grok Build over ACP (JSON-RPC over stdio). The host-s
 
 ## License
 
-Copyright (c) 2026 david. All rights reserved. Published without an open-source license.
+Copyright (c) 2026 3xian. All rights reserved. Published without an open-source license.

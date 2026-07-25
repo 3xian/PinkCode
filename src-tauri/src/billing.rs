@@ -101,39 +101,19 @@ pub fn fetch_week_usage() -> WeekUsage {
     }
 }
 
-/// Honor `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` (and lowercase variants).
-fn proxy_from_env() -> Option<ureq::Proxy> {
-    const KEYS: &[&str] = &[
-        "HTTPS_PROXY",
-        "https_proxy",
-        "ALL_PROXY",
-        "all_proxy",
-        "HTTP_PROXY",
-        "http_proxy",
-    ];
-    for key in KEYS {
-        if let Ok(val) = std::env::var(key) {
-            let val = val.trim();
-            if val.is_empty() {
-                continue;
-            }
-            match ureq::Proxy::new(val) {
-                Ok(p) => return Some(p),
-                Err(e) => {
-                    eprintln!("[pinkcode] ignore invalid {key}={val:?}: {e}");
-                }
-            }
-        }
-    }
-    None
-}
-
 fn http_agent() -> ureq::Agent {
     let mut builder = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(3))
         .timeout_read(Duration::from_secs(5));
-    if let Some(proxy) = proxy_from_env() {
-        builder = builder.proxy(proxy);
+    if let Some(url) = crate::proxy::detect_proxy() {
+        match ureq::Proxy::new(&url) {
+            Ok(p) => {
+                builder = builder.proxy(p);
+            }
+            Err(e) => {
+                eprintln!("[pinkcode] ignore invalid proxy {url:?}: {e}");
+            }
+        }
     }
     builder.build()
 }
@@ -252,31 +232,6 @@ mod tests {
         assert_eq!(remaining(85.0), 15.0);
         assert_eq!(remaining(120.0), 0.0);
         assert_eq!(remaining(-5.0), 100.0);
-    }
-
-    #[test]
-    fn proxy_from_env_parses_when_set() {
-        let keys = [
-            "HTTPS_PROXY",
-            "https_proxy",
-            "ALL_PROXY",
-            "all_proxy",
-            "HTTP_PROXY",
-            "http_proxy",
-        ];
-        let saved: Vec<_> = keys.iter().map(|k| (*k, std::env::var(k).ok())).collect();
-        for k in keys {
-            std::env::remove_var(k);
-        }
-        assert!(proxy_from_env().is_none());
-        std::env::set_var("HTTPS_PROXY", "http://127.0.0.1:9");
-        assert!(proxy_from_env().is_some());
-        for (k, v) in saved {
-            match v {
-                Some(val) => std::env::set_var(k, val),
-                None => std::env::remove_var(k),
-            }
-        }
     }
 
     /// Optional live check: `cargo test live_week_usage -- --ignored`

@@ -62,6 +62,14 @@ impl AcpClient {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
+        // Propagate proxy so grok can reach xAI APIs behind firewalls/proxies.
+        // Uses shared detection: env vars first, then macOS system proxy fallback.
+        if let Some(proxy_url) = crate::proxy::detect_proxy() {
+            for key in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"] {
+                cmd.env(key, &proxy_url);
+            }
+        }
+
         // GUI host on Windows: hide the console window that `grok.exe` would open.
         #[cfg(windows)]
         {

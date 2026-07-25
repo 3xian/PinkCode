@@ -1,14 +1,13 @@
 # PinkCode TODO — Grok Build host parity
 
-Protocol and control-plane backlog derived from a read-only audit of
-[xai-org/grok-build](https://github.com/xai-org/grok-build) (`SOURCE_REV` pin when present).
+ACP / reverse-RPC / capability backlog from a read-only audit of
+[xai-org/grok-build](https://github.com/xai-org/grok-build).
+This file is the **protocol / capability / infrastructure** checklist
+so we do not re-guess wire behavior.
 
-**Product UX roadmap** (status footer, command palette, multi-surface, …) lives
-in [PLAN.md](./PLAN.md). This file is the **ACP / reverse-RPC / capability**
-checklist so we do not re-guess wire behavior.
+**Positioning:** Desktop mission control for external `grok` (ACP host). Do not re-implement the agent loop.
 
-**Positioning:** PinkCode is a desktop mission control for external `grok`
-(ACP host). Do not re-implement the agent loop.
+## Legend
 
 | Priority | Meaning |
 |----------|---------|
@@ -21,91 +20,101 @@ checklist so we do not re-guess wire behavior.
 | **A→H** | Agent → Host reverse request (blocking) or notification |
 | **H→A** | Host → Agent method |
 
----
-
-## Three different "ask" (do not conflate)
-
-| # | Name | What it is | Wire / surface | PinkCode |
-|---|------|------------|----------------|-----------|
-| **①** | **ACP SessionMode `ask`** | Agent session mode: Q&A-oriented, **read-only / no tool use** (`PromptMode::Ask`) | `session/set_mode({ modeId: "ask" })` | **Missing** — no Mode chip entry |
-| **②** | **Permission ring "ask"** | Host gate: ask user before tools (Default) | Host `PermissionMode`; *not* `set_mode` | **Present** as Normal / default |
-| **③** | **`ask_user_question` tool** | Multi-choice form reverse-RPC | `x.ai/ask_user_question` | **Present** |
-
-Grok ACP session mode ids are only: `default` \| `plan` \| `ask`
-(`xai-grok-tools` `types/session_mode.rs`).  
-UI label *"Ask before tools (Grok default / ask)"* means **②**, not **①**.
+> **Three different "ask":** ① SessionMode `ask` = read-only Q&A mode
+> (`session/set_mode({ modeId: "ask" })`, `PromptMode::Ask`), currently **missing**.
+> ② Permission ring `ask` = host gate before tools (Default mode), **present**.
+> ③ `ask_user_question` tool = multi-choice form, **present**.
+> UI label *"Ask before tools"* means ②, not ①.
 
 ---
 
 ## Must
 
-### Permission optionId / kind matrix
-
-- [ ] **FollowupMessage support** — allow user to reject but send follow-up message  
-  via `meta.followup_message` on `RejectOnce` response. Agent classifies as `Followup`.
-
-- [ ] **Cancelled decision** — distinguish user cancellation (Cmd+C / close dialog) from rejection.  
-  `Decision::Cancelled` → `PermissionDecision::Cancelled` → `StopReason::Cancelled`.
-
-### Plan state machine edge cases
-
-- [ ] Approve / Request changes (`cancelled`+feedback) / Abandon; mid-turn
-  `set_mode(plan)`; user leaves Plan via Mode chip → `set_mode(default)`.  
-  Host must not force `set_mode(default)` on Approve.
+- [ ] **FollowupMessage support** — reject with follow-up via `meta.followup_message` on `RejectOnce`
+- [ ] **Cancelled decision** — distinguish Cmd+C / close from rejection → `StopReason::Cancelled`
+- [ ] **Plan state machine edge cases** — approve / request changes / abandon; mid-turn `set_mode(plan)`; Mode chip exit → `set_mode(default)`. Host must not force `set_mode(default)` on Approve.
 
 ---
 
 ## Should
 
-### Initialize `clientCapabilities.meta`
+### Capabilities
 
-- [ ] `x.ai/gitHeadChanged: true` — Workspace HEAD follow  
+- [ ] `x.ai/gitHeadChanged: true` — workspace HEAD follow
+- [ ] **`x.ai/interject`** — mid-turn user text; plan approve-with-comments follow-up
+- [ ] **`x.ai/queue/*`** — remove / reorder / clear / edit / interject
+- [ ] **`x.ai/session/usage`** — live turn cost
+- [ ] **`x.ai/recap` / `rewind/*` / compact** — history product
+- [ ] **`x.ai/subagent/cancel` + list** — subagent tree cancel
+- [ ] **`x.ai/task/list` / `kill`** — background tasks
+- [ ] **`x.ai/hunk-tracker/*`** — after advertising hunk capability
+- [ ] **`x.ai/session_notification`** — pending_interaction, subagent_*, interaction_resolved
+- [ ] **`x.ai/fs_notify` / git head** — after capability ads
+- [ ] **Structured `session/update` kinds** — goal_updated / turn_completed / session_recap
+- [ ] **`prompt_complete` / running state** — explicit signals over heuristics
+- [ ] **`authenticate`** — session authentication handshake
+- [ ] **`set_session_model`** — change model mid-session
 
-**Do not** advertise without implementing the reverse path:
+> Do not advertise `gitHeadChanged` without implementing the reverse path. Same for `folderTrust.interactive`, `codeNavigation.enabled`, client hooks, SDK MCP, `terminal: true`.
 
-- `x.ai/folderTrust.interactive` → requires `x.ai/folder_trust/request`  
-- `x.ai/codeNavigation.enabled` → requires `x.ai/code/*`  
-- Client hooks on `session/new` → requires `x.ai/hooks/run`  
-- SDK MCP servers meta → requires `x.ai/mcp/sdk_call`  
-- `terminal: true` → requires ACP terminal host methods  
+### Permission — UX
 
-### H→A methods
+- [ ] Allow session / Persist rule
+- [ ] Plan approval **never** auto-skipped under Always-approve
 
-- [ ] **`x.ai/interject`** (or document "prompt only between turns")  
-  Mid-turn user text; plan approve-with-comments follow-up.
+### Permission — safety
 
-- [ ] **`x.ai/queue/*`** (remove / reorder / clear / edit / interject) — queue UX  
+- [ ] **Bash command decomposition** — split compound commands (`&&`, `||`, `;`, pipes, subshells) and evaluate each segment independently. *Ref: `bash_decompose.rs`*
+- [ ] **Permission rule system** — `CompiledPolicy` with glob patterns per tool type. *Ref: `policy.rs`*
+- [ ] **LLM classifier for Auto mode** — heuristic fast-path + LLM side-query. *Ref: `classifier.rs`*
+- [ ] **Persistent permission state** — cross-restart memory for allowed commands, domains, MCP tools. *Ref: `state.rs`*
+- [ ] **Security hardening** — CWE-178 (whitespace prefix), CWE-183 (prefix boundary), CWE-863 (tee)
 
-- [ ] **`x.ai/session/usage`** — Live turn cost (or keep billing API only)  
+### Git
 
-- [ ] **`x.ai/recap` / `rewind/*` / compact** — history product (PLAN P1)  
-
-- [ ] **`x.ai/subagent/cancel` + list** — subagent tree cancel  
-
-- [ ] **`x.ai/task/list` / `kill`** — background tasks  
-
-- [ ] **`x.ai/hunk-tracker/*`** — after advertising hunk capability  
-
-### A→H notifications (listen / map)
-
-- [ ] **`x.ai/session_notification`** — pending_interaction, subagent_*, interaction_resolved  
-- [ ] **`x.ai/fs_notify` / git head** — after capability ads  
-- [ ] **Structured `session/update` kinds** — goal_updated / turn_completed / session_recap (PLAN: Live cards)  
-  Note: Plan mode state uses `SessionMode` (`handle_session_mode`), not a session update kind.
-- [ ] **`prompt_complete` / running state** — prefer explicit signals over heuristics  
-
-### Permission product
-
-- [ ] Allow session / Persist rule (PLAN)  
-- [ ] Keep: plan approval **never** auto-skipped under Always-approve  
+- [ ] **Real-time git status panel** — branch, upstream, ahead/behind, staged/unstaged
+- [ ] **Diff viewer** — inline file diffs in session detail
+- [ ] **Hunk selection for commit** — interactive per-hunk review
 
 ### Shell
 
-- [ ] Tool identity via `_meta/x.ai/tool` taxonomy + incremental bash chunks after meta ads  
+- [ ] Tool identity via `_meta/x.ai/tool` taxonomy + incremental bash chunks
+
+### Subagent / tasks
+
+- [ ] **Subagent hierarchy in UI** — parent/child relationships, depth, fork budget
+- [ ] **Background task status** — display TaskTool / WaitTasksTool / KillTaskTool state
 
 ---
 
-## Ignore (unless product explicitly wants them)
+## Infrastructure
+
+Source-audit items: host-side quality, safety, and architecture improvements.
+Treat as **Should** priority.
+
+### ACP client
+
+- [ ] **Async channel-based client** — replace `mpsc` + `recv_timeout` with Gateway pattern. *Ref: `xai-acp-lib/src/gateway.rs`*
+- [ ] **Fire-and-forget notifications** — non-blocking delivery for unsolicited messages
+- [ ] **Type-safe protocol layer** — `AcpRequest` trait or macro-generated pairs instead of raw `serde_json::Value`
+
+### Error handling
+
+- [ ] **Categorized error variants** — `thiserror` with descriptive variants instead of 5-variant `AcpError`. *Ref: `xai-grok-agent/src/error.rs`*
+- [ ] **Channel failure classification** — `SendFailed` vs `RecvFailed` via tagged data fields
+- [ ] **Graceful degradation** — reconnection path when ACP transport dies; fallback operations (e.g. libgit2 → CLI)
+
+### Logging
+
+- [ ] **Replace `eprintln!` with `tracing`** — structured, leveled logging with span context
+
+### Config
+
+- [ ] **Layered config system** — priority-based loading (env → global → project → session) with atomic writes
+
+---
+
+## Ignore
 
 Do **not** treat as core PinkCode work. Prefer not advertising related capabilities.
 
@@ -127,29 +136,42 @@ Unknown reverse methods today: JSON-RPC `-32601`. Acceptable when capability not
 
 ## Source anchors (grok-build)
 
-| Topic | Path (under ref checkout) |
-|-------|---------------------------|
-| Session mode ids | `xai-grok-tools/src/types/session_mode.rs` |
-| Plan tracker / PromptMode | `xai-grok-shell/src/session/plan_mode.rs` |
-| `set_mode` handler | `…/acp_session_impl/session_mode.rs` |
+| Category | Path (under ref checkout) |
+|----------|---------------------------|
+| ACP gateway | `xai-acp-lib/src/gateway.rs` |
+| ACP session mode | `…/acp_session_impl/session_mode.rs` |
+| ACP agent | `…/mvp_agent/acp_agent.rs` (InitializeResponse, cancel) |
+| Plan tracker | `xai-grok-shell/src/session/plan_mode.rs` |
+| Pending interactions | `…/session/pending_interaction.rs` |
+| File state tracker | `…/session/file_state_tracker.rs` |
+| Rewind / checkpoints | `…/session/rewind.rs` |
+| Permission decompose | `xai-grok-workspace/src/permission/bash_decompose.rs` |
+| Permission policy | `xai-grok-workspace/src/permission/policy.rs` |
+| Permission classifier | `xai-grok-workspace/src/permission/classifier.rs` |
+| Permission state | `xai-grok-workspace/src/permission/state.rs` |
+| Git | `xai-grok-workspace/src/git/` |
+| Hunk tracker | `…/hunk_tracker/` |
+| Session mode types | `xai-grok-tools/src/types/session_mode.rs` |
 | exit_plan wire | `…/exit_plan_mode/types.rs` |
 | ask_user wire | `…/ask_user_question/types.rs` |
-| Pending interactions | `…/session/pending_interaction.rs` |
-| Interaction reverse set | `…/leader/server.rs` `is_interaction_request` |
-| Client hooks reverse | `…/session/acp_session/hooks.rs` |
-| Initialize meta (pager) | `xai-grok-pager/src/acp/mod.rs` `client_capabilities_meta` |
-| Agent capabilities ads | `…/mvp_agent/acp_agent.rs` InitializeResponse |
-| Cancel | `…/mvp_agent/acp_agent.rs` `cancel` |
+| Agent errors | `xai-grok-agent/src/error.rs` |
+| Subagent resolution | `xai-grok-subagent-resolution/` |
+| Task tools | `…/tools/task_tool.rs`, `wait_tasks_tool.rs`, `kill_task_tool.rs` |
+| Config | `xai-grok-workspace/src/config/` |
+| MCP state | `…/mcp/state.rs` |
+| Client hooks | `…/session/acp_session/hooks.rs` |
+| Initialize meta | `xai-grok-pager/src/acp/mod.rs` (`client_capabilities_meta`) |
+| Interaction reverse | `…/leader/server.rs` (`is_interaction_request`) |
 
-PinkCode counterparts: `src-tauri/src/acp.rs`, `agent_manager.rs`,
+**PinkCode counterparts:** `src-tauri/src/acp.rs`, `agent_manager.rs`,
 `permission_policy.rs`, `plan_approval.rs`, `ask_user_question.rs`,
 `src/utils/sessionMode.ts`, `src/hooks/useAgentEvents.ts`.
 
 ---
 
-## Explicit non-goals (protocol)
+## Non-goals
 
-- Re-implement Grok agent loop or sampler inside PinkCode  
-- Full multi-client leader / cloud control plane  
-- Advertising capabilities we do not implement  
-- Treating permission "ask" (②) as SessionMode `ask` (①)  
+- Re-implement Grok agent loop or sampler inside PinkCode
+- Full multi-client leader / cloud control plane
+- Advertising capabilities we do not implement
+- Treating permission "ask" (②) as SessionMode `ask` (①)

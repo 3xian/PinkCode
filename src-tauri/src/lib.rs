@@ -12,6 +12,7 @@ mod permission_policy;
 mod plan_approval;
 mod plan_file_policy;
 mod project_fs;
+mod proxy;
 mod rpc_handler;
 mod session_noise;
 mod sessions;

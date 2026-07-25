@@ -6,13 +6,13 @@
 <h1 align="center">PinkCode</h1>
 
 <p align="center">
-  <strong>Desktop mission control for Grok agents.</strong>
+  <strong>Desktop control plane for Grok Build.</strong>
 </p>
 
 <p align="center">
   <a href="#screenshot">Screenshot</a>
   ·
-  <a href="#what-it-does">What it does</a>
+  <a href="#features">Features</a>
   ·
   <a href="#quick-start">Quick start</a>
   ·
@@ -21,9 +21,9 @@
   <a href="docs/TODO.md">Roadmap</a>
 </p>
 
-A desktop console for [Grok Build](https://x.ai): multi-task board, ACP timeline, workspace files/Git, permissions, and usage. It attaches to `grok` over ACP — it does not run its own agent loop.
+A desktop GUI for [Grok Build](https://x.ai/cli) — multi-session task board, live timeline, workspace browser, permission management, and usage dashboard. Attaches to `grok` over [ACP](https://spec.acp.dev) (Agent Client Protocol) via stdio; it does not run its own agent loop.
 
-**Tauri 2 · React · TypeScript · Rust** · current version **0.2.2**
+**Tauri 2 · React 19 · TypeScript · Rust** · current version **0.2.4**
 
 ## Screenshot
 
@@ -31,19 +31,18 @@ A desktop console for [Grok Build](https://x.ai): multi-task board, ACP timeline
   <img src="docs/screenshot.png" alt="PinkCode — tasks, Timeline, workspace" width="100%" />
 </p>
 
-## What it does
+## Features
 
 | Area | Behavior |
 |------|----------|
-| **Tasks** | Lists sessions under `~/.grok` / `%USERPROFILE%\.grok`. New task, select, prompt, stop. First send auto-connects ACP (no attach toggle). |
-| **Timeline** | One stream: user / agent / thought / tool / shell / plan / events. Live ACP when connected; otherwise hydrate from session `updates.jsonl`. Filters + stick-to-bottom. |
-| **File changes** | Agent hunks from `hunk_records.jsonl`. |
-| **Raw** | Tail of on-disk ACP `session/update` records. |
-| **Workspace** | Project file tree + Git porcelain status (right rail). |
-| **Mode** | Grok Shift+Tab ring: **Normal → Plan → Auto → Always-approve**. Plan is orthogonal to permission (next free-text becomes `/plan …`). When the agent calls `exit_plan_mode`, PinkCode shows a **plan approval** panel (Approve / Request changes / Quit) via Grok’s `x.ai/exit_plan_mode` reverse-RPC. `/view-plan` is local. Auto / Always-approve update the **host ACP gate only** (no `session/prompt` side effects). |
-| **Permissions** | Host gate also supports Accept edits and Don't ask (New Task spawn). Per-task prefs under `~/.pinkcode` (permission + Plan arming). |
-| **Usage** | Week remaining (Grok billing API) + recent day token series from local sessions. |
-| **Updates** | Checks GitHub Releases on startup; optional download & install. Title bar shows `PinkCode <version>`. |
+| **Tasks** | Multi-session board: sessions under `~/.grok` (`%USERPROFILE%\.grok` on Windows). Create, select, prompt, and stop tasks. First send auto-connects via ACP. |
+| **Timeline** | Unified stream of user messages, agent responses, thoughts, tool calls, shell output, plans, and events. Live ACP when connected; disk-hydrated from `updates.jsonl` otherwise. Filter chips + auto-scroll. |
+| **File changes** | Agent file-hunk display from `hunk_records.jsonl`. |
+| **Workspace** | Project file tree and Git porcelain status in a side panel. Supports file preview (text, images, binary detection). |
+| **Mode** | Grok parity ring: **Normal → Plan → Auto → Always-approve**. Plan is orthogonal to permission mode — the next user message becomes `/plan …`. When the agent calls `exit_plan_mode`, a review panel appears (Approve / Request changes / Quit). Mode changes only affect the host ACP gate. |
+| **Permissions** | Five-level gate: Default (ask), Accept edits, Auto (risk-classified), Bypass permissions, Don't ask. Per-task preferences persisted in `~/.pinkcode/task_prefs.json`. Handles reverse RPCs: tool permission, file write, plan approval, and user questions. |
+| **Usage** | Weekly credit usage (Grok billing API) with per-product breakdown, plus 7-day token usage series derived from session logs. |
+| **Updates** | Auto-checks GitHub Releases on startup with optional one-click install. |
 
 Prebuilt installers: **[Releases](https://github.com/3xian/PinkCode/releases)** (Windows x64 NSIS, macOS Apple Silicon & Intel). Linux: build from source (no CI installer yet).
 
@@ -106,15 +105,20 @@ npm run check              # frontend + Rust (fmt/clippy/test) — same as CI
 ## Architecture
 
 ```
-UI (React)
-  ├─ invoke()  →  sessions, spawn/attach/prompt/stop, permissions,
-  │               week usage, token series, project FS, git status
-  └─ listen()  ←  agent-update | agent-status | agent-permission
-                    | agent-shell | agent-prompt-complete | sessions-changed
-        │
-        ├─► AgentManager — N × `grok agent stdio` (ACP) + permission gate
-        └─► Session index — FS watch on ~/.grok/sessions, cards, hunks, stats
+UI (React 19 + TypeScript)
+  |-- invoke() --> Tauri IPC (30 commands)
+  |                 sessions, agent lifecycle, permissions,
+  |                 billing, workspace FS, git status
+  |-- listen() <-- Tauri events (7 channels)
+                    agent-update | agent-status | agent-permission
+                  | agent-shell | agent-prompt-complete | sessions-changed
+        |
+        |-- AgentManager — N x `grok agent stdio` (ACP) + host permission gate
+        |-- Session index — FS watcher on ~/.grok/sessions (cards, hunks, stats)
+        |-- Billing — HTTP calls to Grok billing API (OIDC auth via ~/.grok/auth.json)
 ```
+
+PinkCode communicates with Grok Build over ACP (JSON-RPC over stdio). The host-side permission gate intercepts reverse RPCs (`session/request_permission`, `fs/write_text_file`, `x.ai/exit_plan_mode`, `x.ai/ask_user_question`) and applies the configured risk policy before allowing or denying agent actions.
 
 ## License
 

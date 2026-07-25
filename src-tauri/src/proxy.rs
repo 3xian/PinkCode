@@ -15,12 +15,12 @@ const PROXY_KEYS: &[&str] = &[
     "all_proxy",
 ];
 
-/// Returns the first valid proxy URL found in environment variables, or `None`.
+/// Returns the first valid proxy URL found via the given reader, or `None`.
 /// Skips values that don't look like a proxy URL (must start with `http://`,
 /// `https://`, or `socks` and contain a host).
-fn proxy_from_env() -> Option<String> {
+fn proxy_from_env(reader: impl Fn(&str) -> Result<String, std::env::VarError>) -> Option<String> {
     for key in PROXY_KEYS {
-        if let Ok(val) = std::env::var(key) {
+        if let Ok(val) = reader(key) {
             let val = val.trim().to_string();
             if val.is_empty() {
                 continue;
@@ -46,7 +46,7 @@ fn looks_like_proxy_url(url: &str) -> bool {
 pub fn detect_proxy() -> Option<String> {
     static CACHED: OnceLock<Option<String>> = OnceLock::new();
     CACHED
-        .get_or_init(|| proxy_from_env().or_else(detect_macos_system_proxy))
+        .get_or_init(|| proxy_from_env(|k| std::env::var(k)).or_else(detect_macos_system_proxy))
         .clone()
 }
 
@@ -104,68 +104,45 @@ fn detect_macos_system_proxy() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    fn fake_reader(
+        vars: &HashMap<String, String>,
+    ) -> impl Fn(&str) -> Result<String, std::env::VarError> + '_ {
+        move |key| vars.get(key).cloned().ok_or(std::env::VarError::NotPresent)
+    }
 
     #[test]
     fn proxy_from_env_returns_first_valid() {
-        let keys = PROXY_KEYS;
-        let saved: Vec<_> = keys.iter().map(|k| (*k, std::env::var(k).ok())).collect();
-        for k in keys {
-            std::env::remove_var(k);
-        }
-        assert!(proxy_from_env().is_none());
+        assert!(proxy_from_env(fake_reader(&HashMap::new())).is_none());
 
-        std::env::set_var("HTTPS_PROXY", "http://127.0.0.1:9");
-        assert_eq!(proxy_from_env().unwrap(), "http://127.0.0.1:9");
-
-        for (k, v) in saved {
-            match v {
-                Some(val) => std::env::set_var(k, val),
-                None => std::env::remove_var(k),
-            }
-        }
+        let mut vars = HashMap::new();
+        vars.insert("HTTPS_PROXY".into(), "http://127.0.0.1:9".into());
+        assert_eq!(
+            proxy_from_env(fake_reader(&vars)).unwrap(),
+            "http://127.0.0.1:9"
+        );
     }
 
     #[test]
     fn proxy_from_env_skips_invalid() {
-        let keys = PROXY_KEYS;
-        let saved: Vec<_> = keys.iter().map(|k| (*k, std::env::var(k).ok())).collect();
-        for k in keys {
-            std::env::remove_var(k);
-        }
+        let mut vars = HashMap::new();
+        vars.insert("HTTPS_PROXY".into(), "not-a-url".into());
+        assert!(proxy_from_env(fake_reader(&vars)).is_none());
 
-        // Invalid URL (no scheme) — should be skipped.
-        std::env::set_var("HTTPS_PROXY", "not-a-url");
-        assert!(proxy_from_env().is_none());
-
-        // Valid URL in a lower-priority key — should be found after skipping invalid.
-        std::env::set_var("http_proxy", "http://10.0.0.1:8080");
-        assert_eq!(proxy_from_env().unwrap(), "http://10.0.0.1:8080");
-
-        for (k, v) in saved {
-            match v {
-                Some(val) => std::env::set_var(k, val),
-                None => std::env::remove_var(k),
-            }
-        }
+        // Valid URL in a lower-priority key — found after skipping invalid.
+        vars.insert("http_proxy".into(), "http://10.0.0.1:8080".into());
+        assert_eq!(
+            proxy_from_env(fake_reader(&vars)).unwrap(),
+            "http://10.0.0.1:8080"
+        );
     }
 
     #[test]
     fn proxy_from_env_skips_empty() {
-        let keys = PROXY_KEYS;
-        let saved: Vec<_> = keys.iter().map(|k| (*k, std::env::var(k).ok())).collect();
-        for k in keys {
-            std::env::remove_var(k);
-        }
-
-        std::env::set_var("HTTPS_PROXY", "  ");
-        assert!(proxy_from_env().is_none());
-
-        for (k, v) in saved {
-            match v {
-                Some(val) => std::env::set_var(k, val),
-                None => std::env::remove_var(k),
-            }
-        }
+        let mut vars = HashMap::new();
+        vars.insert("HTTPS_PROXY".into(), "  ".into());
+        assert!(proxy_from_env(fake_reader(&vars)).is_none());
     }
 
     #[test]

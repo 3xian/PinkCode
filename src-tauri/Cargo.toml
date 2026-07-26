@@ -3,6 +3,7 @@ name = "pinkcode"
 version = "0.2.7"
 description = "Desktop control plane for Grok Build multi-task observability"
 authors = ["PinkCode"]
+license = "Apache-2.0"
 edition = "2021"
 
 [lib]

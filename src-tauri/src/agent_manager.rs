@@ -26,6 +26,21 @@ use uuid::Uuid;
 struct LiveAgent {
     info: ManagedAgentInfo,
     client: Arc<AcpClient>,
+    in_flight_prompts: HashSet<String>,
+    current_prompt_id: Option<String>,
+}
+
+fn finish_prompt(
+    in_flight: &mut HashSet<String>,
+    current_prompt_id: &mut Option<String>,
+    prompt_id: &str,
+) -> bool {
+    in_flight.remove(prompt_id);
+    let is_current = current_prompt_id.as_deref() == Some(prompt_id);
+    if is_current {
+        *current_prompt_id = None;
+    }
+    is_current
 }
 
 struct AttachReservation {
@@ -93,7 +108,7 @@ impl AgentManager {
         };
         client
             .session_set_mode(&session_id, mode_id)
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.user_message())?;
         Ok(())
     }
 
@@ -116,7 +131,58 @@ impl AgentManager {
         };
         client
             .session_interject(&session_id, text)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.user_message())
+    }
+
+    fn queue_target(&self, handle_id: &str) -> Result<(String, Arc<AcpClient>), String> {
+        let agents = self.inner.agents.lock();
+        let agent = agents
+            .get(handle_id)
+            .ok_or_else(|| format!("unknown handle {handle_id}"))?;
+        let session_id = agent
+            .info
+            .session_id
+            .clone()
+            .ok_or_else(|| "agent has no session_id".to_string())?;
+        Ok((session_id, Arc::clone(&agent.client)))
+    }
+
+    pub fn queue_remove(&self, handle_id: &str, id: &str, version: u64) -> Result<(), String> {
+        let (session_id, client) = self.queue_target(handle_id)?;
+        client
+            .queue_remove(&session_id, id, version)
+            .map_err(|error| error.user_message())
+    }
+
+    pub fn queue_reorder(&self, handle_id: &str, ordered_ids: &[String]) -> Result<(), String> {
+        let (session_id, client) = self.queue_target(handle_id)?;
+        client
+            .queue_reorder(&session_id, ordered_ids)
+            .map_err(|error| error.user_message())
+    }
+
+    pub fn queue_clear(&self, handle_id: &str) -> Result<(), String> {
+        let (session_id, client) = self.queue_target(handle_id)?;
+        client
+            .queue_clear(&session_id)
+            .map_err(|error| error.user_message())
+    }
+
+    pub fn queue_edit(&self, handle_id: &str, id: &str, new_text: &str) -> Result<(), String> {
+        if new_text.trim().is_empty() {
+            return Err("queued prompt is empty".into());
+        }
+        let (session_id, client) = self.queue_target(handle_id)?;
+        client
+            .queue_edit(&session_id, id, new_text)
+            .map_err(|error| error.user_message())
+    }
+
+    pub fn queue_interject(&self, handle_id: &str, id: &str, version: u64) -> Result<(), String> {
+        let (session_id, client) = self.queue_target(handle_id)?;
+        client
+            .queue_interject(&session_id, id, version)
+            .map_err(|error| error.user_message())
     }
 
     pub fn set_permission_mode(
@@ -352,13 +418,28 @@ impl AgentManager {
             let params = msg.get("params").cloned().unwrap_or(Value::Null);
             let session_id = params
                 .get("sessionId")
+                .or_else(|| params.get("session_id"))
                 .and_then(|s| s.as_str())
                 .map(|s| s.to_string());
+            let event_id = msg
+                .pointer("/_meta/eventId")
+                .or_else(|| msg.pointer("/_meta/event_id"))
+                .or_else(|| params.pointer("/_meta/eventId"))
+                .and_then(Value::as_str);
+
+            if method == "x.ai/queue/changed" {
+                if let Some(prompt_id) = params.get("runningPromptId").and_then(Value::as_str) {
+                    if let Some(agent) = inner.agents.lock().get_mut(&handle_id) {
+                        agent.current_prompt_id = Some(prompt_id.to_string());
+                    }
+                }
+            }
 
             let payload = json!({
                 "handleId": handle_id,
                 "sessionId": session_id,
                 "method": method,
+                "eventId": event_id,
                 "params": params,
             });
 
@@ -581,16 +662,24 @@ impl AgentManager {
             LiveAgent {
                 info: info.clone(),
                 client: Arc::clone(&client),
+                in_flight_prompts: HashSet::new(),
+                current_prompt_id: None,
             },
         );
         Self::drain_early_requests(&self.inner, &handle_id);
-        if let Err(error) = client.initialize() {
-            return Err(Self::fail_registered_agent(
-                &self.inner,
-                &handle_id,
-                &mut info,
-                error.to_string(),
-            ));
+        let initialized = match client.initialize() {
+            Ok(value) => value,
+            Err(error) => {
+                return Err(Self::fail_registered_agent(
+                    &self.inner,
+                    &handle_id,
+                    &mut info,
+                    error.user_message(),
+                ));
+            }
+        };
+        if let Err(error) = client.authenticate_if_available(&initialized) {
+            eprintln!("[pinkcode] ACP eager authentication failed; continuing: {error}");
         }
         Ok((info, client))
     }
@@ -785,7 +874,7 @@ impl AgentManager {
                     &self.inner,
                     &handle_id,
                     &mut info,
-                    e.to_string(),
+                    e.user_message(),
                 ));
             }
         };
@@ -907,7 +996,7 @@ impl AgentManager {
                     &self.inner,
                     &handle_id,
                     &mut info,
-                    e.to_string(),
+                    e.user_message(),
                 ));
             }
         };
@@ -941,8 +1030,6 @@ impl AgentManager {
                 ManagedStatus::Stopped
                     | ManagedStatus::Error
                     | ManagedStatus::Starting
-                    | ManagedStatus::Running
-                    | ManagedStatus::AwaitingPermission
                     | ManagedStatus::Stopping
             ) {
                 return Err(format!("agent not ready ({:?})", agent.info.status));
@@ -977,6 +1064,7 @@ impl AgentManager {
         text: String,
         client: Arc<AcpClient>,
     ) {
+        let prompt_id = Uuid::new_v4().to_string();
         {
             let mut agents = self.inner.agents.lock();
             let pending_count = self
@@ -987,6 +1075,10 @@ impl AgentManager {
                 .filter(|p| p.handle_id == handle_id)
                 .count() as u32;
             if let Some(a) = agents.get_mut(handle_id) {
+                if a.current_prompt_id.is_none() {
+                    a.current_prompt_id = Some(prompt_id.clone());
+                }
+                a.in_flight_prompts.insert(prompt_id.clone());
                 a.info.pending_permission_count = pending_count;
                 if pending_count == 0 {
                     a.info.status = ManagedStatus::Running;
@@ -1008,41 +1100,56 @@ impl AgentManager {
         let session_id = session_id.to_string();
 
         tauri::async_runtime::spawn_blocking(move || {
-            let result = client.session_prompt(&session_id, &text);
+            let result = client.session_prompt(&session_id, &prompt_id, &text);
             let mut agents = inner.agents.lock();
             if let Some(a) = agents.get_mut(&handle_id) {
+                let is_current = finish_prompt(
+                    &mut a.in_flight_prompts,
+                    &mut a.current_prompt_id,
+                    &prompt_id,
+                );
                 match &result {
                     Ok(r) => {
-                        if a.info.pending_permission_count == 0 {
+                        if a.info.pending_permission_count == 0 && a.in_flight_prompts.is_empty() {
                             a.info.status = ManagedStatus::Ready;
+                        } else if a.info.pending_permission_count == 0 {
+                            a.info.status = ManagedStatus::Running;
                         }
-                        a.info.last_error = None;
+                        if is_current {
+                            a.info.last_error = None;
+                        }
                         Self::emit(
                             &inner,
                             "agent-prompt-complete",
                             json!({
                                 "handleId": handle_id,
                                 "sessionId": session_id,
+                                "promptId": prompt_id,
                                 "result": r,
                             }),
                         );
                     }
                     Err(e) => {
                         if a.info.pending_permission_count == 0
+                            && a.in_flight_prompts.is_empty()
                             && a.info.status != ManagedStatus::Error
                         {
                             a.info.status = ManagedStatus::Ready;
                         }
-                        a.info.last_error = Some(e.to_string());
-                        Self::emit(
-                            &inner,
-                            "agent-prompt-complete",
-                            json!({
-                                "handleId": handle_id,
-                                "sessionId": session_id,
-                                "error": e.to_string(),
-                            }),
-                        );
+                        if is_current {
+                            let message = e.user_message();
+                            a.info.last_error = Some(message.clone());
+                            Self::emit(
+                                &inner,
+                                "agent-prompt-complete",
+                                json!({
+                                    "handleId": handle_id,
+                                    "sessionId": session_id,
+                                    "promptId": prompt_id,
+                                    "error": message,
+                                }),
+                            );
+                        }
                     }
                 }
                 Self::emit_status(&inner, &a.info);
@@ -1109,7 +1216,7 @@ impl AgentManager {
         if let Some(ref sid) = session_id {
             client
                 .session_cancel(sid, "user")
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| error.user_message())?;
             if had_running_turn {
                 let deadline = Instant::now() + Duration::from_secs(5);
                 let mut settled = false;
@@ -1145,5 +1252,25 @@ impl AgentManager {
         info.pending_permission_count = 0;
         Self::emit_status(&self.inner, &info);
         Ok(info)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::finish_prompt;
+    use std::collections::HashSet;
+
+    #[test]
+    fn queued_prompt_completion_does_not_replace_current_turn() {
+        let mut in_flight = HashSet::from(["running".to_string(), "queued".to_string()]);
+        let mut current = Some("running".to_string());
+
+        assert!(!finish_prompt(&mut in_flight, &mut current, "queued"));
+        assert_eq!(current.as_deref(), Some("running"));
+        assert_eq!(in_flight, HashSet::from(["running".to_string()]));
+
+        assert!(finish_prompt(&mut in_flight, &mut current, "running"));
+        assert_eq!(current, None);
+        assert!(in_flight.is_empty());
     }
 }

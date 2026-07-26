@@ -10,7 +10,8 @@ use crate::agent_runtime::now_ms;
 use crate::agent_types::{PendingPermission, PermissionKind, PermissionOption};
 use crate::ask_user_question::{build_user_question, resolve_user_question_response};
 use crate::permission_policy::{
-    build_tool_permission, pick_allow_option, pick_reject_option, request_id_key, risk_for_path,
+    build_tool_permission, is_reject_once_option, pick_allow_option, pick_reject_option,
+    request_id_key, risk_for_path,
 };
 use crate::plan_approval::{build_plan_approval, resolve_plan_approval_response};
 use serde_json::{json, Value};
@@ -92,15 +93,26 @@ impl RpcHandler for ToolPermissionHandler {
 
     fn build_response(
         &self,
-        _pending: &PendingPermission,
+        pending: &PendingPermission,
         option_id: &str,
         _allow: bool,
-        _comments: Option<&str>,
+        comments: Option<&str>,
         _payload: Option<&Value>,
     ) -> Result<ResponseAction, String> {
-        Ok(ResponseAction::Send(json!({
+        if option_id == "cancelled" || option_id == "cancel" {
+            return Ok(ResponseAction::Send(json!({
+                "outcome": { "outcome": "cancelled" }
+            })));
+        }
+
+        let mut response = json!({
             "outcome": { "outcome": "selected", "optionId": option_id }
-        })))
+        });
+        let feedback = comments.unwrap_or("").trim();
+        if is_reject_once_option(option_id, &pending.options) && !feedback.is_empty() {
+            response["_meta"] = json!({ "followup_message": feedback });
+        }
+        Ok(ResponseAction::Send(response))
     }
 }
 
@@ -370,4 +382,73 @@ pub fn default_handlers() -> Vec<Box<dyn RpcHandler>> {
         Box::new(PlanApprovalHandler),
         Box::new(UserQuestionHandler),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pending() -> PendingPermission {
+        PendingPermission {
+            request_key: "request".into(),
+            handle_id: "handle".into(),
+            session_id: Some("session".into()),
+            request_id: json!(1),
+            kind: PermissionKind::ToolPermission,
+            method: "session/request_permission".into(),
+            title: "Bash".into(),
+            detail: "cargo test".into(),
+            risk: "high".into(),
+            options: vec![
+                PermissionOption {
+                    option_id: "opaque-allow-id".into(),
+                    name: "Allow".into(),
+                    kind: "allow_once".into(),
+                },
+                PermissionOption {
+                    option_id: "opaque-reject-id".into(),
+                    name: "Reject".into(),
+                    kind: "reject_once".into(),
+                },
+            ],
+            raw_params: Value::Null,
+            created_at_ms: 0,
+        }
+    }
+
+    fn sent_value(action: ResponseAction) -> Value {
+        match action {
+            ResponseAction::Send(value) => value,
+            _ => panic!("expected response value"),
+        }
+    }
+
+    #[test]
+    fn tool_rejection_can_carry_followup_message_in_response_meta() {
+        let action = ToolPermissionHandler
+            .build_response(
+                &pending(),
+                "opaque-reject-id",
+                false,
+                Some("use cargo nextest instead"),
+                None,
+            )
+            .unwrap();
+        let value = sent_value(action);
+        assert_eq!(value["outcome"]["outcome"], "selected");
+        assert_eq!(value["outcome"]["optionId"], "opaque-reject-id");
+        assert_eq!(
+            value["_meta"]["followup_message"],
+            "use cargo nextest instead"
+        );
+    }
+
+    #[test]
+    fn tool_cancel_is_distinct_from_rejection() {
+        let action = ToolPermissionHandler
+            .build_response(&pending(), "cancelled", false, None, None)
+            .unwrap();
+        let value = sent_value(action);
+        assert_eq!(value, json!({ "outcome": { "outcome": "cancelled" } }));
+    }
 }

@@ -9,9 +9,8 @@ import type {
   ShellEntry,
 } from "../types";
 import type { LocalSlashItem } from "../utils/localSlash";
-import { describeUpdate } from "../utils/format";
+import { describeUpdate, extractUpdateTsMs } from "../utils/format";
 import {
-  DISK_HANDLE_ID,
   LOCAL_HANDLE_ID,
   hydrateLiveFromDiskUpdates,
   isTextUpdate,
@@ -268,7 +267,7 @@ export function useAgentEvents(
           return;
         }
 
-        const now = Date.now();
+        const now = extractUpdateTsMs(e.payload.params) ?? Date.now();
         const isTextChunk = isTextUpdate(desc);
         scheduleLive((prev) =>
           reduceAgentUpdate(
@@ -279,6 +278,7 @@ export function useAgentEvents(
               description: desc,
               now,
               nextId: () => `${now}-${seq.current++}`,
+              sourceEventId: e.payload.eventId,
             },
             shellIndexByKey,
           ),
@@ -331,7 +331,6 @@ export function useAgentEvents(
           reduceShellUpdate(prev, e.payload, shellIndexByKey),
         );
       });
-
       if (!cancelled) {
         unsubs.push(u1, uMode, u2, u3, u4, u5, u6);
       } else {
@@ -375,13 +374,6 @@ export function useAgentEvents(
       const map = new Map<string, TimelineItem>();
       [...byHandle, ...bySession].forEach((i) => map.set(i.id, i));
       merged = Array.from(map.values()).sort((a, b) => a.ts - b.ts);
-    }
-    // Once a real ACP stream is present, hide disk mirror to avoid duplicates.
-    const hasAcp = merged.some(
-      (i) => i.handleId !== DISK_HANDLE_ID && i.handleId !== LOCAL_HANDLE_ID,
-    );
-    if (hasAcp) {
-      return merged.filter((i) => i.handleId !== DISK_HANDLE_ID);
     }
     return merged;
   }, [selectedSessionId, liveBySession, managedForSession]);

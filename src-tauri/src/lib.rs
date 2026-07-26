@@ -28,7 +28,8 @@ use agent_types::{
 };
 use billing::WeekUsage;
 use models::{
-    ActiveSession, DashboardStats, HunkRecord, SessionCard, SessionDetail, TokenUsageSeries,
+    ActiveSession, DashboardStats, HunkRecord, SessionCard, SessionDetail, SessionUpdatePage,
+    TokenUsageSeries,
 };
 use project_fs::{DirEntry, GitChange};
 use serde_json::Value;
@@ -62,6 +63,20 @@ async fn get_session_detail(session_id: String) -> Result<SessionDetail, String>
         .await
         .map_err(|e| format!("session detail task failed: {e}"))?
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_session_updates(
+    session_id: String,
+    before_cursor: Option<u64>,
+    limit: Option<usize>,
+) -> Result<SessionUpdatePage, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        sessions::list_session_updates(&session_id, before_cursor, limit)
+    })
+    .await
+    .map_err(|e| format!("session updates task failed: {e}"))?
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -175,6 +190,50 @@ async fn interject_agent(
     tauri::async_runtime::spawn_blocking(move || manager.interject(&handle_id, &text))
         .await
         .map_err(|e| format!("interject task failed: {e}"))?
+}
+
+#[tauri::command]
+fn queue_remove(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+    id: String,
+    version: u64,
+) -> Result<(), String> {
+    manager.queue_remove(&handle_id, &id, version)
+}
+
+#[tauri::command]
+fn queue_reorder(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+    ordered_ids: Vec<String>,
+) -> Result<(), String> {
+    manager.queue_reorder(&handle_id, &ordered_ids)
+}
+
+#[tauri::command]
+fn queue_clear(manager: tauri::State<'_, AgentManager>, handle_id: String) -> Result<(), String> {
+    manager.queue_clear(&handle_id)
+}
+
+#[tauri::command]
+fn queue_edit(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+    id: String,
+    new_text: String,
+) -> Result<(), String> {
+    manager.queue_edit(&handle_id, &id, &new_text)
+}
+
+#[tauri::command]
+fn queue_interject(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+    id: String,
+    version: u64,
+) -> Result<(), String> {
+    manager.queue_interject(&handle_id, &id, version)
 }
 
 #[tauri::command]
@@ -352,6 +411,7 @@ pub fn run() {
             list_active_sessions,
             list_sessions,
             get_session_detail,
+            list_session_updates,
             get_session_plan,
             list_session_hunks,
             get_dashboard_stats,
@@ -363,6 +423,11 @@ pub fn run() {
             attach_agent,
             prompt_agent,
             interject_agent,
+            queue_remove,
+            queue_reorder,
+            queue_clear,
+            queue_edit,
+            queue_interject,
             stop_agent,
             get_managed_agent,
             find_managed_by_session,

@@ -22,7 +22,8 @@ pub enum PermissionMode {
     /// Grok Auto: host allows safe tools; ask on high risk.
     /// Spawn/attach pass top-level `grok --permission-mode auto agent stdio`
     /// (not under `agent` — clap rejects that and the process dies immediately).
-    /// Live Mode toggles only update the host ACP gate (no `/auto` session/prompt).
+    /// Live Mode toggles notify Grok via `x.ai/yolo_mode_changed`; the host
+    /// never overrides a permission request that Grok's classifier escalated.
     Auto,
     BypassPermissions,
     DontAsk,

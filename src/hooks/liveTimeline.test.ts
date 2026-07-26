@@ -58,6 +58,26 @@ describe("live timeline reducer", () => {
     expect(items[1].title).toContain("Read file");
   });
 
+  it("does not apply the live-stream item cap to paged disk history", () => {
+    const updates = Array.from({ length: 450 }, (_, index) => ({
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: `tool-${index}`,
+          title: `Tool ${index}`,
+          status: "completed",
+        },
+      },
+      timestamp: new Date(index * 1_000).toISOString(),
+    }));
+
+    const items = hydrateLiveFromDiskUpdates(updates, "long-session");
+    expect(items).toHaveLength(450);
+    expect(items[0].toolCallId).toBe("tool-0");
+    expect(items[449].toolCallId).toBe("tool-449");
+  });
+
   it("merges tool updates without clobbering friendly titles with call ids", () => {
     const updates = [
       {
@@ -158,6 +178,39 @@ describe("live timeline reducer", () => {
     expect(list.find((i) => i.handleId === LOCAL_HANDLE_ID)?.detail).toBe(
       "50%",
     );
+  });
+
+  it("keeps same-timestamp events distinct and gives mirrors stable ids", () => {
+    const indexes: ShellIndexes = new Map();
+    let state = reduceAgentUpdate(
+      new Map(),
+      {
+        handleId: "live",
+        sessionId: "session",
+        description: { kind: "event", title: "First" },
+        now: 20,
+        nextId: () => "fallback-a",
+        sourceEventId: "event-a",
+      },
+      indexes,
+    );
+    state = reduceAgentUpdate(
+      state,
+      {
+        handleId: "live",
+        sessionId: "session",
+        description: { kind: "event", title: "Second" },
+        now: 20,
+        nextId: () => "fallback-b",
+        sourceEventId: "event-b",
+      },
+      indexes,
+    );
+
+    expect(state.get("session")?.map((item) => item.id)).toEqual([
+      "event-event-a",
+      "event-event-b",
+    ]);
   });
 
   it("coalesces text chunks and settles them", () => {

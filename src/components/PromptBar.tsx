@@ -52,12 +52,11 @@ export function PromptBar({
     managed && managed.status !== "stopped" && managed.status !== "error";
   const running =
     managed?.status === "running" || managed?.status === "stopping";
+  const stopping = managed?.status === "stopping";
   const awaiting = managed?.status === "awaitingPermission";
   const trimmedText = text.trim();
   // Local slashes work offline; first agent message auto-connects ACP.
-  const canSend = Boolean(
-    trimmedText && !busy && !running && !awaiting,
-  );
+  const canSend = Boolean(trimmedText && !busy && !stopping);
 
   const modeMeta =
     SESSION_MODE_OPTIONS.find((o) => o.value === sessionMode) ??
@@ -88,7 +87,7 @@ export function PromptBar({
   // the user types again (cleared in onChange / when leaving slash mode).
   const showMenu =
     menuOpen &&
-    Boolean(!running && !awaiting && !busy) &&
+    Boolean(!stopping && !busy) &&
     Boolean(slashQuery) &&
     filteredCommands.length > 0;
 
@@ -132,7 +131,7 @@ export function PromptBar({
 
   function sendIfReady() {
     const trimmed = text.trim();
-    if (!trimmed || running || awaiting || busy) return;
+    if (!trimmed || stopping || busy) return;
     // First non-local message auto-connects ACP in App.handleSend.
     const payload = applySessionModeToPrompt(sessionMode, trimmed);
     onSend(payload);
@@ -204,14 +203,14 @@ export function PromptBar({
               ? awaiting
                 ? "Approve or deny the permission request above to continue…"
                 : running
-                  ? "Agent is working… you can queue another message after it finishes"
+                  ? "Agent is working… Enter adds this message to the queue"
                   : sessionMode === "plan"
                     ? "Plan mode · next free-text send becomes /plan … · Shift+Tab to cycle"
                     : "Message the agent… / for commands · Enter to send · Shift+Tab mode · Ctrl+Enter newline"
               : "Message the agent… first send connects · /usage /context work offline"
           }
           value={text}
-          disabled={running || awaiting || busy}
+          disabled={stopping || busy}
           onChange={(e) => {
             const next = e.target.value;
             // User is typing → lift suppress; only auto-open while completing
@@ -332,7 +331,7 @@ export function PromptBar({
             title="Enter to send · Ctrl+Enter for newline · Shift+Tab mode"
             onClick={sendIfReady}
           >
-            Send
+            {running || awaiting ? "Queue" : "Send"}
           </button>
         </div>
       </div>

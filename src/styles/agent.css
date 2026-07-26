@@ -712,6 +712,125 @@ button.user-question-option:hover:not(:disabled),
   min-height: 1em;
 }
 
+/* Server-authoritative prompt queue, directly above the composer. */
+.prompt-queue {
+  flex-shrink: 0;
+  margin: 0 14px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, var(--accent-dim));
+  max-height: min(32vh, 260px);
+  overflow: auto;
+}
+
+.prompt-queue-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 9px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.prompt-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.prompt-queue-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.prompt-queue-row:last-child {
+  border-bottom: none;
+}
+
+.prompt-queue-position {
+  color: var(--text-muted);
+  font: 10px var(--mono);
+  text-align: center;
+}
+
+.prompt-queue-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.prompt-queue-edit {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  padding: 5px 7px;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+  color: var(--text);
+  font: 12px/1.4 inherit;
+  outline: none;
+}
+
+.prompt-queue-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.queue-icon-btn,
+.queue-text-btn {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+}
+
+.queue-icon-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 13px;
+}
+
+.queue-text-btn {
+  padding: 3px 5px;
+  font-size: 10px;
+}
+
+.queue-icon-btn:hover:not(:disabled),
+.queue-text-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.queue-text-btn.accent {
+  color: var(--accent);
+}
+
+.queue-text-btn.danger {
+  color: var(--danger);
+}
+
+.queue-icon-btn:disabled,
+.queue-text-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 /* Prompt bar — single composer card: textarea + bottom toolbar */
 .prompt-bar {
   padding: 10px 14px 12px;

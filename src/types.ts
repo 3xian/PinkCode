@@ -52,7 +52,15 @@ export interface SessionDetail {
   signalsRaw?: unknown | null;
   recentEvents: unknown[];
   recentUpdates: unknown[];
+  recentUpdatesCursor?: number | null;
+  recentUpdatesHasMore: boolean;
   hunks: HunkRecord[];
+}
+
+export interface SessionUpdatePage {
+  updates: unknown[];
+  nextCursor?: number | null;
+  hasMore: boolean;
 }
 
 export interface DashboardStats {
@@ -346,6 +354,8 @@ export interface TimelineItem {
   title: string;
   detail?: string;
   ts: number;
+  /** Stable Grok update identity shared by disk and ACP mirrors. */
+  sourceEventId?: string;
   /**
    * True while agent/user/thought text is still coalescing.
    * UI renders plain text while streaming to avoid full Markdown re-parse each chunk.
@@ -365,9 +375,30 @@ export interface AgentUpdateEvent {
   handleId: string;
   sessionId?: string | null;
   method: string;
+  eventId?: string | null;
   params: {
     sessionId?: string;
     update?: Record<string, unknown>;
     [key: string]: unknown;
   };
+}
+
+export interface PromptQueueEntry {
+  id: string;
+  version: number;
+  owner?: string | null;
+  lastEditor?: string | null;
+  kind: string;
+  text: string;
+  combinedTexts?: string[] | null;
+  position: number;
+}
+
+export interface PromptQueueState {
+  sessionId: string;
+  entries: PromptQueueEntry[];
+  runningPromptId?: string | null;
+  runningText?: string | null;
+  runningKind?: string | null;
+  runningCombinedTexts?: string[] | null;
 }

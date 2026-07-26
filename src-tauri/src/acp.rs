@@ -14,6 +14,7 @@ use thiserror::Error;
 /// How many trailing stderr lines to keep for transport-close diagnostics.
 const STDERR_TAIL_LINES: usize = 12;
 const NOTIFICATION_QUEUE_CAPACITY: usize = 512;
+const CLIENT_IDENTIFIER: &str = "grok-desktop";
 
 #[derive(Debug, Error)]
 pub enum AcpError {
@@ -36,6 +37,21 @@ pub enum AcpError {
 }
 
 pub type Result<T> = std::result::Result<T, AcpError>;
+
+impl AcpError {
+    /// Stable, actionable text for UI surfaces. The error itself retains the
+    /// original protocol fields so logs and callers can still inspect them.
+    pub fn user_message(&self) -> String {
+        match self {
+            Self::Rpc {
+                code,
+                message,
+                data,
+            } => user_facing_rpc_message(*code, message, data.as_ref()),
+            _ => self.to_string(),
+        }
+    }
+}
 
 /// Callback for agent → client notifications / unsolicited messages.
 pub type NotifyFn = Arc<dyn Fn(Value) + Send + Sync + 'static>;
@@ -334,6 +350,8 @@ impl AcpClient {
                         "x.ai/incrementalBashOutput": true,
                         "x.ai/bashOutputNoColor": true,
                         "x.ai/hunkTracker": { "mode": "agent_only" },
+                        "x.ai/fs_notify": true,
+                        "x.ai/gitHeadChanged": true,
                     }
                 },
                 // Identify as Desktop client so shell prepends enable-always-approve
@@ -342,11 +360,25 @@ impl AcpClient {
                 // above. Grok Build reads clientIdentifier from arguments.meta (top-level),
                 // not from clientCapabilities.meta.
                 "meta": {
-                    "clientIdentifier": "grok-desktop"
+                    "clientIdentifier": CLIENT_IDENTIFIER
                 }
             }),
             Duration::from_secs(30),
         )
+    }
+
+    /// Complete the ACP authentication handshake when initialize advertises a
+    /// non-interactive cached-token or API-key method.
+    pub fn authenticate_if_available(&self, initialize: &Value) -> Result<Option<Value>> {
+        let Some(method_id) = select_non_interactive_auth_method(initialize) else {
+            return Ok(None);
+        };
+        self.request(
+            "authenticate",
+            json!({ "methodId": method_id }),
+            Duration::from_secs(30),
+        )
+        .map(Some)
     }
 
     pub fn session_new(&self, cwd: &str) -> Result<Value> {
@@ -372,12 +404,16 @@ impl AcpClient {
         )
     }
 
-    pub fn session_prompt(&self, session_id: &str, text: &str) -> Result<Value> {
+    pub fn session_prompt(&self, session_id: &str, prompt_id: &str, text: &str) -> Result<Value> {
         self.request(
             "session/prompt",
             json!({
                 "sessionId": session_id,
-                "prompt": [{ "type": "text", "text": text }]
+                "prompt": [{ "type": "text", "text": text }],
+                "_meta": {
+                    "promptId": prompt_id,
+                    "clientIdentifier": CLIENT_IDENTIFIER,
+                }
             }),
             Duration::from_secs(60 * 30),
         )
@@ -408,6 +444,63 @@ impl AcpClient {
                 "interjectionId": uuid::Uuid::new_v4().to_string(),
             }),
             Duration::from_secs(30),
+        )
+    }
+
+    pub fn queue_remove(&self, session_id: &str, id: &str, expected_version: u64) -> Result<()> {
+        self.notify(
+            "x.ai/queue/remove",
+            json!({
+                "sessionId": session_id,
+                "id": id,
+                "expectedVersion": expected_version,
+                "clientIdentifier": CLIENT_IDENTIFIER,
+            }),
+        )
+    }
+
+    pub fn queue_reorder(&self, session_id: &str, ordered_ids: &[String]) -> Result<()> {
+        self.notify(
+            "x.ai/queue/reorder",
+            json!({
+                "sessionId": session_id,
+                "orderedIds": ordered_ids,
+                "clientIdentifier": CLIENT_IDENTIFIER,
+            }),
+        )
+    }
+
+    pub fn queue_clear(&self, session_id: &str) -> Result<()> {
+        self.notify(
+            "x.ai/queue/clear",
+            json!({
+                "sessionId": session_id,
+                "clientIdentifier": CLIENT_IDENTIFIER,
+            }),
+        )
+    }
+
+    pub fn queue_edit(&self, session_id: &str, id: &str, new_text: &str) -> Result<()> {
+        self.notify(
+            "x.ai/queue/edit",
+            json!({
+                "sessionId": session_id,
+                "id": id,
+                "newText": new_text,
+                "clientIdentifier": CLIENT_IDENTIFIER,
+            }),
+        )
+    }
+
+    pub fn queue_interject(&self, session_id: &str, id: &str, expected_version: u64) -> Result<()> {
+        self.notify(
+            "x.ai/queue/interject",
+            json!({
+                "sessionId": session_id,
+                "id": id,
+                "expectedVersion": expected_version,
+                "clientIdentifier": CLIENT_IDENTIFIER,
+            }),
         )
     }
 
@@ -444,6 +537,61 @@ impl AcpClient {
         let _ = child.wait();
         Ok(())
     }
+}
+
+fn select_non_interactive_auth_method(initialize: &Value) -> Option<&str> {
+    let methods = initialize.get("authMethods")?.as_array()?;
+    let contains = |id: &str| {
+        methods
+            .iter()
+            .any(|method| method.get("id").and_then(Value::as_str) == Some(id))
+    };
+    let default = initialize
+        .pointer("/_meta/defaultAuthMethodId")
+        .or_else(|| initialize.pointer("/meta/defaultAuthMethodId"))
+        .and_then(Value::as_str);
+    if let Some(id @ ("cached_token" | "xai.api_key")) = default {
+        if contains(id) {
+            return Some(id);
+        }
+    }
+    ["cached_token", "xai.api_key"]
+        .into_iter()
+        .find(|id| contains(id))
+}
+
+/// ACP keeps its stable JSON-RPC label in `error.message` and puts the useful
+/// upstream failure in `error.data`. Prefer that detail for UI-facing errors.
+fn user_facing_rpc_message(code: i64, message: &str, data: Option<&Value>) -> String {
+    let detail = data.and_then(rpc_error_detail);
+    let http_status = data
+        .and_then(|value| value.get("http_status").or_else(|| value.get("httpStatus")))
+        .and_then(Value::as_u64);
+
+    if http_status == Some(402)
+        || detail.is_some_and(|text| {
+            let lower = text.to_ascii_lowercase();
+            lower.contains("402") && lower.contains("usage balance exhausted")
+        })
+    {
+        return "Grok Build usage balance exhausted. Add credits or switch to an account with available balance. (HTTP 402 Payment Required)".into();
+    }
+
+    if let Some(detail) = detail.filter(|detail| !detail.trim().is_empty()) {
+        return detail.trim().to_string();
+    }
+
+    if message.eq_ignore_ascii_case("internal error") {
+        return format!("Grok Build returned an internal error (RPC {code}).");
+    }
+
+    message.to_string()
+}
+
+fn rpc_error_detail(data: &Value) -> Option<&str> {
+    data.as_str()
+        .or_else(|| data.get("message").and_then(Value::as_str))
+        .or_else(|| data.pointer("/error/message").and_then(Value::as_str))
 }
 
 fn fail_pending_requests(pending: &Mutex<HashMap<u64, Sender<Value>>>, message: &str) {
@@ -528,6 +676,44 @@ mod tests {
     }
 
     #[test]
+    fn rpc_error_uses_structured_detail_instead_of_internal_error_label() {
+        let data = json!({
+            "message": "API error (status 500): upstream unavailable",
+            "http_status": 500
+        });
+        assert_eq!(
+            user_facing_rpc_message(-32603, "Internal error", Some(&data)),
+            "API error (status 500): upstream unavailable"
+        );
+    }
+
+    #[test]
+    fn rpc_error_explains_exhausted_grok_build_balance() {
+        let data = json!({
+            "message": "API error (status 402 Payment Required): Grok Build usage balance exhausted",
+            "http_status": 402
+        });
+        let error = AcpError::Rpc {
+            code: -32603,
+            message: "Internal error".into(),
+            data: Some(data),
+        };
+        assert_eq!(error.to_string(), "rpc error -32603: Internal error");
+        assert_eq!(
+            error.user_message(),
+            "Grok Build usage balance exhausted. Add credits or switch to an account with available balance. (HTTP 402 Payment Required)"
+        );
+    }
+
+    #[test]
+    fn rpc_error_keeps_code_when_no_detail_is_available() {
+        assert_eq!(
+            user_facing_rpc_message(-32603, "Internal error", None),
+            "Grok Build returned an internal error (RPC -32603)."
+        );
+    }
+
+    #[test]
     fn spawn_argv_places_permission_mode_before_agent() {
         // Regression: Auto mode used `grok agent --permission-mode auto stdio`,
         // which clap rejects (flag is top-level only) → transport closed on Mac/Win.
@@ -548,6 +734,28 @@ mod tests {
             build_spawn_argv(true, &[], &[]),
             vec!["agent", "--always-approve", "stdio"]
         );
+    }
+
+    #[test]
+    fn auth_selection_prefers_agent_default_but_skips_interactive_methods() {
+        let initialized = json!({
+            "authMethods": [
+                { "id": "grok.com", "name": "Grok" },
+                { "id": "xai.api_key", "name": "API key" },
+                { "id": "cached_token", "name": "Cached token" }
+            ],
+            "_meta": { "defaultAuthMethodId": "xai.api_key" }
+        });
+        assert_eq!(
+            select_non_interactive_auth_method(&initialized),
+            Some("xai.api_key")
+        );
+
+        let interactive_only = json!({
+            "authMethods": [{ "id": "grok.com", "name": "Grok" }],
+            "_meta": { "defaultAuthMethodId": "grok.com" }
+        });
+        assert_eq!(select_non_interactive_auth_method(&interactive_only), None);
     }
 
     #[test]

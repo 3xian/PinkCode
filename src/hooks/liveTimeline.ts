@@ -6,12 +6,14 @@ import type {
 import {
   COALESCE_LIVE_KINDS,
   describeUpdate,
+  extractUpdateEventId,
   extractUpdateTsMs,
   mergeToolCardParts,
 } from "../utils/format";
 
 export type UpdateDescription = ReturnType<typeof describeUpdate>;
 export type ShellIndexes = Map<string, Map<string, number>>;
+export type TimelineRetention = "live" | "history";
 
 export const MAX_LIVE_ITEMS = 400;
 export const MAX_SHELL_OUTPUT_CHARS = 200_000;
@@ -63,8 +65,9 @@ export function trimLiveList(
   list: TimelineItem[],
   key: string,
   shellIndexByKey: Map<string, Map<string, number>>,
+  retention: TimelineRetention = "live",
 ): void {
-  if (list.length > MAX_LIVE_ITEMS) {
+  if (retention === "live" && list.length > MAX_LIVE_ITEMS) {
     list.splice(0, list.length - MAX_LIVE_ITEMS);
     shellIndexByKey.delete(key);
   }
@@ -129,12 +132,14 @@ export function reduceAgentUpdate(
     description: UpdateDescription;
     now: number;
     nextId: () => string;
+    sourceEventId?: string | null;
     /** Disk hydrate: never leave cards in streaming state. */
     streaming?: boolean;
   },
   shellIndexes: ShellIndexes,
+  retention: TimelineRetention = "live",
 ): Map<string, TimelineItem[]> {
-  const { handleId, sessionId, description, now, nextId } = input;
+  const { handleId, sessionId, description, now, nextId, sourceEventId } = input;
   const key = sessionId || handleId;
   const textUpdate = isTextUpdate(description);
   const next = new Map(previous);
@@ -159,6 +164,8 @@ export function reduceAgentUpdate(
     ) {
       list[list.length - 1] = {
         ...last,
+        id: sourceEventId ? `event-${sourceEventId}` : last.id,
+        sourceEventId: sourceEventId ?? last.sourceEventId,
         detail: (last.detail ?? "") + (description.detail ?? ""),
         ts: now,
         streaming:
@@ -194,6 +201,10 @@ export function reduceAgentUpdate(
       );
       list[index] = {
         ...prev,
+        id: description.toolCallId
+          ? `tool-${description.toolCallId}`
+          : prev.id,
+        sourceEventId: sourceEventId ?? prev.sourceEventId,
         title: merged.title,
         detail: merged.detail,
         toolBase: merged.baseTitle,
@@ -213,6 +224,8 @@ export function reduceAgentUpdate(
     if (index >= 0) {
       list[index] = {
         ...list[index],
+        id: sourceEventId ? `event-${sourceEventId}` : list[index].id,
+        sourceEventId: sourceEventId ?? list[index].sourceEventId,
         title: description.title,
         detail: description.detail,
         ts: now,
@@ -223,7 +236,11 @@ export function reduceAgentUpdate(
   }
 
   list.push({
-    id: nextId(),
+    id: description.toolCallId
+      ? `tool-${description.toolCallId}`
+      : sourceEventId
+        ? `event-${sourceEventId}`
+        : nextId(),
     handleId,
     sessionId: sessionId ?? null,
     kind: description.kind,
@@ -233,9 +250,10 @@ export function reduceAgentUpdate(
     toolBase: description.toolBase,
     toolStatus: description.toolStatus,
     ts: now,
+    sourceEventId: sourceEventId ?? undefined,
     streaming: markStreaming,
   });
-  trimLiveList(list, key, shellIndexes);
+  trimLiveList(list, key, shellIndexes, retention);
   next.set(key, list);
   return next;
 }
@@ -259,6 +277,7 @@ export function hydrateLiveFromDiskUpdates(
     if (shouldDropUpdate(desc)) continue;
 
     const ts = extractUpdateTsMs(raw) ?? seq;
+    const sourceEventId = extractUpdateEventId(raw);
 
     if (desc.isShell) {
       const entry = shellEntryFromDiskUpdate(
@@ -268,7 +287,7 @@ export function hydrateLiveFromDiskUpdates(
         ts,
       );
       if (entry) {
-        map = reduceShellUpdate(map, entry, shellIndexes);
+        map = reduceShellUpdate(map, entry, shellIndexes, "history");
         seq += 1;
         continue;
       }
@@ -284,9 +303,11 @@ export function hydrateLiveFromDiskUpdates(
         description: desc,
         now: ts,
         nextId: () => `disk-${sessionId}-${seq++}`,
+        sourceEventId,
         streaming: false,
       },
       shellIndexes,
+      "history",
     );
   }
 
@@ -368,6 +389,7 @@ export function reduceShellUpdate(
   previous: Map<string, TimelineItem[]>,
   raw: ShellEntry,
   shellIndexes: ShellIndexes,
+  retention: TimelineRetention = "live",
 ): Map<string, TimelineItem[]> {
   const handleId = raw.handleId;
   const sessionId = raw.sessionId ?? null;
@@ -438,7 +460,7 @@ export function reduceShellUpdate(
     indexMap.set(toolCallId, index);
   } else {
     list.push({
-      id: `shell-${toolCallId}-${now}`,
+      id: `shell-${toolCallId}`,
       handleId,
       sessionId,
       kind: "shell",
@@ -453,7 +475,7 @@ export function reduceShellUpdate(
     }
     indexMap.set(toolCallId, list.length - 1);
   }
-  trimLiveList(list, key, shellIndexes);
+  trimLiveList(list, key, shellIndexes, retention);
   if (!shellIndexes.has(key)) {
     const rebuilt = new Map<string, number>();
     list.forEach((item, itemIndex) => {
@@ -510,6 +532,7 @@ function listsShallowEqual(
       a.title !== b.title ||
       a.detail !== b.detail ||
       a.handleId !== b.handleId ||
+      a.sourceEventId !== b.sourceEventId ||
       a.streaming !== b.streaming
     ) {
       return false;

@@ -100,6 +100,24 @@ export function extractUpdateTsMs(update: unknown): number | null {
   return null;
 }
 
+export function extractUpdateEventId(update: unknown): string | null {
+  if (!update || typeof update !== "object") return null;
+  const value = update as Record<string, unknown>;
+  const params = value.params as Record<string, unknown> | undefined;
+  const candidates = [
+    (value._meta as Record<string, unknown> | undefined)?.eventId,
+    (value._meta as Record<string, unknown> | undefined)?.event_id,
+    (params?._meta as Record<string, unknown> | undefined)?.eventId,
+    (params?._meta as Record<string, unknown> | undefined)?.event_id,
+  ];
+  return (
+    candidates.find(
+      (candidate): candidate is string =>
+        typeof candidate === "string" && candidate.length > 0,
+    ) ?? null
+  );
+}
+
 /** Split on `/` or `\` so Windows and Unix paths display correctly. */
 function pathParts(path: string): string[] {
   return path.split(/[/\\]+/).filter(Boolean);

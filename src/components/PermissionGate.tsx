@@ -20,7 +20,7 @@ export function PermissionGate({ items, busyKey, onResolve }: Props) {
 
   return (
     <>
-      {items.map((item) => {
+      {items.map((item, index) => {
         const busy = busyKey === item.requestKey;
         if (item.kind === "planApproval") {
           return createPortal(
@@ -50,6 +50,7 @@ export function PermissionGate({ items, busyKey, onResolve }: Props) {
             item={item}
             busy={busy}
             onResolve={onResolve}
+            keyboardCancelable={index === 0}
           />,
           document.body,
         );

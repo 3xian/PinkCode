@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { PendingPermission } from "../types";
 import { shortPath } from "../utils/format";
 import {
@@ -10,6 +11,7 @@ interface Props {
   item: PendingPermission;
   busy: boolean;
   onResolve: ResolvePermissionFn;
+  keyboardCancelable?: boolean;
 }
 
 function labelKind(kind: PendingPermission["kind"]): string {
@@ -37,7 +39,13 @@ function formatDetail(item: PendingPermission): string {
 }
 
 /** Tool / FS permission prompt — draggable, same shell as Plan / Ask. */
-export function PermissionModal({ item, busy, onResolve }: Props) {
+export function PermissionModal({
+  item,
+  busy,
+  onResolve,
+  keyboardCancelable = true,
+}: Props) {
+  const [feedback, setFeedback] = useState("");
   const {
     dialogRef,
     pos,
@@ -49,6 +57,28 @@ export function PermissionModal({ item, busy, onResolve }: Props) {
 
   const risk = item.risk || "medium";
   const preview = item.kind === "fsWrite" ? previewContent(item) : null;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const cancelShortcut =
+        event.key === "Escape" ||
+        ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c");
+      if (!cancelShortcut || busy || !keyboardCancelable) return;
+      // Preserve normal copy when the user has selected feedback/detail text.
+      if (event.key.toLowerCase() === "c") {
+        const target = event.target;
+        const inputHasSelection =
+          (target instanceof HTMLInputElement ||
+            target instanceof HTMLTextAreaElement) &&
+          target.selectionStart !== target.selectionEnd;
+        if (inputHasSelection || window.getSelection()?.toString()) return;
+      }
+      event.preventDefault();
+      onResolve(item, "cancelled");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [busy, item, keyboardCancelable, onResolve]);
 
   return (
     <div className="drag-dialog-overlay" role="presentation">
@@ -103,6 +133,18 @@ export function PermissionModal({ item, busy, onResolve }: Props) {
         </div>
 
         <div className="drag-dialog-footer">
+          {item.kind === "toolPermission" ? (
+            <label className="plan-approval-comments field">
+              <span>Rejection feedback (optional)</span>
+              <textarea
+                rows={2}
+                value={feedback}
+                disabled={busy}
+                placeholder="Tell Grok how to proceed instead…"
+                onChange={(event) => setFeedback(event.target.value)}
+              />
+            </label>
+          ) : null}
           <div className="perm-actions drag-dialog-actions">
             {item.options.map((opt) => {
               const isAllow =
@@ -113,12 +155,29 @@ export function PermissionModal({ item, busy, onResolve }: Props) {
                   type="button"
                   className={`btn ${isAllow ? "primary" : "danger-btn"}`}
                   disabled={busy}
-                  onClick={() => onResolve(item, opt.optionId)}
+                  onClick={() =>
+                    onResolve(
+                      item,
+                      opt.optionId,
+                      isAllow ? undefined : feedback,
+                    )
+                  }
                 >
                   {busy ? "…" : opt.name}
                 </button>
               );
             })}
+            {item.kind === "toolPermission" ? (
+              <button
+                type="button"
+                className="btn"
+                disabled={busy}
+                onClick={() => onResolve(item, "cancelled")}
+                title="Cancel the current turn (Esc / Cmd+C)"
+              >
+                Cancel turn
+              </button>
+            ) : null}
           </div>
         </div>
       </div>

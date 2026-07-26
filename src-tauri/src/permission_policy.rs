@@ -132,9 +132,11 @@ pub fn decide_gate(mode: PermissionMode, pending: &PendingPermission) -> GateDec
         PermissionMode::Default => GateDecision::Ask,
         PermissionMode::AcceptEdits if is_edit_permission(pending) => GateDecision::Allow,
         PermissionMode::AcceptEdits => GateDecision::Ask,
-        // Live Auto is host-side only (see PermissionMode::Auto docs).
-        PermissionMode::Auto if pending.risk == "high" => GateDecision::Ask,
-        PermissionMode::Auto => GateDecision::Allow,
+        // Grok owns Auto classification (bash decomposition + policy + LLM).
+        // Safe calls never reach this reverse request. Anything that does has
+        // already been classified dangerous/uncertain or matched an Ask rule;
+        // auto-allowing it here would override the agent's security decision.
+        PermissionMode::Auto => GateDecision::Ask,
     }
 }
 
@@ -183,6 +185,16 @@ pub fn is_allow_option(option_id: &str, options: &[PermissionOption]) -> bool {
         .find(|option| option.option_id == option_id)
         .map(|option| option.kind.contains("allow") || option_id.contains("allow"))
         .unwrap_or_else(|| option_id.contains("allow"))
+}
+
+pub fn is_reject_once_option(option_id: &str, options: &[PermissionOption]) -> bool {
+    options
+        .iter()
+        .find(|option| option.option_id == option_id)
+        .is_some_and(|option| {
+            let kind = option.kind.to_ascii_lowercase();
+            kind.contains("reject") && !kind.contains("always")
+        })
 }
 
 pub fn risk_for_path(path: &str) -> String {
@@ -323,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_allows_safe_asks_on_high_risk() {
+    fn auto_never_overrides_an_agent_permission_request() {
         let edit = pending(PermissionKind::FsWrite, "Write file", "/tmp/a.rs");
         let shell = pending(
             PermissionKind::ToolPermission,
@@ -333,10 +345,7 @@ mod tests {
         // Shell title sets risk high via build_tool_permission; set explicitly here.
         let mut high = shell;
         high.risk = "high".into();
-        assert_eq!(
-            decide_gate(PermissionMode::Auto, &edit),
-            GateDecision::Allow
-        );
+        assert_eq!(decide_gate(PermissionMode::Auto, &edit), GateDecision::Ask);
         assert_eq!(decide_gate(PermissionMode::Auto, &high), GateDecision::Ask);
     }
 

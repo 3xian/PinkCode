@@ -10,8 +10,10 @@ import type {
   ManagedAgentInfo,
   PendingPermission,
   PermissionMode,
+  PromptQueueEntry,
   SessionCard,
   SessionDetail,
+  SessionUpdatePage,
   SpawnRequest,
   TokenUsageSeries,
   WeekUsage,
@@ -31,6 +33,18 @@ export async function listSessions(limit?: number): Promise<SessionCard[]> {
 
 export async function getSessionDetail(sessionId: string): Promise<SessionDetail> {
   return invoke<SessionDetail>("get_session_detail", { sessionId });
+}
+
+export async function listSessionUpdates(
+  sessionId: string,
+  beforeCursor: number,
+  limit?: number,
+): Promise<SessionUpdatePage> {
+  return invoke<SessionUpdatePage>("list_session_updates", {
+    sessionId,
+    beforeCursor,
+    limit: limit ?? null,
+  });
 }
 
 export async function listSessionHunks(
@@ -89,6 +103,47 @@ export async function interjectAgent(
   text: string,
 ): Promise<{ status?: string }> {
   return invoke("interject_agent", { handleId, text });
+}
+
+export async function removeQueuedPrompt(
+  handleId: string,
+  entry: Pick<PromptQueueEntry, "id" | "version">,
+): Promise<void> {
+  return invoke("queue_remove", {
+    handleId,
+    id: entry.id,
+    version: entry.version,
+  });
+}
+
+export async function reorderQueuedPrompts(
+  handleId: string,
+  orderedIds: string[],
+): Promise<void> {
+  return invoke("queue_reorder", { handleId, orderedIds });
+}
+
+export async function clearQueuedPrompts(handleId: string): Promise<void> {
+  return invoke("queue_clear", { handleId });
+}
+
+export async function editQueuedPrompt(
+  handleId: string,
+  id: string,
+  newText: string,
+): Promise<void> {
+  return invoke("queue_edit", { handleId, id, newText });
+}
+
+export async function interjectQueuedPrompt(
+  handleId: string,
+  entry: Pick<PromptQueueEntry, "id" | "version">,
+): Promise<void> {
+  return invoke("queue_interject", {
+    handleId,
+    id: entry.id,
+    version: entry.version,
+  });
 }
 
 export async function stopAgent(handleId: string): Promise<ManagedAgentInfo> {

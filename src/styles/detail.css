@@ -184,6 +184,12 @@
   min-height: 0;
 }
 
+.timeline-history-control {
+  display: flex;
+  justify-content: center;
+  padding-top: 10px;
+}
+
 .timeline-filters {
   display: flex;
   flex-wrap: wrap;
@@ -938,4 +944,3 @@ img.md-file-image:hover {
 .roadmap li.done {
   color: var(--live);
 }
-

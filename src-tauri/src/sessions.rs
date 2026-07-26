@@ -1,6 +1,6 @@
 use crate::models::{
     ActiveSession, DashboardStats, HunkRecord, SessionCard, SessionDetail, SessionStatus,
-    TokenDayPoint, TokenUsageSeries,
+    SessionUpdatePage, TokenDayPoint, TokenUsageSeries,
 };
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -624,6 +624,78 @@ fn read_jsonl_tail(path: &Path, max_lines: usize) -> Result<Vec<Value>> {
     Ok(values)
 }
 
+fn jsonl_values_with_offsets(
+    buffer: &[u8],
+    buffer_start: u64,
+    skip_partial_first_line: bool,
+) -> Vec<(u64, Value)> {
+    let mut offset = 0usize;
+    buffer
+        .split_inclusive(|byte| *byte == b'\n')
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let line_start = buffer_start + offset as u64;
+            offset += line.len();
+            if skip_partial_first_line && index == 0 {
+                return None;
+            }
+            let line = line
+                .strip_suffix(b"\n")
+                .unwrap_or(line)
+                .strip_suffix(b"\r")
+                .unwrap_or(line);
+            serde_json::from_slice(line)
+                .ok()
+                .map(|value| (line_start, value))
+        })
+        .collect()
+}
+
+fn read_update_page(
+    path: &Path,
+    before_cursor: Option<u64>,
+    limit: usize,
+) -> Result<SessionUpdatePage> {
+    if !path.exists() {
+        return Ok(SessionUpdatePage {
+            updates: Vec::new(),
+            next_cursor: None,
+            has_more: false,
+        });
+    }
+
+    const BLOCK_SIZE: usize = 16 * 1024;
+    let limit = limit.clamp(1, 1_000);
+    let mut file = fs::File::open(path)?;
+    let file_len = file.metadata()?.len();
+    let end = before_cursor.unwrap_or(file_len).min(file_len);
+    let mut position = end;
+    let mut buffer = Vec::new();
+    let entries = loop {
+        let read_len = position.min(BLOCK_SIZE as u64) as usize;
+        position -= read_len as u64;
+        file.seek(SeekFrom::Start(position))?;
+        let mut chunk = vec![0; read_len];
+        file.read_exact(&mut chunk)?;
+        chunk.extend_from_slice(&buffer);
+        buffer = chunk;
+
+        let entries = jsonl_values_with_offsets(&buffer, position, position > 0);
+        if position == 0 || entries.len() > limit {
+            break entries;
+        }
+    };
+
+    let page_start = entries.len().saturating_sub(limit);
+    let has_more = page_start > 0;
+    let page = &entries[page_start..];
+    Ok(SessionUpdatePage {
+        updates: page.iter().map(|(_, value)| value.clone()).collect(),
+        next_cursor: has_more.then(|| page[0].0),
+        has_more,
+    })
+}
+
 fn parse_hunk(v: &Value) -> HunkRecord {
     HunkRecord {
         hunk_id: str_field(v, &["hunkId", "hunk_id"]),
@@ -655,6 +727,19 @@ pub fn list_hunks(session_id: &str, limit: Option<usize>) -> Result<Vec<HunkReco
     Ok(hunks)
 }
 
+pub fn list_session_updates(
+    session_id: &str,
+    before_cursor: Option<u64>,
+    limit: Option<usize>,
+) -> Result<SessionUpdatePage> {
+    let (dir, _) = find_session_dir(session_id)?;
+    read_update_page(
+        &dir.join("updates.jsonl"),
+        before_cursor,
+        limit.unwrap_or(250),
+    )
+}
+
 pub fn get_session_detail(session_id: &str) -> Result<SessionDetail> {
     let (dir, cwd) = find_session_dir(session_id)?;
     let summary = load_json_value(&dir.join("summary.json"))?
@@ -674,9 +759,10 @@ pub fn get_session_detail(session_id: &str) -> Result<SessionDetail> {
         active.as_ref(),
     );
 
-    // Keep tails modest so first detail paint stays fast (huge sessions exist).
+    // Keep the first paint fast. The UI can request a deeper tail when the
+    // user asks for older Timeline entries and preserves that depth on refresh.
     let recent_events = read_jsonl_tail(&dir.join("events.jsonl"), 30)?;
-    let recent_updates = read_jsonl_tail(&dir.join("updates.jsonl"), 120)?;
+    let update_page = read_update_page(&dir.join("updates.jsonl"), None, 200)?;
     let hunks = list_hunks(session_id, Some(50))?;
 
     Ok(SessionDetail {
@@ -684,7 +770,9 @@ pub fn get_session_detail(session_id: &str) -> Result<SessionDetail> {
         summary_raw: summary,
         signals_raw: signals,
         recent_events,
-        recent_updates,
+        recent_updates: update_page.updates,
+        recent_updates_cursor: update_page.next_cursor,
+        recent_updates_has_more: update_page.has_more,
         hunks,
     })
 }
@@ -1118,6 +1206,35 @@ mod tests {
         assert_eq!(tail.len(), 3);
         assert_eq!(tail[0]["index"], 117);
         assert_eq!(tail[2]["index"], 119);
+    }
+
+    #[test]
+    fn update_tail_reports_and_reveals_older_records() {
+        let path = std::env::temp_dir().join(format!(
+            "pinkcode-update-tail-{}-{}.jsonl",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let content = (0..250)
+            .map(|index| serde_json::json!({ "index": index }).to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&path, content).expect("write fixture");
+
+        let first_page = read_update_page(&path, None, 200).expect("first page");
+        assert!(first_page.has_more);
+        assert_eq!(first_page.updates.len(), 200);
+        assert_eq!(first_page.updates[0]["index"], 50);
+
+        let older = read_update_page(&path, first_page.next_cursor, 250).expect("older page");
+        let _ = fs::remove_file(&path);
+        assert!(!older.has_more);
+        assert_eq!(older.updates.len(), 50);
+        assert_eq!(older.updates[0]["index"], 0);
+        assert_eq!(older.updates[49]["index"], 49);
     }
 
     #[test]

@@ -25,7 +25,9 @@ import { UpdateModal } from "./components/UpdateModal";
 import { WorkspacePanel } from "./components/WorkspacePanel";
 import { useAgentEvents } from "./hooks/useAgentEvents";
 import { useAppUpdate } from "./hooks/useAppUpdate";
+import { usePromptQueueController } from "./hooks/usePromptQueueController";
 import { useSessionPlanMode } from "./hooks/useSessionPlanMode";
+import { useTimelineHistory } from "./hooks/useTimelineHistory";
 import { useUsageMetrics } from "./hooks/useUsageMetrics";
 import type {
   MainTab,
@@ -131,6 +133,16 @@ function App() {
   } = useAgentEvents(selectedId, {
     onCurrentModeUpdate: planMode.onAgentModeUpdate,
   });
+  const timelineHistory = useTimelineHistory(
+    selectedId,
+    detail,
+    hydrateDiskLive,
+  );
+  const promptQueue = usePromptQueueController(
+    selectedId,
+    managedForSession,
+    setError,
+  );
 
   const projectCwd = detail?.card.cwd ?? null;
   /**
@@ -258,8 +270,6 @@ function App() {
         }
         setDetail(d);
         setDetailError(null);
-        // Mirror Grok Build disk stream into Timeline (keeps local slash cards).
-        hydrateDiskLive(id, d.recentUpdates ?? []);
       } catch (e) {
         if (seq !== detailReqSeq.current || selectedIdRef.current !== id) {
           return;
@@ -271,7 +281,7 @@ function App() {
         }
       }
     },
-    [hydrateDiskLive],
+    [],
   );
 
   const refreshFromDisk = useCallback(() => {
@@ -339,6 +349,39 @@ function App() {
       unlisten?.();
     };
   }, [refreshList, refreshDetail]);
+
+  // These are advertised ACP capabilities, so consume their notifications
+  // and invalidate the workspace immediately.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void listen<{
+      method?: string;
+      sessionId?: string | null;
+      params?: unknown;
+    }>("agent-notification", ({ payload }) => {
+      if (cancelled || document.visibilityState === "hidden") return;
+      if (
+        payload.method !== "x.ai/fs_notify" &&
+        payload.method !== "x.ai/git_head_changed"
+      ) {
+        return;
+      }
+      const selected = selectedIdRef.current;
+      if (payload.sessionId && selected && payload.sessionId !== selected) {
+        return;
+      }
+      setGitRefreshKey((n) => n + 1);
+      if (selected) void refreshDetail(selected, true);
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [refreshDetail]);
 
   // Focus / tab visible → catch anything the watcher missed (debounced).
   useEffect(() => {
@@ -682,7 +725,7 @@ function App() {
 
       // Optimistic Running paint so the left-rail task card updates immediately
       // (agent-status can lose a race with spawn/list Ready snapshots).
-      if (liveAgent) {
+      if (liveAgent?.status === "ready") {
         upsertManaged({ ...liveAgent, status: "running" });
       }
 
@@ -877,6 +920,9 @@ function App() {
           tab={tab}
           onTab={setTab}
           timelineItems={timelineItems}
+          timelineHasMore={timelineHistory.hasMore}
+          timelineHistoryLoading={timelineHistory.loadingOlder}
+          onLoadOlderTimeline={timelineHistory.loadOlder}
           managed={managedForSession}
           permissions={permissionsForSession}
           permBusyKey={permBusyKey}
@@ -884,6 +930,7 @@ function App() {
           sessionMode={effectiveSessionMode}
           onSessionModeChange={(m) => void handleSessionModeChange(m)}
           onSendPrompt={(t) => void handleSend(t)}
+          promptQueue={promptQueue}
           onResolvePermission={(item, opt, comments, payload) =>
             void handleResolvePermission(item, opt, comments, payload)
           }

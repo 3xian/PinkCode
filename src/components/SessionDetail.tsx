@@ -27,12 +27,14 @@ import {
   shortPath,
 } from "../utils/format";
 import type { ResolvePermissionFn } from "../utils/permissionPayload";
+import type { PromptQueueController } from "../hooks/usePromptQueueController";
 import { extractToolPath } from "../utils/paths";
 import { DiffPanel } from "./DiffPanel";
 import { FilePathLink } from "./FilePathLink";
 import { Markdown } from "./Markdown";
 import { PermissionGate } from "./PermissionGate";
 import { PromptBar } from "./PromptBar";
+import { PromptQueue } from "./PromptQueue";
 import { ShellCard } from "./ShellPanel";
 import { TimelineRowChrome, timelineStackClass } from "./TimelineRow";
 
@@ -43,6 +45,9 @@ interface Props {
   tab: MainTab;
   onTab: (t: MainTab) => void;
   timelineItems: TimelineItem[];
+  timelineHasMore: boolean;
+  timelineHistoryLoading: boolean;
+  onLoadOlderTimeline: () => Promise<void>;
   managed: ManagedAgentInfo | null;
   permissions: PendingPermission[];
   permBusyKey: string | null;
@@ -50,6 +55,7 @@ interface Props {
   sessionMode: SessionMode;
   onSessionModeChange: (mode: SessionMode) => void;
   onSendPrompt: (text: string) => void;
+  promptQueue: PromptQueueController;
   onResolvePermission: ResolvePermissionFn;
   /** Stop the live agent for this task (confirm handled by parent). */
   onStopAgent?: () => void;
@@ -92,6 +98,9 @@ export function SessionDetailView({
   tab,
   onTab,
   timelineItems,
+  timelineHasMore,
+  timelineHistoryLoading,
+  onLoadOlderTimeline,
   managed,
   permissions,
   permBusyKey,
@@ -99,6 +108,7 @@ export function SessionDetailView({
   sessionMode,
   onSessionModeChange,
   onSendPrompt,
+  promptQueue,
   onResolvePermission,
   onStopAgent,
   pinTimelineBottomSeq = 0,
@@ -277,6 +287,9 @@ export function SessionDetailView({
             managed={managed}
             pinBottomSeq={pinTimelineBottomSeq}
             onOpenFile={onOpenFile}
+            hasMore={timelineHasMore}
+            loadingOlder={timelineHistoryLoading}
+            onLoadOlder={onLoadOlderTimeline}
           />
         )}
         {tab === "diff" && (
@@ -285,6 +298,7 @@ export function SessionDetailView({
         {tab === "raw" && <RawStream detail={detail} />}
       </div>
 
+      <PromptQueue controller={promptQueue} />
       <PromptBar
         managed={managed}
         busy={controlBusy}
@@ -332,11 +346,17 @@ function TimelinePanel({
   managed,
   pinBottomSeq = 0,
   onOpenFile,
+  hasMore,
+  loadingOlder,
+  onLoadOlder,
 }: {
   items: TimelineItem[];
   managed: ManagedAgentInfo | null;
   pinBottomSeq?: number;
   onOpenFile?: (path: string) => void;
+  hasMore: boolean;
+  loadingOlder: boolean;
+  onLoadOlder: () => Promise<void>;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -430,7 +450,7 @@ function TimelinePanel({
     };
   }, [pinBottomSeq]);
 
-  if (items.length === 0) {
+  if (items.length === 0 && !hasMore) {
     return (
       <div className="empty-hint">
         {managed
@@ -443,6 +463,21 @@ function TimelinePanel({
   // Chronological (oldest → newest), like a terminal tail
   return (
     <div className="timeline-panel-wrap">
+      {hasMore && (
+        <div className="timeline-history-control">
+          <button
+            type="button"
+            className="btn"
+            disabled={loadingOlder}
+            onClick={() => {
+              stickToBottom.current = false;
+              void onLoadOlder();
+            }}
+          >
+            {loadingOlder ? "Loading…" : "Load earlier activity"}
+          </button>
+        </div>
+      )}
       <div className="timeline-filters" role="toolbar" aria-label="Timeline content filter">
         {filterChips.map((k) => {
           const count = k === "all" ? items.length : (kindCounts.get(k) ?? 0);

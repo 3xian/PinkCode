@@ -761,8 +761,7 @@
   color: var(--text);
 }
 
-.tl-item.kind-shell .muted,
-.tl-item.kind-shell .tl-meta {
+.tl-item.kind-shell .muted {
   color: var(--text-muted);
 }
 
@@ -924,11 +923,6 @@ img.md-file-image:hover {
   max-height: 60vh;
 }
 
-.side-blurb {
-  padding: 0 14px 8px;
-  margin: 0;
-}
-
 .side-panel .diff-panel {
   padding: 0 12px;
 }
@@ -938,35 +932,4 @@ img.md-file-image:hover {
   top: 0;
   background: var(--bg-panel);
   z-index: 1;
-}
-
-/* Preview bar uses its own soft wash in workspace.css; don't force flat #000. */
-
-.roadmap {
-  margin: 18px 14px 8px;
-  padding: 12px;
-  border: none;
-  border-radius: 0;
-  background: var(--bg-elevated);
-}
-
-.roadmap h3 {
-  margin: 0 0 8px;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-}
-
-.roadmap ul {
-  margin: 0;
-  padding-left: 16px;
-  color: var(--text-muted);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.roadmap li.done {
-  color: var(--live);
 }

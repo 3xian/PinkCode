@@ -33,7 +33,7 @@
 }
 
 .left-rail {
-  background: var(--bg);
+  background: var(--bg-elevated);
   min-width: 0;
 }
 
@@ -592,7 +592,7 @@
 }
 
 .detail-panel {
-  background: var(--bg);
+  background: var(--bg-elevated);
   padding: 0;
   overflow: hidden;
   min-width: 0; /* allow title ellipsis inside grid track */
@@ -642,32 +642,6 @@
 
 .search:focus {
   box-shadow: 0 0 0 1px var(--accent);
-}
-
-.segmented {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-  background: var(--bg-elevated);
-  padding: 3px;
-  border-radius: 999px;
-  border: none;
-}
-
-.segmented button {
-  border: 0;
-  background: transparent;
-  border-radius: 999px;
-  padding: 4px;
-  cursor: pointer;
-  color: var(--text-muted);
-  text-transform: capitalize;
-}
-
-.segmented button.active {
-  background: var(--bg-hover);
-  color: var(--text);
-  font-weight: 600;
 }
 
 .session-cards {
@@ -896,14 +870,6 @@
 
 .card-metrics {
   font-variant-numeric: tabular-nums;
-}
-
-.card-path {
-  font-size: 11px;
-  font-family: var(--mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .branch {

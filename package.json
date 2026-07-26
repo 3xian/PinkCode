@@ -1,6 +1,6 @@
 {
   "name": "pinkcode",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "description": "Desktop mission control for Grok agents.",
   "type": "module",
   "keywords": [

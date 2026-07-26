@@ -500,10 +500,7 @@ export function mergeDiskLiveIntoMap(
 ): Map<string, TimelineItem[]> {
   const existing = previous.get(sessionId) ?? [];
   const keep = existing.filter((item) => item.handleId !== DISK_HANDLE_ID);
-  const nextList =
-    keep.length === 0
-      ? diskItems
-      : [...diskItems, ...keep].sort((a, b) => a.ts - b.ts);
+  const nextList = mergeTimelineItems(diskItems, keep);
 
   if (listsShallowEqual(existing, nextList)) {
     return previous;
@@ -515,6 +512,66 @@ export function mergeDiskLiveIntoMap(
     next.set(sessionId, nextList);
   }
   return next;
+}
+
+/**
+ * Merge Timeline sources without rendering the persisted copy of an ACP item
+ * beside its live copy. IDs are intentionally not used here: disk and live
+ * reducers mint different UI IDs for the same ACP notification.
+ */
+export function mergeTimelineItems(
+  ...lists: TimelineItem[][]
+): TimelineItem[] {
+  const merged = new Map<string, TimelineItem>();
+  let anonymous = 0;
+
+  for (const list of lists) {
+    for (const item of list) {
+      const key = timelineMirrorKey(item) ?? `item:${item.id}:${anonymous++}`;
+      const current = merged.get(key);
+      // The disk stream mirrors ACP. Prefer the freshest record; exact ties
+      // keep the live version because it may still be streaming.
+      if (!current || preferTimelineItem(item, current)) {
+        merged.set(key, item);
+      }
+    }
+  }
+
+  return Array.from(merged.values()).sort((a, b) => a.ts - b.ts);
+}
+
+function timelineMirrorKey(item: TimelineItem): string | null {
+  if (item.kind === "tool" && item.toolCallId) {
+    return `tool:${item.toolCallId}`;
+  }
+  if (item.kind === "shell" && item.shell?.toolCallId) {
+    return `shell:${item.shell.toolCallId}`;
+  }
+  if (item.sourceEventId) return `event:${item.sourceEventId}`;
+  return null;
+}
+
+function preferTimelineItem(
+  candidate: TimelineItem,
+  current: TimelineItem,
+): boolean {
+  // Exact ACP mirrors represent the same notification. Preserve the live
+  // version so its streaming state is not replaced by the persisted copy.
+  if (
+    candidate.sourceEventId &&
+    candidate.sourceEventId === current.sourceEventId
+  ) {
+    return (
+      candidate.handleId !== DISK_HANDLE_ID &&
+      current.handleId === DISK_HANDLE_ID
+    );
+  }
+  // Tool and shell cards share a stable call id across several updates. In
+  // that case their timestamps, rather than their source, decide freshness.
+  if (candidate.ts !== current.ts) return candidate.ts > current.ts;
+  return (
+    candidate.handleId !== DISK_HANDLE_ID && current.handleId === DISK_HANDLE_ID
+  );
 }
 
 function listsShallowEqual(

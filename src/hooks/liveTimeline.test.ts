@@ -5,6 +5,7 @@ import {
   capShellOutput,
   hydrateLiveFromDiskUpdates,
   mergeDiskLiveIntoMap,
+  mergeTimelineItems,
   reduceAgentUpdate,
   reduceShellUpdate,
   settleStreamingItems,
@@ -178,6 +179,77 @@ describe("live timeline reducer", () => {
     expect(list.find((i) => i.handleId === LOCAL_HANDLE_ID)?.detail).toBe(
       "50%",
     );
+  });
+
+  it("does not render disk and ACP mirrors of the same update twice", () => {
+    const disk: TimelineItem = {
+      id: "disk-card",
+      handleId: DISK_HANDLE_ID,
+      sessionId: "sess-1",
+      kind: "agent",
+      title: "Agent",
+      detail: "Hello",
+      ts: 100,
+      sourceEventId: "evt-1",
+    };
+    const live: TimelineItem = {
+      ...disk,
+      id: "live-card",
+      handleId: "agent-handle",
+      streaming: true,
+    };
+
+    const merged = mergeTimelineItems([disk], [live]);
+    expect(merged).toEqual([live]);
+
+    const state = mergeDiskLiveIntoMap(
+      new Map([["sess-1", [live]]]),
+      "sess-1",
+      [disk],
+    );
+    expect(state.get("sess-1")).toEqual([live]);
+  });
+
+  it("deduplicates tool mirrors when an ACP event id is unavailable", () => {
+    const disk: TimelineItem = {
+      id: "disk-tool",
+      handleId: DISK_HANDLE_ID,
+      sessionId: "sess-1",
+      kind: "tool",
+      title: "Read file ✓",
+      toolCallId: "tool-1",
+      ts: 100,
+    };
+    const live: TimelineItem = {
+      ...disk,
+      id: "live-tool",
+      handleId: "agent-handle",
+      title: "Read file · running",
+      ts: 101,
+    };
+
+    expect(mergeTimelineItems([disk], [live])).toEqual([live]);
+  });
+
+  it("keeps a newer persisted tool update over a stale ACP mirror", () => {
+    const live: TimelineItem = {
+      id: "live-tool",
+      handleId: "agent-handle",
+      sessionId: "sess-1",
+      kind: "tool",
+      title: "Read file · running",
+      toolCallId: "tool-1",
+      ts: 100,
+    };
+    const disk: TimelineItem = {
+      ...live,
+      id: "disk-tool",
+      handleId: DISK_HANDLE_ID,
+      title: "Read file ✓",
+      ts: 101,
+    };
+
+    expect(mergeTimelineItems([live], [disk])).toEqual([disk]);
   });
 
   it("keeps same-timestamp events distinct and gives mirrors stable ids", () => {

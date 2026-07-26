@@ -833,8 +833,9 @@ button.user-question-option:hover:not(:disabled),
 
 /* Prompt bar — single composer card: textarea + bottom toolbar */
 .prompt-bar {
-  padding: 10px 14px 12px;
-  background: var(--bg-elevated);
+  /* Match the Timeline content inset; the composer is the only raised layer. */
+  padding: 10px 18px 12px;
+  background: var(--bg);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -843,9 +844,9 @@ button.user-question-option:hover:not(:disabled),
   position: relative;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
-  box-shadow: 0 0 0 0 transparent;
+  box-shadow: var(--inset-spec);
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
@@ -934,8 +935,9 @@ button.user-question-option:hover:not(:disabled),
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 6px 8px 8px;
+  padding: 5px 8px 6px;
   border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-elevated) 82%, var(--hl-low));
 }
 
 /* Mode + Permissions chip pair */

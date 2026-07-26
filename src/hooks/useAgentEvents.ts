@@ -15,6 +15,7 @@ import {
   hydrateLiveFromDiskUpdates,
   isTextUpdate,
   mergeDiskLiveIntoMap,
+  mergeTimelineItems,
   reduceAgentUpdate,
   reduceShellUpdate,
   sameManagedAgent,
@@ -367,15 +368,9 @@ export function useAgentEvents(
     const bySession = liveBySession.get(selectedSessionId) ?? [];
     const handle = managedForSession?.handleId;
     const byHandle = handle ? (liveBySession.get(handle) ?? []) : [];
-    let merged: TimelineItem[];
-    if (!byHandle.length) {
-      merged = bySession;
-    } else {
-      const map = new Map<string, TimelineItem>();
-      [...byHandle, ...bySession].forEach((i) => map.set(i.id, i));
-      merged = Array.from(map.values()).sort((a, b) => a.ts - b.ts);
-    }
-    return merged;
+    return byHandle.length
+      ? mergeTimelineItems(byHandle, bySession)
+      : bySession;
   }, [selectedSessionId, liveBySession, managedForSession]);
 
   /** Agent-advertised slash commands for the selected session (may be empty). */

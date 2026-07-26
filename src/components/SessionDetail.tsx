@@ -240,7 +240,6 @@ export function SessionDetailView({
             bar={Math.round(pct)}
           />
           <Metric label="Turns" value={String(card.turnCount)} />
-          <Metric label="Tools" value={String(card.toolCallCount)} />
           <Metric
             label="Diff"
             value={`+${card.agentLinesAdded} / −${card.agentLinesRemoved}`}

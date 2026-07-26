@@ -88,33 +88,56 @@
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: minmax(150px, 1.6fr) repeat(4, minmax(0, 1fr));
+  gap: 0;
+  align-items: stretch;
 }
 
 .metric {
-  border: none;
+  min-width: 0;
   border-radius: 0;
-  padding: 8px 10px;
-  background: var(--bg-elevated);
+  padding: 4px 10px 6px;
+  background: transparent;
   position: relative;
   overflow: hidden;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
-/* Whole-block progress: filled portion of background = usage */
+.metric + .metric {
+  border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.metric::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  bottom: 0;
+  left: 10px;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Context usage is shown as a slim, integrated progress line. */
 .metric.metric-progress {
   --metric-pct: 0%;
+}
+
+.metric.metric-progress::after {
+  height: 2px;
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--accent) 32%, var(--bg-elevated)) 0%,
-    color-mix(in srgb, var(--accent) 32%, var(--bg-elevated)) var(--metric-pct),
-    var(--bg-elevated) var(--metric-pct),
-    var(--bg-elevated) 100%
+    var(--accent) 0%,
+    var(--accent) var(--metric-pct),
+    var(--border) var(--metric-pct),
+    var(--border) 100%
   );
 }
 
 .metric-label {
-  font-size: 10px;
+  flex: 0 0 auto;
+  font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -123,10 +146,13 @@
 }
 
 .metric-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  margin-top: 2px;
-  font-size: 13px;
+  font-size: 12px;
   position: relative;
   z-index: 1;
 }

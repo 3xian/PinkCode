@@ -129,7 +129,19 @@ export function SessionList({
                 </span>
               </div>
               <div className="card-metrics">
-                <span>{formatTokens(s.contextTokensUsed)} tok</span>
+                <span
+                  title={
+                    !s.tokenUsageAvailable
+                      ? "Completed-turn token usage is not available for this session"
+                      : s.tokenUsageIncomplete
+                      ? "Approximate completed-turn total tokens; one or more turns may be incomplete"
+                      : "Completed-turn total tokens (input + output, including cached reads)"
+                  }
+                >
+                  {!s.tokenUsageAvailable
+                    ? "? tok"
+                    : `${s.tokenUsageIncomplete ? "≈" : ""}${formatTokens(s.totalTokens)} tok`}
+                </span>
                 <span>
                   {contextPct(s.contextTokensUsed, s.contextWindowTokens)}% ctx
                 </span>

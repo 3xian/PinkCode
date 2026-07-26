@@ -834,10 +834,24 @@ button.user-question-option:hover:not(:disabled),
 /* Prompt bar — single composer card: textarea + bottom toolbar */
 .prompt-bar {
   /* Match the Timeline content inset; the composer is the only raised layer. */
+  position: relative;
   padding: 10px 18px 12px;
   background: var(--bg);
-  border-top: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+/* Let the content above the composer fade into its background instead of
+   ending at a hard divider. */
+.prompt-bar::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: -20px;
+  right: 0;
+  left: 0;
+  height: 20px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--bg));
 }
 
 .prompt-composer {

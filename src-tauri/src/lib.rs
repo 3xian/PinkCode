@@ -15,6 +15,7 @@ mod project_fs;
 mod proxy;
 mod rpc_handler;
 mod session_noise;
+mod session_usage;
 mod sessions;
 mod shell_emitter;
 mod shell_stream;

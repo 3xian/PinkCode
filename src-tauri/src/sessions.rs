@@ -2,6 +2,7 @@ use crate::models::{
     ActiveSession, DashboardStats, HunkRecord, SessionCard, SessionDetail, SessionStatus,
     SessionUpdatePage, TokenDayPoint, TokenUsageSeries,
 };
+use crate::session_usage::{completed_turn_usage, session_token_usage, SessionTokenUsage};
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -271,6 +272,7 @@ fn build_card(
     summary: &Value,
     signals: Option<&Value>,
     active: Option<&ActiveSession>,
+    token_usage: SessionTokenUsage,
 ) -> SessionCard {
     let title = str_field(summary, &["generated_title", "session_summary", "title"])
         .filter(|s| !s.trim().is_empty())
@@ -321,6 +323,9 @@ fn build_card(
         context_window_usage: signals
             .map(|s| u64_field(s, &["contextWindowUsage"]))
             .unwrap_or(0),
+        total_tokens: token_usage.total_tokens,
+        token_usage_incomplete: token_usage.incomplete,
+        token_usage_available: token_usage.available,
         tool_call_count: signals
             .map(|s| u64_field(s, &["toolCallCount"]))
             .unwrap_or(0),
@@ -538,6 +543,7 @@ pub fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>> {
             &summary,
             signals.as_ref(),
             active_map.get(&candidate.id),
+            session_token_usage(&candidate.dir.join("updates.jsonl")),
         );
         // Drop empty system-temp sessions (ACP tests, handshake probes, etc.).
         if crate::session_noise::is_noise_session(&card) {
@@ -757,6 +763,7 @@ pub fn get_session_detail(session_id: &str) -> Result<SessionDetail> {
         &summary,
         signals.as_ref(),
         active.as_ref(),
+        session_token_usage(&dir.join("updates.jsonl")),
     );
 
     // Keep the first paint fast. The UI can request a deeper tail when the
@@ -1040,23 +1047,10 @@ fn accumulate_turn_usage_from_jsonl(
             Ok(v) => v,
             Err(_) => continue,
         };
-        let update = msg
-            .pointer("/params/update")
-            .or_else(|| msg.get("update"))
-            .cloned()
-            .unwrap_or(Value::Null);
-        let session_update = update
-            .get("sessionUpdate")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        if session_update != "turn_completed" {
+        let Some(turn) = completed_turn_usage(&msg) else {
             continue;
-        }
-        let usage = match update.get("usage") {
-            Some(u) => u,
-            None => continue,
         };
-        let tokens = turn_consumed_tokens(usage);
+        let tokens = turn.fresh_tokens;
         if tokens == 0 {
             continue;
         }
@@ -1070,16 +1064,6 @@ fn accumulate_turn_usage_from_jsonl(
         entry.1 = entry.1.saturating_add(1);
     }
     Ok(())
-}
-
-fn turn_consumed_tokens(usage: &Value) -> u64 {
-    let input = u64_field(usage, &["inputTokens", "input_tokens"]);
-    let output = u64_field(usage, &["outputTokens", "output_tokens"]);
-    let cached = u64_field(usage, &["cachedReadTokens", "cached_read_tokens"]);
-    if input > 0 || output > 0 {
-        return input.saturating_sub(cached).saturating_add(output);
-    }
-    u64_field(usage, &["totalTokens", "total_tokens"])
 }
 
 fn extract_update_unix_secs(msg: &Value) -> Option<u64> {
@@ -1117,17 +1101,6 @@ mod tests {
             assert_eq!(p.date.len(), 10);
             assert!(p.date.chars().nth(4) == Some('-'));
         }
-    }
-
-    #[test]
-    fn turn_consumed_excludes_cache() {
-        let usage = serde_json::json!({
-            "inputTokens": 1000,
-            "outputTokens": 50,
-            "cachedReadTokens": 800,
-            "totalTokens": 1050
-        });
-        assert_eq!(turn_consumed_tokens(&usage), 250);
     }
 
     #[test]

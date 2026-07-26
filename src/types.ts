@@ -24,6 +24,10 @@ export interface SessionCard {
   contextTokensUsed: number;
   contextWindowTokens: number;
   contextWindowUsage: number;
+  /** Cumulative input + output tokens from completed turns, including cache reads. */
+  totalTokens: number;
+  tokenUsageIncomplete: boolean;
+  tokenUsageAvailable: boolean;
   toolCallCount: number;
   turnCount: number;
   toolsUsed: string[];

@@ -31,6 +31,12 @@ pub struct SessionCard {
     pub context_tokens_used: u64,
     pub context_window_tokens: u64,
     pub context_window_usage: u64,
+    /// Cumulative input + output tokens from completed turns, including cache reads.
+    pub total_tokens: u64,
+    /// One or more turn usage records may be incomplete (e.g. live subagents).
+    pub token_usage_incomplete: bool,
+    /// False for legacy or unreadable update logs without durable usage records.
+    pub token_usage_available: bool,
     pub tool_call_count: u64,
     pub turn_count: u64,
     pub tools_used: Vec<String>,

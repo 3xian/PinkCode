@@ -236,5 +236,8 @@
   .metric-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-}
 
+  .metric:nth-child(3n + 1) {
+    border-left: none;
+  }
+}

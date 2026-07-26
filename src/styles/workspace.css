@@ -144,23 +144,6 @@
   transform: none;
 }
 
-.workspace-gate {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px 16px;
-  min-height: 0;
-}
-
-.workspace-gate .btn {
-  align-self: flex-start;
-}
-
-.workspace-gate-path {
-  font-family: var(--mono);
-  word-break: break-all;
-}
-
 .workspace-section {
   display: flex;
   flex-direction: column;

@@ -8,6 +8,11 @@ use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::SystemTime;
+#[cfg(not(unix))]
+use std::{
+    hash::{Hash, Hasher},
+    io::Read,
+};
 
 #[derive(Clone, Default)]
 pub struct SessionTokenUsage {
@@ -34,10 +39,23 @@ struct FileIdentity {
     #[cfg(unix)]
     inode: u64,
     #[cfg(not(unix))]
-    created: Option<SystemTime>,
+    prefix_fingerprint: Option<u64>,
 }
 
-fn file_identity(metadata: &fs::Metadata) -> FileIdentity {
+impl FileIdentity {
+    fn is_reliable(&self) -> bool {
+        #[cfg(unix)]
+        {
+            true
+        }
+        #[cfg(not(unix))]
+        {
+            self.prefix_fingerprint.is_some()
+        }
+    }
+}
+
+fn file_identity(_path: &Path, metadata: &fs::Metadata) -> FileIdentity {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -48,9 +66,20 @@ fn file_identity(metadata: &fs::Metadata) -> FileIdentity {
     }
     #[cfg(not(unix))]
     {
-        FileIdentity {
-            created: metadata.created().ok(),
-        }
+        // Windows' portable std metadata lacks a stable file ID, and creation
+        // timestamps can share a coarse resolution. Hashing the fixed prefix
+        // distinguishes replacement logs without sacrificing append scans.
+        let prefix_fingerprint = (|| {
+            let mut file = fs::File::open(_path).ok()?;
+            let mut bytes = vec![0; 4096];
+            let read = file.read(&mut bytes).ok()?;
+            bytes.truncate(read);
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            metadata.created().ok().hash(&mut hasher);
+            bytes.hash(&mut hasher);
+            Some(hasher.finish())
+        })();
+        FileIdentity { prefix_fingerprint }
     }
 }
 
@@ -110,7 +139,7 @@ pub fn session_token_usage(path: &Path) -> SessionTokenUsage {
     };
     let modified = metadata.modified().ok();
     let len = metadata.len();
-    let identity = file_identity(&metadata);
+    let identity = file_identity(path, &metadata);
     let cached = usage_cache().lock().get(path).cloned();
     if let Some(entry) = cached.as_ref() {
         if entry.modified == modified && entry.len == len {
@@ -119,7 +148,10 @@ pub fn session_token_usage(path: &Path) -> SessionTokenUsage {
     }
 
     let append_only = cached.as_ref().is_some_and(|entry| {
-        entry.identity == identity && len > entry.len && entry.scan_offset <= len
+        identity.is_reliable()
+            && entry.identity == identity
+            && len > entry.len
+            && entry.scan_offset <= len
     });
     let mut entry = if append_only {
         cached.expect("append_only requires cache entry")

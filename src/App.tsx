@@ -109,6 +109,8 @@ function App() {
    * (see openPreview). Relative paths from markdown/tools are normalized here.
    */
   const [previewPath, setPreviewPath] = useState<string | null>(null);
+  /** Right workspace rail collapsed (Ctrl+H). */
+  const [workspaceCollapsed, setWorkspaceCollapsed] = useState(false);
 
   const planMode = useSessionPlanMode();
   const {
@@ -390,7 +392,12 @@ function App() {
         // ACP session mode (not host permission). Applied before initial prompt.
         sessionModeId: next.planArmed ? "plan" : null,
       });
-      upsertManaged(info);
+      // With an initial prompt the agent is already Running; paint that immediately.
+      upsertManaged(
+        prompt && info.status === "ready"
+          ? { ...info, status: "running" }
+          : info,
+      );
       setLastSpawnSessionMode(opts.sessionMode);
       if (info.sessionId) {
         const sessionId = info.sessionId;
@@ -516,7 +523,7 @@ function App() {
    * Grok single Mode control (Shift+Tab ring).
    * - planArmed is orthogonal to permission and persisted per task
    * - permission is the host ACP gate only (spawn/attach may still pass
-   *   `--permission-mode auto` / `--always-approve`)
+   *   top-level `grok --permission-mode auto` / `agent --always-approve`)
    *
    * Do NOT send `/auto` or `/always-approve` as session/prompt on chip change.
    * In Grok Build those are local TUI toggles (no turn). Forwarding them over
@@ -626,12 +633,13 @@ function App() {
 
       // Connect on first agent message (no attach switch). Local slashes above
       // already returned without needing ACP.
-      let handleId = managedForSession?.handleId;
-      let sessionIdForPlan = managedForSession?.sessionId ?? selectedId;
+      let liveAgent = managedForSession;
+      let handleId = liveAgent?.handleId;
+      let sessionIdForPlan = liveAgent?.sessionId ?? selectedId;
       if (
         !handleId ||
-        managedForSession?.status === "stopped" ||
-        managedForSession?.status === "error"
+        liveAgent?.status === "stopped" ||
+        liveAgent?.status === "error"
       ) {
         const sessionId = selectedId ?? sessions[0]?.id ?? null;
         if (!sessionId) {
@@ -643,6 +651,7 @@ function App() {
           setError("Could not connect to this task.");
           return;
         }
+        liveAgent = info;
         handleId = info.handleId;
         sessionIdForPlan = info.sessionId ?? sessionId;
       }
@@ -657,7 +666,19 @@ function App() {
         setError(modeError);
       }
 
-      await promptAgent(handleId, trimmed);
+      // Optimistic Running paint so the left-rail task card updates immediately
+      // (agent-status can lose a race with spawn/list Ready snapshots).
+      if (liveAgent) {
+        upsertManaged({ ...liveAgent, status: "running" });
+      }
+
+      const accepted = await promptAgent(handleId, trimmed);
+      if (liveAgent) {
+        upsertManaged({
+          ...liveAgent,
+          status: accepted.status ?? "running",
+        });
+      }
       setPinTimelineBottomSeq((n) => n + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -716,6 +737,44 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [stopConfirm, confirmStop, controlBusy]);
 
+  // Right workspace rail: Ctrl+H toggles collapse (not Cmd+H — macOS hide app).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.isComposing) return;
+      if (
+        e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !e.shiftKey &&
+        (e.key === "h" || e.key === "H")
+      ) {
+        e.preventDefault();
+        setWorkspaceCollapsed((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const toggleWorkspaceCollapsed = useCallback(() => {
+    setWorkspaceCollapsed((v) => !v);
+  }, []);
+
+  const workspaceCollapseBtn = (
+    <button
+      type="button"
+      className="btn ghost workspace-collapse-btn"
+      onClick={toggleWorkspaceCollapsed}
+      title="Collapse workspace (Ctrl+H)"
+      aria-label="Collapse workspace panel"
+      aria-expanded={!workspaceCollapsed}
+      aria-keyshortcuts="Control+H"
+    >
+      <span className="workspace-collapse-label">Collapse</span>
+      <kbd className="shortcut-hint">Ctrl+H</kbd>
+    </button>
+  );
+
   const defaultCwd = detail?.card.cwd ?? sessions[0]?.cwd ?? "";
 
   /**
@@ -738,6 +797,22 @@ function App() {
     [managedList],
   );
 
+  /** sessionId → managed status for left-rail run chrome. */
+  const managedStatuses = useMemo(() => {
+    const out: Record<string, (typeof managedList)[number]["status"]> = {};
+    for (const m of managedList) {
+      if (
+        m.sessionId &&
+        m.status !== "stopped" &&
+        m.status !== "error" &&
+        m.status !== "starting"
+      ) {
+        out[m.sessionId] = m.status;
+      }
+    }
+    return out;
+  }, [managedList]);
+
   return (
     <div className="app-shell">
       {(error || lastError) && (
@@ -756,7 +831,11 @@ function App() {
         </div>
       )}
 
-      <div className="main-grid">
+      <div
+        className={
+          "main-grid" + (workspaceCollapsed ? " workspace-collapsed" : "")
+        }
+      >
         <aside className="left-rail">
           <StatsBar
             tokenSeries={tokenSeries}
@@ -772,6 +851,7 @@ function App() {
               setSelectedId(id);
             }}
             managedSessionIds={managedSessionIds}
+            managedStatuses={managedStatuses}
             onNewTask={() => setModalOpen(true)}
           />
         </aside>
@@ -803,11 +883,34 @@ function App() {
           onOpenFile={openPreview}
         />
 
-        <aside className="side-panel workspace-panel">
-          {showWorkspaceGate ? (
+        <aside
+          className={
+            "side-panel workspace-panel" +
+            (workspaceCollapsed ? " is-collapsed" : "")
+          }
+          aria-label="Workspace"
+        >
+          {workspaceCollapsed ? (
+            <button
+              type="button"
+              className="workspace-expand-rail"
+              onClick={toggleWorkspaceCollapsed}
+              title="Show workspace (Ctrl+H)"
+              aria-label="Show workspace panel"
+              aria-expanded={false}
+              aria-keyshortcuts="Control+H"
+            >
+              <span className="workspace-expand-chevron" aria-hidden>
+                ‹
+              </span>
+              <span className="workspace-expand-text">Workspace</span>
+              <kbd className="shortcut-hint">Ctrl+H</kbd>
+            </button>
+          ) : showWorkspaceGate ? (
             <div className="workspace-gate">
               <div className="panel-header">
                 <h2>Workspace</h2>
+                {workspaceCollapseBtn}
               </div>
               <p className="muted small workspace-gate-path" title={projectCwd ?? undefined}>
                 {projectCwd ? shortPath(projectCwd, 48) : ""}
@@ -832,6 +935,7 @@ function App() {
               previewPath={previewPath}
               onPreviewPath={openPreview}
               sessionId={selectedId}
+              collapseControl={workspaceCollapseBtn}
             />
           )}
         </aside>

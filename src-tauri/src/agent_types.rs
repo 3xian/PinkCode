@@ -19,8 +19,9 @@ pub enum PermissionMode {
     Default,
     AcceptEdits,
     /// Grok Auto: host allows safe tools; ask on high risk.
-    /// Spawn/attach pass `--permission-mode auto`. Live Mode toggles only update
-    /// the host ACP gate (no `/auto` session/prompt — that would start a turn).
+    /// Spawn/attach pass top-level `grok --permission-mode auto agent stdio`
+    /// (not under `agent` — clap rejects that and the process dies immediately).
+    /// Live Mode toggles only update the host ACP gate (no `/auto` session/prompt).
     Auto,
     BypassPermissions,
     DontAsk,
@@ -31,12 +32,20 @@ impl PermissionMode {
         matches!(self, Self::BypassPermissions)
     }
 
-    /// Extra CLI args after `grok agent` (before `stdio`).
-    pub fn spawn_extra_args(self) -> Vec<String> {
+    /// Top-level `grok` flags that must appear **before** the `agent` subcommand.
+    ///
+    /// `--permission-mode` is defined on the root CLI (`grok --help`), not on
+    /// `grok agent`. Wrong placement → immediate exit → "ACP transport closed".
+    pub fn spawn_global_args(self) -> Vec<String> {
         match self {
             Self::Auto => vec!["--permission-mode".into(), "auto".into()],
             _ => Vec::new(),
         }
+    }
+
+    /// Extra CLI args after `grok agent` (before `stdio`).
+    pub fn spawn_agent_args(self) -> Vec<String> {
+        Vec::new()
     }
 
     pub fn from_request(mode: Option<Self>, always_approve: Option<bool>) -> Self {
@@ -157,6 +166,19 @@ mod tests {
             PermissionMode::from_request(Some(PermissionMode::AcceptEdits), Some(true)),
             PermissionMode::AcceptEdits
         );
+    }
+
+    #[test]
+    fn auto_mode_uses_top_level_permission_flag() {
+        assert_eq!(
+            PermissionMode::Auto.spawn_global_args(),
+            vec!["--permission-mode", "auto"]
+        );
+        assert!(PermissionMode::Auto.spawn_agent_args().is_empty());
+        assert!(PermissionMode::Default.spawn_global_args().is_empty());
+        assert!(PermissionMode::BypassPermissions
+            .spawn_global_args()
+            .is_empty());
     }
 
     #[test]

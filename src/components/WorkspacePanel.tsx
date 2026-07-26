@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { FilePreview } from "./FilePreview";
 import { FileTree } from "./FileTree";
 import { GitChanges } from "./GitChanges";
@@ -12,6 +12,8 @@ interface Props {
   onPreviewPath: (path: string | null) => void;
   /** Active session — session-scoped assets (generated images) for preview. */
   sessionId?: string | null;
+  /** Collapse control rendered at the end of the Files/Git tab bar. */
+  collapseControl?: ReactNode;
 }
 
 /**
@@ -24,6 +26,7 @@ export function WorkspacePanel({
   previewPath,
   onPreviewPath,
   sessionId = null,
+  collapseControl,
 }: Props) {
   const [tab, setTab] = useState<"files" | "git">("files");
   const [gitChangeCount, setGitChangeCount] = useState(0);
@@ -53,6 +56,7 @@ export function WorkspacePanel({
               <span className="tab-count">{gitChangeCount}</span>
             )}
           </button>
+          {collapseControl}
         </div>
         <div className="workspace-browser">
           <div

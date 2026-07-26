@@ -224,7 +224,8 @@
 }
 
 @media (max-width: 1200px) {
-  .main-grid {
+  .main-grid,
+  .main-grid.workspace-collapsed {
     grid-template-columns: 168px minmax(0, 1fr);
   }
 

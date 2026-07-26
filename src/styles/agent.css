@@ -56,8 +56,7 @@
 }
 
 /* Shared card base */
-.policy-card,
-.perm-card {
+.policy-card {
   border: none;
   border-radius: 0;
   background: var(--bg-elevated);
@@ -179,7 +178,6 @@
 
 /* Shared flex-wrap row */
 .shell-card-top,
-.perm-card-top,
 .policy-context-source,
 .drag-dialog-header,
 .drag-dialog-actions {
@@ -229,8 +227,10 @@
 
 .shell-cmd {
   padding: 4px 0 0;
-  color: var(--kind-shell);
+  color: color-mix(in srgb, var(--kind-shell) 55%, var(--text));
+  font-family: var(--mono);
   font-size: 12px;
+  font-weight: 500;
   word-break: break-all;
 }
 
@@ -280,67 +280,11 @@
   border: none;
 }
 
-/* Permission gate */
-.perm-gate {
-  background: linear-gradient(
-    180deg,
-    var(--danger-dim) 0%,
-    color-mix(in srgb, var(--bg) 95%, transparent) 100%
-  );
-  padding: 10px 14px 12px;
-  flex-shrink: 0;
-  max-height: 42vh;
-  overflow: auto;
-}
-
 /* Shared flex-center */
-.perm-gate-header,
 .policy-name {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.perm-gate-header {
-  margin-bottom: 8px;
-  font-size: 12px;
-}
-
-.perm-pulse {
-  color: var(--danger);
-  animation: pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.perm-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.perm-card {
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  box-shadow: inset 3px 0 0 var(--warn);
-}
-
-.perm-card.risk-high {
-  box-shadow: inset 3px 0 0 var(--danger);
-}
-
-.perm-card.risk-low {
-  box-shadow: inset 3px 0 0 var(--live);
 }
 
 .risk-badge {
@@ -361,22 +305,12 @@
 
 .risk-badge.risk-medium {
   color: var(--warn);
+  background: var(--warn-dim);
 }
 
 .risk-badge.risk-low {
   color: var(--live);
   background: var(--live-dim);
-}
-
-.perm-kind {
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.perm-title {
-  font-weight: 650;
 }
 
 .perm-detail {
@@ -386,14 +320,14 @@
 }
 
 .perm-preview {
-  margin: 0;
+  margin: 10px 0 0;
   padding: 8px 10px;
   border-radius: 0;
   background: var(--hl-low);
   border: 1px solid var(--border);
   font-family: var(--mono);
   font-size: 11px;
-  max-height: 120px;
+  max-height: 200px;
   overflow: auto;
   white-space: pre-wrap;
 }
@@ -406,7 +340,7 @@
 }
 
 /* ── Drag-dialog skeleton ───────────────────────────────────────
-   Shared by PlanApprovalModal and UserQuestionModal.
+   Shared by Plan / Ask / tool-FS permission modals.
    Each variant overrides colours / width via its own modifier class. */
 .drag-dialog-overlay {
   position: fixed;
@@ -470,6 +404,68 @@
   gap: 10px;
   border-top: 1px solid var(--border);
   background: var(--bg-elevated);
+}
+
+/* ── Tool / FS permission (session/request_permission, fs/*) ─── */
+.permission-dialog {
+  width: min(560px, calc(100vw - 32px));
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border));
+  box-shadow:
+    inset 3px 0 0 var(--warn),
+    var(--shadow-lg);
+}
+
+.permission-dialog.risk-high {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  box-shadow:
+    inset 3px 0 0 var(--danger),
+    var(--shadow-lg);
+}
+
+.permission-dialog.risk-low {
+  border-color: color-mix(in srgb, var(--live) 40%, var(--border));
+  box-shadow:
+    inset 3px 0 0 var(--live),
+    var(--shadow-lg);
+}
+
+.permission-drag-handle {
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+}
+
+.permission-drag-handle.risk-high {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.permission-drag-handle.risk-low {
+  background: color-mix(in srgb, var(--live) 8%, transparent);
+}
+
+.permission-mark {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--warn);
+}
+
+.permission-mark.risk-high {
+  color: var(--danger);
+}
+
+.permission-mark.risk-low {
+  color: var(--live);
+}
+
+.permission-subtitle {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.permission-body {
+  min-height: 64px;
+  max-height: min(40vh, 360px);
 }
 
 /* ── Plan approval (x.ai/exit_plan_mode) ─────────────────────── */
@@ -956,22 +952,7 @@ button.user-question-option:hover:not(:disabled),
   transform: translateY(0.5px);
 }
 
-.prompt-chip-shortcut {
-  flex-shrink: 0;
-  margin: 0;
-  padding: 1px 5px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--hl-low);
-  color: var(--text-muted);
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  line-height: 1.35;
-  user-select: none;
-  white-space: nowrap;
-}
+/* Shortcut chip styling lives on global `.shortcut-hint` (base.css). */
 
 .prompt-chip-menu {
   position: absolute;

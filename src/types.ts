@@ -198,7 +198,7 @@ export const PERMISSION_MODE_OPTIONS: {
   {
     value: "auto",
     label: "Auto",
-    hint: "Classifier / host auto-approves safe tools; dangerous may still prompt (--permission-mode auto)",
+    hint: "Classifier / host auto-approves safe tools; dangerous may still prompt (grok --permission-mode auto)",
   },
   {
     value: "bypassPermissions",

@@ -134,7 +134,7 @@ export function PromptChipSelect<T extends string>({
         </span>
       </button>
       {shortcut ? (
-        <kbd className="prompt-chip-shortcut" aria-hidden>
+        <kbd className="shortcut-hint" aria-hidden>
           {shortcut}
         </kbd>
       ) : null}

@@ -512,7 +512,8 @@ impl AgentManager {
     fn start_client(
         &self,
         mut info: ManagedAgentInfo,
-        extra_args: &[String],
+        global_args: &[String],
+        agent_args: &[String],
     ) -> Result<(ManagedAgentInfo, Arc<AcpClient>), String> {
         let handle_id = info.handle_id.clone();
         Self::emit_status(&self.inner, &info);
@@ -521,7 +522,8 @@ impl AgentManager {
             AcpClient::spawn_with_notify(
                 &self.resolve_grok_bin()?,
                 info.always_approve,
-                extra_args,
+                global_args,
+                agent_args,
                 notify,
             )
             .map_err(|error| error.to_string())?,
@@ -699,11 +701,13 @@ impl AgentManager {
         task_prefs::set_last_spawn_mode(permission_mode);
         let handle_id = Uuid::new_v4().to_string();
 
-        let mut extra = permission_mode.spawn_extra_args();
+        // Top-level flags (before `agent`) vs agent-subcommand flags (after).
+        let global_args = permission_mode.spawn_global_args();
+        let mut agent_args = permission_mode.spawn_agent_args();
         if let Some(model) = &req.model {
             if !model.is_empty() {
-                extra.push("-m".into());
-                extra.push(model.clone());
+                agent_args.push("-m".into());
+                agent_args.push(model.clone());
             }
         }
 
@@ -725,7 +729,7 @@ impl AgentManager {
             created_at: now_iso(),
             pending_permission_count: 0,
         };
-        let (mut info, client) = self.start_client(info, &extra)?;
+        let (mut info, client) = self.start_client(info, &global_args, &agent_args)?;
 
         let result = match client.session_new(&cwd) {
             Ok(r) => r,
@@ -778,6 +782,11 @@ impl AgentManager {
 
         if let Some(prompt) = req.prompt.filter(|p| !p.trim().is_empty()) {
             self.dispatch_prompt(&handle_id, &session_id, prompt, client);
+            // dispatch_prompt flips status to Running and emits; return the live
+            // snapshot so the spawn invoke does not clobber UI back to Ready.
+            if let Some(live) = self.get(&handle_id) {
+                return Ok(live);
+            }
         }
 
         Ok(info)
@@ -813,7 +822,8 @@ impl AgentManager {
         let always_approve = permission_mode.spawns_always_approve();
         task_prefs::set_permission_mode(&session_id, permission_mode);
         let handle_id = Uuid::new_v4().to_string();
-        let extra = permission_mode.spawn_extra_args();
+        let global_args = permission_mode.spawn_global_args();
+        let agent_args = permission_mode.spawn_agent_args();
 
         let info = ManagedAgentInfo {
             handle_id: handle_id.clone(),
@@ -832,7 +842,7 @@ impl AgentManager {
             created_at: now_iso(),
             pending_permission_count: 0,
         };
-        let (mut info, client) = self.start_client(info, &extra)?;
+        let (mut info, client) = self.start_client(info, &global_args, &agent_args)?;
         let result = match client.session_load(&session_id, &cwd) {
             Ok(r) => r,
             Err(e) => {
@@ -887,10 +897,17 @@ impl AgentManager {
         };
 
         self.dispatch_prompt(handle_id, &session_id, text.to_string(), client);
+        // Include post-dispatch status so the host can paint Running without
+        // waiting on the agent-status event (avoids race with other upserts).
+        let status = self
+            .get(handle_id)
+            .map(|a| a.status)
+            .unwrap_or(ManagedStatus::Running);
         Ok(json!({
             "accepted": true,
             "handleId": handle_id,
             "sessionId": session_id,
+            "status": status,
         }))
     }
 

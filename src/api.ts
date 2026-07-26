@@ -74,11 +74,14 @@ export async function attachAgent(request: AttachRequest): Promise<ManagedAgentI
 export async function promptAgent(
   handleId: string,
   text: string,
-): Promise<{ accepted: boolean; handleId: string; sessionId: string }> {
-  return invoke<{ accepted: boolean; handleId: string; sessionId: string }>(
-    "prompt_agent",
-    { handleId, text },
-  );
+): Promise<{
+  accepted: boolean;
+  handleId: string;
+  sessionId: string;
+  /** Managed agent status after accept (usually `"running"`). */
+  status?: ManagedAgentInfo["status"];
+}> {
+  return invoke("prompt_agent", { handleId, text });
 }
 
 export async function stopAgent(handleId: string): Promise<ManagedAgentInfo> {

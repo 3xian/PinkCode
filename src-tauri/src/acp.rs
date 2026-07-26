@@ -2,7 +2,7 @@
 
 use parking_lot::Mutex;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -10,6 +10,9 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use thiserror::Error;
+
+/// How many trailing stderr lines to keep for transport-close diagnostics.
+const STDERR_TAIL_LINES: usize = 12;
 
 #[derive(Debug, Error)]
 pub enum AcpError {
@@ -43,17 +46,24 @@ pub struct AcpClient {
 }
 
 impl AcpClient {
+    /// Spawn `grok [global_args…] agent [agent flags…] stdio`.
+    ///
+    /// `global_args` must come **before** `agent` (e.g. `--permission-mode auto`).
+    /// `agent_args` come after `agent` and before `stdio` (e.g. `-m model`).
     pub fn spawn_with_notify(
         grok_bin: &str,
         always_approve: bool,
-        extra_args: &[String],
+        global_args: &[String],
+        agent_args: &[String],
         on_notify: NotifyFn,
     ) -> Result<Self> {
-        let mut args: Vec<String> = vec!["agent".into()];
+        let mut args: Vec<String> = Vec::new();
+        args.extend(global_args.iter().cloned());
+        args.push("agent".into());
         if always_approve {
             args.push("--always-approve".into());
         }
-        args.extend(extra_args.iter().cloned());
+        args.extend(agent_args.iter().cloned());
         args.push("stdio".into());
 
         let mut cmd = Command::new(grok_bin);
@@ -92,19 +102,29 @@ impl AcpClient {
         let stderr = child.stderr.take();
 
         let pending: Arc<Mutex<HashMap<u64, Sender<Value>>>> = Arc::new(Mutex::new(HashMap::new()));
+        let stderr_tail: Arc<Mutex<VecDeque<String>>> =
+            Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_TAIL_LINES)));
 
         if let Some(stderr) = stderr {
+            let stderr_tail = Arc::clone(&stderr_tail);
             thread::spawn(move || {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines().map_while(|l| l.ok()) {
-                    if !line.trim().is_empty() {
-                        eprintln!("[grok-agent stderr] {line}");
+                    if line.trim().is_empty() {
+                        continue;
                     }
+                    eprintln!("[grok-agent stderr] {line}");
+                    let mut tail = stderr_tail.lock();
+                    if tail.len() >= STDERR_TAIL_LINES {
+                        tail.pop_front();
+                    }
+                    tail.push_back(line);
                 }
             });
         }
 
         let pending_reader = Arc::clone(&pending);
+        let stderr_for_close = Arc::clone(&stderr_tail);
         thread::spawn(move || {
             let reader = BufReader::new(stdout);
             for line in reader.lines() {
@@ -144,14 +164,18 @@ impl AcpClient {
                 on_notify(msg);
             }
 
+            // Brief wait so the stderr thread can finish flushing after exit.
+            thread::sleep(Duration::from_millis(50));
+            let reason = transport_closed_message(&stderr_for_close);
+
             // EOF means this transport can no longer satisfy any in-flight RPC.
             // Notify the manager before waking request waiters so their error path
             // cannot briefly move an already-dead agent back to Ready.
             on_notify(json!({
                 "method": "_pinkcode/transport_closed",
-                "params": { "reason": "ACP stdout closed" }
+                "params": { "reason": reason }
             }));
-            fail_pending_requests(&pending_reader, "ACP transport closed");
+            fail_pending_requests(&pending_reader, &reason);
         });
 
         Ok(Self {
@@ -373,6 +397,34 @@ fn fail_pending_requests(pending: &Mutex<HashMap<u64, Sender<Value>>>, message: 
     }
 }
 
+/// Build a user-visible close reason, appending grok stderr when present.
+fn transport_closed_message(stderr_tail: &Mutex<VecDeque<String>>) -> String {
+    let lines: Vec<String> = stderr_tail.lock().iter().cloned().collect();
+    if lines.is_empty() {
+        return "ACP transport closed".into();
+    }
+    let detail = lines.join(" | ");
+    format!("ACP transport closed: {detail}")
+}
+
+/// Build the argv passed to `grok` for ACP stdio (tests + spawn path).
+#[cfg(test)]
+pub fn build_spawn_argv(
+    always_approve: bool,
+    global_args: &[String],
+    agent_args: &[String],
+) -> Vec<String> {
+    let mut args: Vec<String> = Vec::new();
+    args.extend(global_args.iter().cloned());
+    args.push("agent".into());
+    if always_approve {
+        args.push("--always-approve".into());
+    }
+    args.extend(agent_args.iter().cloned());
+    args.push("stdio".into());
+    args
+}
+
 impl Drop for AcpClient {
     fn drop(&mut self) {
         let _ = self.kill();
@@ -399,6 +451,42 @@ mod tests {
         assert_eq!(
             rx2.recv().expect("second waiter")["error"]["message"],
             "closed"
+        );
+    }
+
+    #[test]
+    fn transport_closed_message_includes_stderr_tail() {
+        let empty = Mutex::new(VecDeque::new());
+        assert_eq!(transport_closed_message(&empty), "ACP transport closed");
+
+        let mut tail = VecDeque::new();
+        tail.push_back("error: unexpected argument '--permission-mode' found".into());
+        let with = Mutex::new(tail);
+        let msg = transport_closed_message(&with);
+        assert!(msg.starts_with("ACP transport closed: "));
+        assert!(msg.contains("unexpected argument"));
+    }
+
+    #[test]
+    fn spawn_argv_places_permission_mode_before_agent() {
+        // Regression: Auto mode used `grok agent --permission-mode auto stdio`,
+        // which clap rejects (flag is top-level only) → transport closed on Mac/Win.
+        let global = vec!["--permission-mode".into(), "auto".into()];
+        let agent = vec!["-m".into(), "grok-4".into()];
+        assert_eq!(
+            build_spawn_argv(false, &global, &agent),
+            vec![
+                "--permission-mode",
+                "auto",
+                "agent",
+                "-m",
+                "grok-4",
+                "stdio",
+            ]
+        );
+        assert_eq!(
+            build_spawn_argv(true, &[], &[]),
+            vec!["agent", "--always-approve", "stdio"]
         );
     }
 
@@ -448,6 +536,7 @@ mod tests {
         let client = AcpClient::spawn_with_notify(
             &grok,
             true,
+            &[],
             &[],
             Arc::new(move |_m| {
                 c.fetch_add(1, Ordering::SeqCst);

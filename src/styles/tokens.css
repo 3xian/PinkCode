@@ -64,24 +64,32 @@
   --add: #56949f; /* foam */
   --del: #b4637a; /* love */
 
-  /* ── Timeline kinds (each distinct; tool ≠ accent) ────────── */
+  /* ── Timeline kinds (Rosé Pine Dawn roles; tool ≠ accent/rose) ─ */
   --kind-user: #907aa9; /* iris */
-  --kind-user-dim: rgb(var(--rp-iris-rgb) / 0.16);
+  --kind-user-dim: rgb(var(--rp-iris-rgb) / 0.18);
   --kind-agent: #56949f; /* foam */
-  --kind-agent-dim: rgb(var(--rp-foam-rgb) / 0.14);
+  --kind-agent-dim: rgb(var(--rp-foam-rgb) / 0.16);
   --kind-thought: #9893a5; /* muted */
-  --kind-thought-dim: rgb(var(--rp-muted-rgb) / 0.2);
-  /* tool ≠ accent (rose); both system-ish use pine (icons/labels distinguish) */
+  --kind-thought-dim: rgb(var(--rp-muted-rgb) / 0.16);
   --kind-tool: #286983; /* pine */
-  --kind-tool-dim: rgb(var(--rp-pine-rgb) / 0.12);
+  --kind-tool-dim: rgb(var(--rp-pine-rgb) / 0.14);
   --kind-shell: #286983; /* pine — terminal */
   --kind-shell-dim: rgb(var(--rp-pine-rgb) / 0.12);
   --kind-event: #ea9d34; /* gold */
-  --kind-event-dim: rgb(var(--rp-gold-rgb) / 0.14);
+  --kind-event-dim: rgb(var(--rp-gold-rgb) / 0.16);
   --kind-plan: #907aa9; /* iris */
   --kind-plan-dim: rgb(var(--rp-iris-rgb) / 0.16);
   --kind-unknown: #9893a5;
   --kind-unknown-dim: rgb(var(--rp-muted-rgb) / 0.12);
+  /* Per-kind RGB for timeline washes / accent bars (must match above) */
+  --kind-user-rgb: var(--rp-iris-rgb);
+  --kind-agent-rgb: var(--rp-foam-rgb);
+  --kind-thought-rgb: var(--rp-muted-rgb);
+  --kind-tool-rgb: var(--rp-pine-rgb);
+  --kind-shell-rgb: var(--rp-pine-rgb);
+  --kind-event-rgb: var(--rp-gold-rgb);
+  --kind-plan-rgb: var(--rp-iris-rgb);
+  --kind-unknown-rgb: var(--rp-muted-rgb);
 
   /* ── Elevation (text-tinted, not pure black) ───────────────── */
   --shadow-sm: 0 2px 8px rgb(var(--text-rgb) / 0.08);

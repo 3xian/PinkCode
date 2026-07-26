@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { SessionCard } from "../types";
+import type { ManagedStatus, SessionCard } from "../types";
 import {
   contextPct,
   formatRelative,
@@ -13,8 +13,13 @@ interface Props {
   query: string;
   onQuery: (q: string) => void;
   onSelect: (id: string) => void;
-  /** Live ACP sessions (card accent + sort). No per-card attach control. */
+  /**
+   * ACP-attached sessions (not starting/stopped/error).
+   * Used for sort + “live” accent when not actively running.
+   */
   managedSessionIds?: Set<string>;
+  /** Per-session managed status for run-state chrome (running pulse, etc.). */
+  managedStatuses?: Record<string, ManagedStatus>;
   onNewTask?: () => void;
 }
 
@@ -25,6 +30,7 @@ export function SessionList({
   onQuery,
   onSelect,
   managedSessionIds,
+  managedStatuses,
   onNewTask,
 }: Props) {
   const visible = useMemo(() => {
@@ -39,15 +45,14 @@ export function SessionList({
         )
       : sessions.slice();
 
-    // Confirmed attached (ACP) sessions first; keep relative order within groups.
-    // Caller excludes mid-attach `starting` so the list only jumps after success.
+    // Mid-turn first, then attached / open elsewhere, keep relative order.
     list.sort((a, b) => {
-      const am = managedSessionIds?.has(a.id) ? 0 : 1;
-      const bm = managedSessionIds?.has(b.id) ? 0 : 1;
-      return am - bm;
+      const ar = rankCard(a, managedSessionIds, managedStatuses);
+      const br = rankCard(b, managedSessionIds, managedStatuses);
+      return ar - br;
     });
     return list;
-  }, [sessions, query, managedSessionIds]);
+  }, [sessions, query, managedSessionIds, managedStatuses]);
 
   return (
     <div className="session-list">
@@ -82,12 +87,15 @@ export function SessionList({
           <div className="empty-hint">No sessions match.</div>
         )}
         {visible.map((s) => {
-          // Scheme A: single visual state (priority order).
-          // ACP live > Grok disk-active > idle. (No red/error bar.)
+          // Priority: running (mid-turn) > awaiting > live > open-elsewhere > idle
           const managed = managedSessionIds?.has(s.id) ?? false;
+          const managedStatus = managedStatuses?.[s.id];
+          // Live PID in active_sessions.json, not attached here — "open", not mid-turn.
+          const openElsewhere = s.isActive && !managed;
           const state = resolveCardState({
             managed,
-            diskActive: s.isActive && !managed,
+            managedStatus,
+            openElsewhere,
           });
           const cardClass = [
             "session-card",
@@ -101,11 +109,15 @@ export function SessionList({
               key={s.id}
               className={cardClass}
               onClick={() => onSelect(s.id)}
+              aria-busy={state === "running" ? true : undefined}
             >
               <div className="card-top" title={stateTitle(state)}>
                 <span className="card-title" title={s.title}>
                   {s.title}
                 </span>
+                {state === "awaiting" && (
+                  <span className="card-await-label">Waiting</span>
+                )}
               </div>
               <div className="card-meta">
                 <span title={s.cwd}>{projectName(s.cwd)}</span>
@@ -127,7 +139,6 @@ export function SessionList({
                   </span>
                 )}
               </div>
-
             </div>
           );
         })}
@@ -136,27 +147,54 @@ export function SessionList({
   );
 }
 
-/** Visual run-state for a task card (scheme A). */
-type CardState = "live" | "disk-active" | "idle";
+/**
+ * Visual run-state for a task card.
+ * - running: PinkCode ACP mid-turn only (true "agent is working")
+ * - open: Grok Build (or other host) process still open — not mid-turn
+ * - awaiting / live: PinkCode attached
+ */
+type CardState = "running" | "awaiting" | "live" | "open" | "idle";
 
 function resolveCardState(opts: {
   managed: boolean;
-  diskActive: boolean;
+  managedStatus?: ManagedStatus;
+  openElsewhere: boolean;
 }): CardState {
-  // 1) PinkCode ACP attached
-  if (opts.managed) return "live";
-  // 2) Grok lists session active on disk, not attached here
-  if (opts.diskActive) return "disk-active";
-  // 3) idle / unknown / anything else → neutral idle
+  if (opts.managed) {
+    if (opts.managedStatus === "running") return "running";
+    if (opts.managedStatus === "awaitingPermission") return "awaiting";
+    return "live";
+  }
+  if (opts.openElsewhere) return "open";
   return "idle";
+}
+
+/** Sort rank: lower = higher in list. */
+function rankCard(
+  session: SessionCard,
+  managedIds?: Set<string>,
+  statuses?: Record<string, ManagedStatus>,
+): number {
+  const id = session.id;
+  const managed = managedIds?.has(id) ?? false;
+  const st = statuses?.[id];
+  if (st === "running") return 0;
+  if (st === "awaitingPermission") return 1;
+  if (managed) return 2;
+  if (session.isActive) return 3;
+  return 4;
 }
 
 function stateTitle(state: CardState): string {
   switch (state) {
+    case "running":
+      return "Agent is working on this task in PinkCode";
+    case "open":
+      return "Open in Grok Build — send a message here to connect";
+    case "awaiting":
+      return "Waiting for permission or input";
     case "live":
-      return "Live in PinkCode";
-    case "disk-active":
-      return "Active in Grok Build — send a message here to connect";
+      return "Connected in PinkCode";
     case "idle":
       return "Idle";
   }

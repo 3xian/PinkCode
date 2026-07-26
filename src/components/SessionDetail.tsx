@@ -1,5 +1,6 @@
 import {
   memo,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -17,6 +18,7 @@ import type {
   SessionMode,
   SessionDetail as Detail,
 } from "../types";
+import { writeClipboard } from "../utils/clipboard";
 import {
   contextPct,
   formatDuration,
@@ -500,6 +502,15 @@ const LiveItemRow = memo(function LiveItemRow({
   stackClass: string;
   onOpenFile?: (path: string) => void;
 }) {
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimer.current != null) window.clearTimeout(copyTimer.current);
+    };
+  }, []);
+
   const isMdKind =
     item.kind === "agent" || item.kind === "user" || item.kind === "thought";
   // While chunks are still coalescing, skip react-markdown (O(len) per frame).
@@ -510,6 +521,22 @@ const LiveItemRow = memo(function LiveItemRow({
       ? extractToolPath(item.detail, item.title)
       : null;
 
+  const canCopyAgent =
+    item.kind === "agent" && Boolean(item.detail?.trim()) && !item.streaming;
+
+  const copyAgentOutput = useCallback(async () => {
+    const text = item.detail?.trim();
+    if (!text) return;
+    try {
+      await writeClipboard(text);
+      setCopied(true);
+      if (copyTimer.current != null) window.clearTimeout(copyTimer.current);
+      copyTimer.current = window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  }, [item.detail]);
+
   return (
     <TimelineRowChrome kind={item.kind} ts={item.ts} stackClass={stackClass}>
       {item.kind === "shell" && item.shell ? (
@@ -517,14 +544,22 @@ const LiveItemRow = memo(function LiveItemRow({
       ) : (
         <>
           {toolPath ? (
-            <FilePathLink path={toolPath} onOpen={onOpenFile} className="tl-title">
+            <FilePathLink
+              path={toolPath}
+              onOpen={onOpenFile}
+              className="tl-title"
+            >
               {item.title}
             </FilePathLink>
           ) : (
             <div className="tl-title">{item.title}</div>
           )}
           {item.detail && (
-            <div className="tl-detail">
+            <div
+              className={
+                "tl-detail" + (canCopyAgent ? " has-copy" : "")
+              }
+            >
               {useMarkdown ? (
                 <Markdown onOpenFile={onOpenFile}>{item.detail}</Markdown>
               ) : isMdKind ? (
@@ -539,6 +574,24 @@ const LiveItemRow = memo(function LiveItemRow({
                 </FilePathLink>
               ) : (
                 item.detail
+              )}
+              {canCopyAgent && (
+                <div className="tl-detail-footer">
+                  <button
+                    type="button"
+                    className={
+                      "tl-copy-btn" + (copied ? " is-copied" : "")
+                    }
+                    title={copied ? "Copied" : "Copy agent output"}
+                    aria-label={copied ? "Copied" : "Copy agent output"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void copyAgentOutput();
+                    }}
+                  >
+                    {copied ? "Copied" : "Copy"}
+                  </button>
+                </div>
               )}
             </div>
           )}

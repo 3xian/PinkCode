@@ -7,6 +7,12 @@
   grid-template-columns: 180px minmax(0, 1fr) minmax(0, 1fr);
   gap: 0;
   contain: layout;
+  transition: grid-template-columns 160ms ease;
+}
+
+/* Right workspace rail collapsed → thin expand strip. */
+.main-grid.workspace-collapsed {
+  grid-template-columns: 180px minmax(0, 1fr) 40px;
 }
 
 .left-rail,
@@ -28,7 +34,6 @@
 
 .left-rail {
   background: var(--bg);
-  border-right: 1px solid var(--border);
   min-width: 0;
 }
 
@@ -50,6 +55,93 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+.side-panel.workspace-panel.is-collapsed {
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Collapse control (expanded rail) — sits on the Files/Git tab bar or gate header. */
+.workspace-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  align-self: center;
+  flex-shrink: 0;
+  margin-right: 8px;
+  padding: 4px 8px;
+  min-height: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.workspace-collapse-btn:hover,
+.workspace-collapse-btn.btn.ghost:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+  border: none;
+  border-color: transparent;
+}
+
+.workspace-collapse-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+}
+
+/* Thin vertical strip when the right rail is collapsed. */
+.workspace-expand-rail {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font: inherit;
+}
+
+.workspace-expand-rail:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.workspace-expand-chevron {
+  font-size: 16px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.workspace-expand-text {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+/* Keep horizontal chip inside the vertical expand rail. */
+.workspace-expand-rail .shortcut-hint {
+  writing-mode: horizontal-tb;
+  transform: none;
 }
 
 .workspace-gate {
@@ -605,12 +697,21 @@
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
+  /* Keep scroll; hide the gutter so the narrow rail stays clean. */
+  scrollbar-width: none;
+}
+
+.session-cards::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .session-card {
   position: relative;
   text-align: left;
-  border: none;
+  /* Transparent border reserves space so selection doesn't shift layout */
+  border: 1px solid transparent;
   background: transparent;
   border-radius: 0;
   /* Tight right padding so titles can run to the rail edge before ellipsis. */
@@ -622,87 +723,132 @@
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  /* Scroll the list — never shrink cards when the rail is short. */
+  flex-shrink: 0;
   box-sizing: border-box;
   align-self: stretch;
   transition:
     background 0.12s ease,
-    box-shadow 0.14s ease;
+    border-color 0.12s ease;
 }
 
 .session-card:hover {
-  background: transparent;
-  box-shadow:
-    var(--shadow-sm),
-    0 1px 0 rgb(var(--spec-rgb) / 0.65);
+  background: var(--bg-hover);
 }
 
-/* Selected: soft rose wash — no border (left edge reserved for run-state bar) */
+/* Selected: border only — iris (purple), not rose accent */
 .session-card.selected {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent) 16%, transparent) 0%,
-    color-mix(in srgb, var(--accent) 8%, transparent) 45%,
-    color-mix(in srgb, var(--accent) 2%, transparent) 80%,
-    transparent 100%
-  );
-}
-
-.session-card.selected:hover {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent) 20%, transparent) 0%,
-    color-mix(in srgb, var(--accent) 10%, transparent) 45%,
-    color-mix(in srgb, var(--accent) 3%, transparent) 80%,
-    transparent 100%
-  );
-  box-shadow:
-    var(--shadow-sm),
-    0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--title-selected);
 }
 
 /*
- * Scheme A left bar: same color family as badge.
- * Priority applied in JS: live > disk-active > idle (no bar).
- * Vertical gradient fades to transparent at both ends.
+ * Task card run-state (priority in JS):
+ *   running (mid-turn) > awaiting > live > open (elsewhere) > idle
+ * Solid fills only — no gradient washes.
  */
+.session-card.state-running::before,
+.session-card.state-awaiting::before,
 .session-card.state-live::before,
-.session-card.state-disk-active::before {
+.session-card.state-open::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 6px;
-  bottom: 6px;
-  width: 2px;
-  border-radius: 999px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 0;
   pointer-events: none;
 }
 
-.session-card.state-live::before {
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    var(--live) 22%,
-    var(--live) 78%,
-    transparent 100%
-  );
+/* Mid-turn only: foam fill + left-edge scrolling light bar.
+ * Do not set overflow:hidden here — in a flex column list that zeros the
+ * auto min-height and the card collapses when the rail is short. */
+.session-card.state-running {
+  background: color-mix(in srgb, var(--live) 12%, transparent);
 }
 
-.session-card.state-disk-active::before {
-  background: linear-gradient(
+.session-card.state-running::before {
+  width: 3px;
+  /* Dim track */
+  background-color: color-mix(in srgb, var(--live) 28%, transparent);
+  /* Bright streak that travels along the edge */
+  background-image: linear-gradient(
     180deg,
     transparent 0%,
-    var(--warn) 22%,
-    var(--warn) 78%,
+    color-mix(in srgb, var(--live) 45%, transparent) 32%,
+    var(--live) 50%,
+    color-mix(in srgb, var(--live) 45%, transparent) 68%,
     transparent 100%
   );
+  background-size: 100% 55%;
+  background-repeat: no-repeat;
+  background-position: 0 -60%;
+  box-shadow: none;
+  animation: session-run-scroll 1.35s linear infinite;
+}
+
+.session-card.state-running:hover {
+  background: color-mix(in srgb, var(--live) 16%, transparent);
+}
+
+/* Awaiting permission: gold (needs attention) */
+.session-card.state-awaiting {
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+
+.session-card.state-awaiting::before {
+  background: var(--warn);
+  box-shadow: 0 0 8px rgb(var(--warn-rgb) / 0.35);
+}
+
+.session-card.state-awaiting:hover {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+
+/* Connected / idle-ready: quiet foam bar */
+.session-card.state-live::before {
+  background: var(--live);
+  opacity: 0.7;
+}
+
+/* Open in Grok Build (process alive) — solid bar, no pulse */
+.session-card.state-open::before {
+  width: 2px;
+  background: var(--live);
+  opacity: 0.5;
+}
+
+/* Light streak scrolls top → bottom along the left edge */
+@keyframes session-run-scroll {
+  0% {
+    background-position: 0 -60%;
+  }
+  100% {
+    background-position: 0 160%;
+  }
 }
 
 .card-top {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 6px;
   min-width: 0;
   width: 100%;
+}
+
+.card-await-label {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+  padding: 2px 5px;
+  border: none;
+  border-radius: 0;
+  user-select: none;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
 }
 
 .card-title {
@@ -712,12 +858,11 @@
   white-space: nowrap;
   flex: 1 1 auto;
   min-width: 0;
-  width: 100%;
   max-width: 100%;
 }
 
-.session-card.selected .card-title {
-  color: var(--title-selected);
+.session-card.state-running .card-title {
+  color: color-mix(in srgb, var(--live) 28%, var(--text));
 }
 
 .stop-confirm-modal {

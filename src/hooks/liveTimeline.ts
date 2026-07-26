@@ -86,6 +86,7 @@ export function sameManagedAgent(
   );
 }
 
+
 export function isTextUpdate(description: UpdateDescription): boolean {
   return (
     Boolean(description.coalesce) ||

@@ -79,7 +79,72 @@ pub fn read_active_sessions() -> Result<Vec<ActiveSession>> {
         return Ok(Vec::new());
     }
     let list: Vec<ActiveSession> = serde_json::from_str(&raw)?;
-    Ok(list)
+    // Grok only prunes dead PIDs on next launch (`collect_crashed`). Stale
+    // entries after crash / kill would keep cards "active" forever — filter here.
+    Ok(list
+        .into_iter()
+        .filter(|s| process_is_alive(s.pid))
+        .collect())
+}
+
+/// Best-effort check that `pid` still refers to a live process.
+fn process_is_alive(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        // PROCESS_QUERY_LIMITED_INFORMATION
+        const ACCESS: u32 = 0x1000;
+        const STILL_ACTIVE: u32 = 259;
+        extern "system" {
+            fn OpenProcess(access: u32, inherit: i32, pid: u32) -> isize;
+            fn CloseHandle(handle: isize) -> i32;
+            fn GetExitCodeProcess(handle: isize, code: *mut u32) -> i32;
+        }
+        let handle = unsafe { OpenProcess(ACCESS, 0, pid) };
+        if handle == 0 {
+            return false;
+        }
+        let mut code = 0u32;
+        let ok = unsafe { GetExitCodeProcess(handle, &mut code) };
+        unsafe {
+            let _ = CloseHandle(handle);
+        }
+        ok != 0 && code == STILL_ACTIVE
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Path::new(&format!("/proc/{pid}")).exists()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // `kill -0` succeeds if the process exists (or EPERM — still alive).
+        use std::process::{Command, Stdio};
+        match Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+        {
+            Ok(status) if status.success() => true,
+            // Exit 1 can be "no such process" or EPERM; check /bin/ps as fallback.
+            _ => Command::new("ps")
+                .args(["-p", &pid.to_string(), "-o", "pid="])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .output()
+                .map(|o| o.status.success() && !o.stdout.is_empty())
+                .unwrap_or(false),
+        }
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    {
+        let _ = pid;
+        true
+    }
 }
 
 fn load_json_value(path: &Path) -> Result<Option<Value>> {

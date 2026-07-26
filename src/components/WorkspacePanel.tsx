@@ -82,6 +82,7 @@ export function WorkspacePanel({
           >
             <GitChanges
               cwd={cwd}
+              active={tab === "git"}
               refreshKey={refreshKey}
               selectedPath={previewPath}
               onSelectFile={onPreviewPath}

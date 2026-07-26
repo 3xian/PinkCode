@@ -156,6 +156,8 @@ export interface ShellEntry {
   description?: string;
   status: string;
   output: string;
+  /** True when `output` is an append-only delta from the previous snapshot. */
+  outputDelta?: boolean;
   exitCode?: number | null;
   ts: number;
 }
@@ -165,6 +167,7 @@ export const MANAGED_STATUSES = [
   "ready",
   "running",
   "awaitingPermission",
+  "stopping",
   "error",
   "stopped",
 ] as const;

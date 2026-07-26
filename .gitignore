@@ -56,3 +56,6 @@ _win_probe*
 
 # Agent instructions
 AGENTS.md
+
+# Local source audit / implementation scratchpad
+docs/TODO2.md

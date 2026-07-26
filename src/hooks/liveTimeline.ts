@@ -404,8 +404,11 @@ export function reduceShellUpdate(
   if (index >= 0) {
     const old = list[index];
     const previousOutput = old.shell?.output ?? "";
-    const mergedOutput =
-      output.length >= previousOutput.length ? output : previousOutput;
+    const mergedOutput = raw.outputDelta
+      ? capShellOutput(previousOutput + output)
+      : output.length >= previousOutput.length
+        ? output
+        : previousOutput;
     if (
       mergedOutput === previousOutput &&
       status === old.shell?.status &&

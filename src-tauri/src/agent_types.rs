@@ -8,6 +8,7 @@ pub enum ManagedStatus {
     Ready,
     Running,
     AwaitingPermission,
+    Stopping,
     Error,
     Stopped,
 }
@@ -191,6 +192,7 @@ mod tests {
             ManagedStatus::Ready,
             ManagedStatus::Running,
             ManagedStatus::AwaitingPermission,
+            ManagedStatus::Stopping,
             ManagedStatus::Error,
             ManagedStatus::Stopped,
         ];

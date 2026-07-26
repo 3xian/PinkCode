@@ -156,7 +156,8 @@ export function SessionDetailView({
   const canStop =
     Boolean(onStopAgent) &&
     managed &&
-    managed.status !== "stopped";
+    managed.status !== "stopped" &&
+    managed.status !== "stopping";
   const awaiting =
     managed?.status === "awaitingPermission" || permissions.length > 0;
 

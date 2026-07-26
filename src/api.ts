@@ -84,6 +84,13 @@ export async function promptAgent(
   return invoke("prompt_agent", { handleId, text });
 }
 
+export async function interjectAgent(
+  handleId: string,
+  text: string,
+): Promise<{ status?: string }> {
+  return invoke("interject_agent", { handleId, text });
+}
+
 export async function stopAgent(handleId: string): Promise<ManagedAgentInfo> {
   return invoke<ManagedAgentInfo>("stop_agent", { handleId });
 }

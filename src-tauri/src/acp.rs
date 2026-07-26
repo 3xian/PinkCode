@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TrySendError};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -13,6 +13,7 @@ use thiserror::Error;
 
 /// How many trailing stderr lines to keep for transport-close diagnostics.
 const STDERR_TAIL_LINES: usize = 12;
+const NOTIFICATION_QUEUE_CAPACITY: usize = 512;
 
 #[derive(Debug, Error)]
 pub enum AcpError {
@@ -28,6 +29,8 @@ pub enum AcpError {
     },
     #[error("timeout waiting for response to {0}")]
     Timeout(String),
+    #[error("ACP transport closed: {0}")]
+    TransportClosed(String),
     #[error("{0}")]
     Other(String),
 }
@@ -125,6 +128,20 @@ impl AcpClient {
 
         let pending_reader = Arc::clone(&pending);
         let stderr_for_close = Arc::clone(&stderr_tail);
+        // Never run application callbacks on the stdout reader. Reverse RPC
+        // handlers may perform filesystem I/O and Tauri emits may be delayed by
+        // a busy WebView; either must not prevent response demultiplexing.
+        let (notify_tx, notify_rx) = mpsc::sync_channel::<Value>(NOTIFICATION_QUEUE_CAPACITY);
+        let notify_dispatch = Arc::clone(&on_notify);
+        thread::Builder::new()
+            .name("acp-notify-dispatch".into())
+            .spawn(move || {
+                for msg in notify_rx {
+                    notify_dispatch(msg);
+                }
+            })?;
+        let reverse_dispatch = Arc::clone(&on_notify);
+        let close_notify = Arc::clone(&on_notify);
         thread::spawn(move || {
             let reader = BufReader::new(stdout);
             for line in reader.lines() {
@@ -160,8 +177,26 @@ impl AcpClient {
                     }
                 }
 
-                // Notifications + server→client requests
-                on_notify(msg);
+                let is_request = msg.get("id").is_some()
+                    && msg.get("method").is_some()
+                    && msg.get("result").is_none()
+                    && msg.get("error").is_none();
+                if is_request {
+                    // Reverse requests cannot be dropped: dispatch each away
+                    // from the reader so filesystem/UI latency cannot block RPC.
+                    let handler = Arc::clone(&reverse_dispatch);
+                    let _ = thread::Builder::new()
+                        .name("acp-reverse-rpc".into())
+                        .spawn(move || handler(msg));
+                } else {
+                    // Notifications are advisory and can be recovered from the
+                    // durable session files. Bound the queue so a stalled
+                    // WebView cannot exhaust memory or block stdout draining.
+                    match notify_tx.try_send(msg) {
+                        Ok(()) | Err(TrySendError::Full(_)) => {}
+                        Err(TrySendError::Disconnected(_)) => break,
+                    }
+                }
             }
 
             // Brief wait so the stderr thread can finish flushing after exit.
@@ -171,7 +206,7 @@ impl AcpClient {
             // EOF means this transport can no longer satisfy any in-flight RPC.
             // Notify the manager before waking request waiters so their error path
             // cannot briefly move an already-dead agent back to Ready.
-            on_notify(json!({
+            close_notify(json!({
                 "method": "_pinkcode/transport_closed",
                 "params": { "reason": reason }
             }));
@@ -210,19 +245,28 @@ impl AcpClient {
             "params": params,
         });
 
-        {
+        let write_result = {
             let mut stdin = self.stdin.lock();
-            writeln!(stdin, "{msg}")?;
-            stdin.flush()?;
+            writeln!(stdin, "{msg}").and_then(|_| stdin.flush())
+        };
+        if let Err(error) = write_result {
+            self.pending.lock().remove(&id);
+            return Err(AcpError::Io(error));
         }
 
         let resp = match rx.recv_timeout(timeout) {
             Ok(r) => r,
-            Err(_) => {
+            Err(RecvTimeoutError::Timeout) => {
                 // Drop the waiter so a late response cannot deliver to a dead channel
                 // and cannot leave a permanent entry in the pending map.
                 self.pending.lock().remove(&id);
                 return Err(AcpError::Timeout(method.to_string()));
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                self.pending.lock().remove(&id);
+                return Err(AcpError::TransportClosed(
+                    "response channel disconnected".into(),
+                ));
             }
         };
 
@@ -234,6 +278,9 @@ impl AcpClient {
                 .unwrap_or("unknown error")
                 .to_string();
             let data = err.get("data").cloned();
+            if code == -32001 {
+                return Err(AcpError::TransportClosed(message));
+            }
             return Err(AcpError::Rpc {
                 code,
                 message,
@@ -346,6 +393,19 @@ impl AcpClient {
             json!({
                 "sessionId": session_id,
                 "modeId": mode_id,
+            }),
+            Duration::from_secs(30),
+        )
+    }
+
+    /// Queue a user interjection into the currently running Grok turn.
+    pub fn session_interject(&self, session_id: &str, text: &str) -> Result<Value> {
+        self.request(
+            "x.ai/interject",
+            json!({
+                "sessionId": session_id,
+                "text": text,
+                "interjectionId": uuid::Uuid::new_v4().to_string(),
             }),
             Duration::from_secs(30),
         )

@@ -4,6 +4,7 @@
     "ready",
     "running",
     "awaitingPermission",
+    "stopping",
     "error",
     "stopped"
   ],

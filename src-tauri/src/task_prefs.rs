@@ -8,8 +8,9 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,9 +29,11 @@ struct TaskPrefsFile {
 struct Store {
     path: PathBuf,
     data: Mutex<TaskPrefsFile>,
+    load_error: Mutex<Option<String>>,
 }
 
 static STORE: OnceLock<Store> = OnceLock::new();
+const PREFS_PRUNE_THRESHOLD: usize = 2_048;
 
 fn prefs_dir() -> PathBuf {
     dirs::home_dir()
@@ -41,26 +44,95 @@ fn prefs_dir() -> PathBuf {
 fn store() -> &'static Store {
     STORE.get_or_init(|| {
         let path = prefs_dir().join("task_prefs.json");
-        let data = load_file(&path).unwrap_or_default();
+        let (data, load_error) = match load_file(&path) {
+            Ok(data) => (data, None),
+            Err(error) => (TaskPrefsFile::default(), Some(error)),
+        };
         Store {
             path,
             data: Mutex::new(data),
+            load_error: Mutex::new(load_error),
         }
     })
 }
 
-fn load_file(path: &PathBuf) -> Option<TaskPrefsFile> {
-    let raw = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&raw).ok()
+fn load_file(path: &Path) -> Result<TaskPrefsFile, String> {
+    let raw = match fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(TaskPrefsFile::default());
+        }
+        Err(error) => return Err(format!("read {}: {error}", path.display())),
+    };
+    serde_json::from_str(&raw).map_err(|error| format!("parse {}: {error}", path.display()))
 }
 
-fn save_locked(path: &PathBuf, data: &TaskPrefsFile) {
+fn save_locked(path: &Path, data: &TaskPrefsFile) -> Result<(), String> {
     if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
+        fs::create_dir_all(parent).map_err(|error| format!("create prefs dir: {error}"))?;
     }
-    if let Ok(raw) = serde_json::to_string_pretty(data) {
-        let _ = fs::write(path, raw);
+    let raw =
+        serde_json::to_string_pretty(data).map_err(|error| format!("serialize prefs: {error}"))?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let tmp = path.with_extension(format!("json.tmp.{}.{}", std::process::id(), nonce));
+    fs::write(&tmp, raw).map_err(|error| format!("write {}: {error}", tmp.display()))?;
+    if let Err(error) = replace_file(&tmp, path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("replace {}: {error}", path.display()));
     }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
+    fs::rename(source, target)
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    extern "system" {
+        fn MoveFileExW(existing: *const u16, new_name: *const u16, flags: u32) -> i32;
+    }
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+    let source_wide: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let target_wide: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+    let ok = unsafe {
+        MoveFileExW(
+            source_wide.as_ptr(),
+            target_wide.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if ok == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+fn ensure_store_writable(store: &Store) -> Result<(), String> {
+    match store.load_error.lock().as_ref() {
+        Some(error) => Err(format!(
+            "preferences were not loaded; refusing to overwrite them: {error}"
+        )),
+        None => Ok(()),
+    }
+}
+
+fn prune_stale_sessions(data: &mut TaskPrefsFile, keep_id: &str) {
+    if data.sessions.len().max(data.plan_armed.len()) <= PREFS_PRUNE_THRESHOLD {
+        return;
+    }
+    let existing = crate::sessions::session_ids_on_disk();
+    data.sessions
+        .retain(|id, _| id == keep_id || existing.contains(id));
+    data.plan_armed
+        .retain(|id, _| id == keep_id || existing.contains(id));
 }
 
 /// Look up a persisted mode for a Grok session id.
@@ -73,15 +145,22 @@ pub fn get_permission_mode(session_id: &str) -> Option<PermissionMode> {
 }
 
 /// Persist permission mode for a session (and optionally refresh last-spawn seed).
-pub fn set_permission_mode(session_id: &str, mode: PermissionMode) {
+pub fn set_permission_mode(session_id: &str, mode: PermissionMode) -> Result<(), String> {
     let id = session_id.trim();
     if id.is_empty() {
-        return;
+        return Err("session id is empty".into());
     }
     let s = store();
+    ensure_store_writable(s)?;
     let mut data = s.data.lock();
+    let previous = data.clone();
     data.sessions.insert(id.to_string(), mode);
-    save_locked(&s.path, &data);
+    prune_stale_sessions(&mut data, id);
+    if let Err(error) = save_locked(&s.path, &data) {
+        *data = previous;
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// Mode used as the default in the New Task modal.
@@ -93,11 +172,17 @@ pub fn last_spawn_mode() -> PermissionMode {
         .unwrap_or(PermissionMode::Default)
 }
 
-pub fn set_last_spawn_mode(mode: PermissionMode) {
+pub fn set_last_spawn_mode(mode: PermissionMode) -> Result<(), String> {
     let s = store();
+    ensure_store_writable(s)?;
     let mut data = s.data.lock();
+    let previous = data.clone();
     data.last_spawn_mode = Some(mode);
-    save_locked(&s.path, &data);
+    if let Err(error) = save_locked(&s.path, &data) {
+        *data = previous;
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// Snapshot of all session → mode mappings (for UI hydration).
@@ -121,19 +206,26 @@ pub fn get_plan_armed(session_id: &str) -> bool {
 }
 
 /// Persist Plan arming (true = Pending until next free-text `/plan …`).
-pub fn set_plan_armed(session_id: &str, armed: bool) {
+pub fn set_plan_armed(session_id: &str, armed: bool) -> Result<(), String> {
     let id = session_id.trim();
     if id.is_empty() {
-        return;
+        return Err("session id is empty".into());
     }
     let s = store();
+    ensure_store_writable(s)?;
     let mut data = s.data.lock();
+    let previous = data.clone();
     if armed {
         data.plan_armed.insert(id.to_string(), true);
     } else {
         data.plan_armed.remove(id);
     }
-    save_locked(&s.path, &data);
+    prune_stale_sessions(&mut data, id);
+    if let Err(error) = save_locked(&s.path, &data) {
+        *data = previous;
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// Snapshot of session → plan-armed flags (only `true` entries are stored).
@@ -166,7 +258,7 @@ mod tests {
         data.sessions
             .insert("sess-1".into(), PermissionMode::AcceptEdits);
         data.plan_armed.insert("sess-1".into(), true);
-        save_locked(&path, &data);
+        save_locked(&path, &data).expect("save");
         let loaded = load_file(&path).expect("load");
         assert_eq!(
             loaded.sessions.get("sess-1").copied(),
@@ -181,9 +273,19 @@ mod tests {
         let path = temp_store_path();
         let _ = fs::remove_file(&path);
         let data = TaskPrefsFile::default();
-        save_locked(&path, &data);
+        save_locked(&path, &data).expect("save");
         let loaded = load_file(&path).expect("load");
         assert!(loaded.plan_armed.is_empty());
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn corrupt_preferences_are_reported_and_left_untouched() {
+        let path = temp_store_path();
+        fs::write(&path, "{broken").expect("fixture");
+        let before = fs::read(&path).expect("before");
+        assert!(load_file(&path).expect_err("parse error").contains("parse"));
+        assert_eq!(fs::read(&path).expect("after"), before);
+        let _ = fs::remove_file(path);
     }
 }

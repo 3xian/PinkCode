@@ -6,6 +6,8 @@ import { joinUnderRoot, pathsEqual } from "../utils/paths";
 
 interface Props {
   cwd: string | null;
+  /** Whether the Git tab is visible; hidden panels do not poll. */
+  active?: boolean;
   /** Bump to force a refresh (e.g. after FS events). Debounce in parent. */
   refreshKey?: number;
   /** Currently previewed path (highlight). */
@@ -18,6 +20,7 @@ interface Props {
 
 export function GitChanges({
   cwd,
+  active = true,
   refreshKey = 0,
   selectedPath = null,
   onSelectFile,
@@ -79,12 +82,16 @@ export function GitChanges({
     },
   });
 
-  // Slow safety poll (silent). Parent FS events cover the hot path.
+  // Slow safety poll (silent). Pause when the tab/window is hidden.
   useEffect(() => {
-    if (!cwd) return;
-    const id = window.setInterval(() => void refresh(cwd, true), 12_000);
+    if (!cwd || !active) return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refresh(cwd, true);
+      }
+    }, 30_000);
     return () => window.clearInterval(id);
-  }, [cwd, refresh]);
+  }, [cwd, active, refresh]);
 
   if (!cwd) {
     return (

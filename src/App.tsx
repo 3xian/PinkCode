@@ -4,6 +4,7 @@ import {
   attachAgent,
   getLastSpawnPermissionMode,
   getSessionDetail,
+  interjectAgent,
   listManagedAgents,
   listPendingPermissions,
   listSessions,
@@ -312,10 +313,23 @@ function App() {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let cancelled = false;
-    void listen<{ reason?: string; path?: string }>("sessions-changed", () => {
-      if (cancelled) return;
-      if (document.visibilityState === "hidden") return;
-      refreshFromDisk();
+    void listen<{
+      reason?: string;
+      category?: "index" | "timeline" | "hunks" | "plan";
+      sessionId?: string | null;
+      path?: string;
+    }>("sessions-changed", ({ payload }) => {
+      if (cancelled || document.visibilityState === "hidden") return;
+      const selected = selectedIdRef.current;
+      if (payload.category === "index") {
+        void refreshList();
+      }
+      if (
+        selected &&
+        (!payload.sessionId || payload.sessionId === selected)
+      ) {
+        void refreshDetail(selected, true);
+      }
     }).then((fn) => {
       if (cancelled) fn();
       else unlisten = fn;
@@ -324,7 +338,7 @@ function App() {
       cancelled = true;
       unlisten?.();
     };
-  }, [refreshFromDisk]);
+  }, [refreshList, refreshDetail]);
 
   // Focus / tab visible → catch anything the watcher missed (debounced).
   useEffect(() => {
@@ -498,11 +512,11 @@ function App() {
           item.sessionId ?? selectedId,
           optionId,
         );
-        // TUI approve-with-comments: wire is still outcome:"approved" (no
-        // feedback field); review notes are a separate user interjection.
+        // The plan response has no feedback field for approval. Route review
+        // notes into the active turn through Grok's interjection extension.
         if (optionId === "approve" && comments?.trim() && item.handleId) {
           try {
-            await promptAgent(
+            await interjectAgent(
               item.handleId,
               `The user approved the plan with the following review comments:\n\n${comments.trim()}`,
             );

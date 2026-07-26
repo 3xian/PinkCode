@@ -15,10 +15,11 @@ use crate::shell_stream::ShellStream;
 use crate::task_prefs;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::thread;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
@@ -27,12 +28,27 @@ struct LiveAgent {
     client: Arc<AcpClient>,
 }
 
+struct AttachReservation {
+    inner: Arc<Inner>,
+    session_id: String,
+}
+
+impl Drop for AttachReservation {
+    fn drop(&mut self) {
+        self.inner
+            .attaching_sessions
+            .lock()
+            .remove(&self.session_id);
+    }
+}
+
 pub(crate) struct Inner {
     pub(crate) app: Mutex<Option<AppHandle>>,
     pub(crate) shell_stream: ShellStream,
     agents: Mutex<HashMap<String, LiveAgent>>,
     pending: Mutex<HashMap<String, PendingPermission>>,
     early_requests: Mutex<Vec<(String, Value)>>,
+    attaching_sessions: Mutex<HashSet<String>>,
     grok_bin: Mutex<Option<String>>,
     handlers: Vec<Box<dyn rpc_handler::RpcHandler>>,
 }
@@ -50,6 +66,7 @@ impl AgentManager {
                 agents: Mutex::new(HashMap::new()),
                 pending: Mutex::new(HashMap::new()),
                 early_requests: Mutex::new(Vec::new()),
+                attaching_sessions: Mutex::new(HashSet::new()),
                 grok_bin: Mutex::new(None),
                 shell_stream: ShellStream::default(),
                 handlers: rpc_handler::default_handlers(),
@@ -80,26 +97,56 @@ impl AgentManager {
         Ok(())
     }
 
+    pub fn interject(&self, handle_id: &str, text: &str) -> Result<Value, String> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err("interjection is empty".into());
+        }
+        let (session_id, client) = {
+            let agents = self.inner.agents.lock();
+            let agent = agents
+                .get(handle_id)
+                .ok_or_else(|| format!("unknown handle {handle_id}"))?;
+            let session_id = agent
+                .info
+                .session_id
+                .clone()
+                .ok_or_else(|| "agent has no session_id".to_string())?;
+            (session_id, Arc::clone(&agent.client))
+        };
+        client
+            .session_interject(&session_id, text)
+            .map_err(|error| error.to_string())
+    }
+
     pub fn set_permission_mode(
         &self,
         handle_id: &str,
         mode: PermissionMode,
     ) -> Result<ManagedAgentInfo, String> {
-        let (session_id, client, changed) = {
+        let (session_id, client, changed, previous_mode) = {
             let mut agents = self.inner.agents.lock();
             let agent = agents
                 .get_mut(handle_id)
                 .ok_or_else(|| format!("unknown handle {handle_id}"))?;
-            let changed = agent.info.permission_mode != mode;
+            let previous_mode = agent.info.permission_mode;
+            let changed = previous_mode != mode;
             agent.info.permission_mode = mode;
             agent.info.always_approve = mode.spawns_always_approve();
             Self::emit_status(&self.inner, &agent.info);
             let session_id = agent.info.session_id.clone();
             let client = Arc::clone(&agent.client);
-            (session_id, client, changed)
+            (session_id, client, changed, previous_mode)
         };
         if let Some(sid) = session_id.as_deref() {
-            task_prefs::set_permission_mode(sid, mode);
+            if let Err(error) = task_prefs::set_permission_mode(sid, mode) {
+                if let Some(agent) = self.inner.agents.lock().get_mut(handle_id) {
+                    agent.info.permission_mode = previous_mode;
+                    agent.info.always_approve = previous_mode.spawns_always_approve();
+                    Self::emit_status(&self.inner, &agent.info);
+                }
+                return Err(error);
+            }
         }
         if changed {
             Self::notify_mode_changed(&client, mode);
@@ -698,7 +745,7 @@ impl AgentManager {
         }
         let permission_mode = PermissionMode::from_request(req.permission_mode, req.always_approve);
         let always_approve = permission_mode.spawns_always_approve();
-        task_prefs::set_last_spawn_mode(permission_mode);
+        task_prefs::set_last_spawn_mode(permission_mode)?;
         let handle_id = Uuid::new_v4().to_string();
 
         // Top-level flags (before `agent`) vs agent-subcommand flags (after).
@@ -756,7 +803,7 @@ impl AgentManager {
         };
 
         info.session_id = Some(session_id.clone());
-        task_prefs::set_permission_mode(&session_id, permission_mode);
+        task_prefs::set_permission_mode(&session_id, permission_mode)?;
         if let Some(m) = result
             .pointer("/models/currentModelId")
             .and_then(|v| v.as_str())
@@ -811,6 +858,16 @@ impl AgentManager {
                 return Ok(existing.info.clone());
             }
         }
+        {
+            let mut attaching = self.inner.attaching_sessions.lock();
+            if !attaching.insert(session_id.clone()) {
+                return Err(format!("session {session_id} is already attaching"));
+            }
+        }
+        let _reservation = AttachReservation {
+            inner: Arc::clone(&self.inner),
+            session_id: session_id.clone(),
+        };
 
         let permission_mode = match (req.permission_mode, req.always_approve) {
             (Some(m), _) => m,
@@ -820,7 +877,7 @@ impl AgentManager {
             }
         };
         let always_approve = permission_mode.spawns_always_approve();
-        task_prefs::set_permission_mode(&session_id, permission_mode);
+        task_prefs::set_permission_mode(&session_id, permission_mode)?;
         let handle_id = Uuid::new_v4().to_string();
         let global_args = permission_mode.spawn_global_args();
         let agent_args = permission_mode.spawn_agent_args();
@@ -884,7 +941,9 @@ impl AgentManager {
                 ManagedStatus::Stopped
                     | ManagedStatus::Error
                     | ManagedStatus::Starting
+                    | ManagedStatus::Running
                     | ManagedStatus::AwaitingPermission
+                    | ManagedStatus::Stopping
             ) {
                 return Err(format!("agent not ready ({:?})", agent.info.status));
             }
@@ -948,7 +1007,7 @@ impl AgentManager {
         let handle_id = handle_id.to_string();
         let session_id = session_id.to_string();
 
-        thread::spawn(move || {
+        tauri::async_runtime::spawn_blocking(move || {
             let result = client.session_prompt(&session_id, &text);
             let mut agents = inner.agents.lock();
             if let Some(a) = agents.get_mut(&handle_id) {
@@ -994,19 +1053,13 @@ impl AgentManager {
     pub fn stop(&self, handle_id: &str) -> Result<ManagedAgentInfo, String> {
         self.inner.shell_stream.clear_handle(handle_id);
 
-        let session_id = {
+        let (session_id, client) = {
             let agents = self.inner.agents.lock();
-            agents
+            let agent = agents
                 .get(handle_id)
-                .and_then(|a| a.info.session_id.clone())
+                .ok_or_else(|| format!("unknown handle {handle_id}"))?;
+            (agent.info.session_id.clone(), Arc::clone(&agent.client))
         };
-
-        if let Some(ref sid) = session_id {
-            let agents = self.inner.agents.lock();
-            if let Some(agent) = agents.get(handle_id) {
-                let _ = agent.client.session_cancel(sid, "user");
-            }
-        }
 
         let cancelled: Vec<PendingPermission> = {
             let mut pending = self.inner.pending.lock();
@@ -1020,30 +1073,71 @@ impl AgentManager {
                 .collect()
         };
 
+        for p in cancelled {
+            match p.kind {
+                PermissionKind::ToolPermission => {
+                    let _ = client.respond_result(
+                        &p.request_id,
+                        json!({ "outcome": { "outcome": "cancelled" } }),
+                    );
+                }
+                _ => {
+                    let _ = client.respond_error(&p.request_id, -32000, "Session stopped");
+                }
+            }
+        }
+
+        let had_running_turn = {
+            let mut agents = self.inner.agents.lock();
+            if let Some(agent) = agents.get_mut(handle_id) {
+                let running = matches!(
+                    agent.info.status,
+                    ManagedStatus::Running | ManagedStatus::AwaitingPermission
+                );
+                agent.info.pending_permission_count = 0;
+                agent.info.status = ManagedStatus::Stopping;
+                Self::emit_status(&self.inner, &agent.info);
+                running
+            } else {
+                false
+            }
+        };
+
+        // Cancellation is asynchronous. Keep the ACP transport alive long
+        // enough for Grok to flush its cancelled turn, hunks and durable
+        // notifications. Force-kill only when the grace period expires.
+        if let Some(ref sid) = session_id {
+            client
+                .session_cancel(sid, "user")
+                .map_err(|error| error.to_string())?;
+            if had_running_turn {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                let mut settled = false;
+                while Instant::now() < deadline {
+                    settled = self
+                        .get(handle_id)
+                        .map(|info| info.status != ManagedStatus::Stopping)
+                        .unwrap_or(true);
+                    if settled {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(50));
+                }
+                if !settled {
+                    eprintln!(
+                        "[pinkcode] forcing agent shutdown after cancellation grace period: {handle_id}"
+                    );
+                }
+            }
+        }
+
         let agent = {
             let mut agents = self.inner.agents.lock();
             agents
                 .remove(handle_id)
                 .ok_or_else(|| format!("unknown handle {handle_id}"))?
         };
-
-        for p in cancelled {
-            match p.kind {
-                PermissionKind::ToolPermission => {
-                    let _ = agent.client.respond_result(
-                        &p.request_id,
-                        json!({ "outcome": { "outcome": "cancelled" } }),
-                    );
-                }
-                _ => {
-                    let _ = agent
-                        .client
-                        .respond_error(&p.request_id, -32000, "Session stopped");
-                }
-            }
-        }
-
-        agent.client.kill().map_err(|e| e.to_string())?;
+        client.kill().map_err(|e| e.to_string())?;
 
         let mut info = agent.info;
         info.status = ManagedStatus::Stopped;

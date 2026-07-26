@@ -23,7 +23,7 @@
 
 A desktop GUI for [Grok Build](https://x.ai/cli) — multi-session task board, live timeline, workspace browser, permission management, and usage dashboard. Attaches to `grok` over [ACP](https://spec.acp.dev) (Agent Client Protocol) via stdio; it does not run its own agent loop.
 
-**Tauri 2 · React 19 · TypeScript · Rust** · current version **0.2.4**
+**Tauri 2 · React 19 · TypeScript · Rust** · current version **0.2.6**
 
 ## Screenshot
 

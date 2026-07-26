@@ -166,6 +166,18 @@ async fn prompt_agent(
 }
 
 #[tauri::command]
+async fn interject_agent(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+    text: String,
+) -> Result<Value, String> {
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.interject(&handle_id, &text))
+        .await
+        .map_err(|e| format!("interject task failed: {e}"))?
+}
+
+#[tauri::command]
 async fn stop_agent(
     manager: tauri::State<'_, AgentManager>,
     handle_id: String,
@@ -232,8 +244,8 @@ async fn set_session_mode(
 
 /// Persist permission mode for a task even when no agent is attached.
 #[tauri::command]
-fn set_task_permission_mode(session_id: String, mode: PermissionMode) {
-    task_prefs::set_permission_mode(&session_id, mode);
+fn set_task_permission_mode(session_id: String, mode: PermissionMode) -> Result<(), String> {
+    task_prefs::set_permission_mode(&session_id, mode)
 }
 
 #[tauri::command]
@@ -252,8 +264,8 @@ fn get_last_spawn_permission_mode() -> PermissionMode {
 }
 
 #[tauri::command]
-fn set_task_plan_armed(session_id: String, armed: bool) {
-    task_prefs::set_plan_armed(&session_id, armed);
+fn set_task_plan_armed(session_id: String, armed: bool) -> Result<(), String> {
+    task_prefs::set_plan_armed(&session_id, armed)
 }
 
 #[tauri::command]
@@ -350,6 +362,7 @@ pub fn run() {
             spawn_agent,
             attach_agent,
             prompt_agent,
+            interject_agent,
             stop_agent,
             get_managed_agent,
             find_managed_by_session,

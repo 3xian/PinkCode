@@ -50,7 +50,8 @@ export function PromptBar({
 
   const connected =
     managed && managed.status !== "stopped" && managed.status !== "error";
-  const running = managed?.status === "running";
+  const running =
+    managed?.status === "running" || managed?.status === "stopping";
   const awaiting = managed?.status === "awaitingPermission";
   const trimmedText = text.trim();
   // Local slashes work offline; first agent message auto-connects ACP.

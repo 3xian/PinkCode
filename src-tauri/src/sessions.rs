@@ -4,7 +4,7 @@ use crate::models::{
 };
 use parking_lot::Mutex;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -67,6 +67,25 @@ pub fn grok_home() -> PathBuf {
 
 pub fn sessions_root() -> PathBuf {
     grok_home().join("sessions")
+}
+
+pub fn session_ids_on_disk() -> HashSet<String> {
+    let mut ids = HashSet::new();
+    let root = sessions_root();
+    let Ok(groups) = fs::read_dir(root) else {
+        return ids;
+    };
+    for group in groups.flatten() {
+        let Ok(entries) = fs::read_dir(group.path()) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if entry.path().join("summary.json").is_file() {
+                ids.insert(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+    }
+    ids
 }
 
 pub fn read_active_sessions() -> Result<Vec<ActiveSession>> {
@@ -203,6 +222,14 @@ fn load_session_metadata(dir: &Path) -> Option<(Value, Option<Value>)> {
         }
     };
     Some((summary, signals))
+}
+
+fn summary_is_hidden(summary: &Value) -> bool {
+    if let Some(hidden) = summary.get("hidden").and_then(Value::as_bool) {
+        return hidden;
+    }
+    str_field(summary, &["sessionKind", "session_kind"])
+        .is_some_and(|kind| kind.starts_with("subagent"))
 }
 
 fn u64_field(v: &Value, keys: &[&str]) -> u64 {
@@ -439,7 +466,14 @@ pub fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>> {
         .map(|a| (a.session_id.clone(), a))
         .collect();
 
-    let mut cards = Vec::new();
+    struct Candidate {
+        id: String,
+        dir: PathBuf,
+        cwd: String,
+        active: bool,
+        modified: SystemTime,
+    }
+    let mut candidates = Vec::new();
 
     for group in fs::read_dir(&root)? {
         let group = group?;
@@ -466,43 +500,77 @@ pub fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>> {
                 continue;
             }
             let id = entry.file_name().to_string_lossy().to_string();
-            let Some((summary, signals)) = load_session_metadata(&entry.path()) else {
+            let dir = entry.path();
+            let summary_path = dir.join("summary.json");
+            let Ok(metadata) = fs::metadata(&summary_path) else {
                 continue;
             };
-            let card = build_card(&id, &cwd, &summary, signals.as_ref(), active_map.get(&id));
-            // Drop empty system-temp sessions (ACP tests, handshake probes, etc.).
-            if crate::session_noise::is_noise_session(&card) {
-                continue;
-            }
-            session_dir_cache()
-                .lock()
-                .insert(id.clone(), (entry.path(), cwd.clone()));
-            cards.push(card);
+            candidates.push(Candidate {
+                active: active_map.contains_key(&id),
+                id,
+                dir,
+                cwd: cwd.clone(),
+                modified: metadata.modified().unwrap_or(UNIX_EPOCH),
+            });
+        }
+    }
+
+    // Like Grok Build's recent-session path: stat every summary, then parse only
+    // the newest bounded candidate set. Continue past hidden/corrupt entries so
+    // the caller still receives up to `limit` visible cards.
+    candidates.sort_by(|a, b| {
+        b.active
+            .cmp(&a.active)
+            .then_with(|| b.modified.cmp(&a.modified))
+    });
+
+    let mut cards = Vec::new();
+    for candidate in candidates {
+        let Some((summary, signals)) = load_session_metadata(&candidate.dir) else {
+            continue;
+        };
+        if summary_is_hidden(&summary) {
+            continue;
+        }
+        let card = build_card(
+            &candidate.id,
+            &candidate.cwd,
+            &summary,
+            signals.as_ref(),
+            active_map.get(&candidate.id),
+        );
+        // Drop empty system-temp sessions (ACP tests, handshake probes, etc.).
+        if crate::session_noise::is_noise_session(&card) {
+            continue;
+        }
+        session_dir_cache()
+            .lock()
+            .insert(candidate.id, (candidate.dir, candidate.cwd));
+        cards.push(card);
+        if limit.is_some_and(|n| cards.len() >= n) {
+            break;
         }
     }
 
     cards.sort_by(|a, b| {
-        // Active first, then by last_active_at / updated_at desc
+        // Active first, then by parsed activity time. RFC3339 strings with
+        // different offsets/fraction widths are not chronologically sortable.
         b.is_active.cmp(&a.is_active).then_with(|| {
             let a_ts = a
                 .last_active_at
                 .as_ref()
                 .or(a.updated_at.as_ref())
-                .cloned()
-                .unwrap_or_default();
+                .and_then(|value| parse_iso_ish_to_unix(value))
+                .unwrap_or(0);
             let b_ts = b
                 .last_active_at
                 .as_ref()
                 .or(b.updated_at.as_ref())
-                .cloned()
-                .unwrap_or_default();
+                .and_then(|value| parse_iso_ish_to_unix(value))
+                .unwrap_or(0);
             b_ts.cmp(&a_ts)
         })
     });
-
-    if let Some(n) = limit {
-        cards.truncate(n);
-    }
 
     Ok(cards)
 }
@@ -694,6 +762,9 @@ fn token_usage_series_uncached(window_days: u32) -> Result<TokenUsageSeries> {
                 // Skip clearly stale sessions (summary last activity before window).
                 let summary_path = entry.path().join("summary.json");
                 if let Ok(Some(summary)) = load_json_value(&summary_path) {
+                    if summary_is_hidden(&summary) {
+                        continue;
+                    }
                     if let Some(ts) = summary_activity_unix(&summary) {
                         if ts + day_secs < start_secs {
                             continue;
@@ -985,6 +1056,20 @@ mod tests {
             parse_iso_ish_to_unix("2026-07-21T00:30:00+0800"),
             parse_iso_ish_to_unix("2026-07-20T16:30:00Z")
         );
+    }
+
+    #[test]
+    fn hidden_semantics_match_grok_summary() {
+        assert!(summary_is_hidden(&serde_json::json!({"hidden": true})));
+        assert!(summary_is_hidden(
+            &serde_json::json!({"session_kind": "subagent_worker"})
+        ));
+        assert!(!summary_is_hidden(
+            &serde_json::json!({"hidden": false, "session_kind": "subagent_worker"})
+        ));
+        assert!(!summary_is_hidden(
+            &serde_json::json!({"sessionKind": "interactive"})
+        ));
     }
 
     #[test]

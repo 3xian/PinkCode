@@ -245,4 +245,38 @@ describe("live timeline reducer", () => {
     expect(result.length).toBeLessThanOrEqual(200_000);
     expect(result).toContain("truncated");
   });
+
+  it("appends shell deltas without replacing prior output", () => {
+    const indexes: ShellIndexes = new Map();
+    let state = reduceShellUpdate(
+      new Map(),
+      {
+        id: "one",
+        handleId: "handle",
+        sessionId: "session",
+        toolCallId: "tool",
+        command: "build",
+        status: "in_progress",
+        output: "first",
+        ts: 1,
+      },
+      indexes,
+    );
+    state = reduceShellUpdate(
+      state,
+      {
+        id: "two",
+        handleId: "handle",
+        sessionId: "session",
+        toolCallId: "tool",
+        command: "build",
+        status: "in_progress",
+        output: " second",
+        outputDelta: true,
+        ts: 2,
+      },
+      indexes,
+    );
+    expect(state.get("session")?.[0].shell?.output).toBe("first second");
+  });
 });

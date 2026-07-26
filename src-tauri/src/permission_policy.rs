@@ -109,6 +109,14 @@ pub fn request_id_key(id: &Value) -> String {
 }
 
 pub fn decide_gate(mode: PermissionMode, pending: &PendingPermission) -> GateDecision {
+    // Plan review and ask-user are explicit human interactions, not execution
+    // permissions. Auto/YOLO must never fabricate an approval or empty answer.
+    if matches!(
+        pending.kind,
+        PermissionKind::PlanApproval | PermissionKind::UserQuestion
+    ) {
+        return GateDecision::Ask;
+    }
     // Grok plan mode (host complement to agent PlanModeTracker):
     // - Agent rejects non-plan-file edits while Active (edit gate in tool_calls).
     // - Plan-file edits are auto-approved on the agent (`should_auto_approve_edit`)
@@ -330,5 +338,21 @@ mod tests {
             GateDecision::Allow
         );
         assert_eq!(decide_gate(PermissionMode::Auto, &high), GateDecision::Ask);
+    }
+
+    #[test]
+    fn human_interactions_always_ask_in_every_mode() {
+        for kind in [PermissionKind::PlanApproval, PermissionKind::UserQuestion] {
+            let interaction = pending(kind, "Human interaction", "");
+            for mode in [
+                PermissionMode::Default,
+                PermissionMode::AcceptEdits,
+                PermissionMode::Auto,
+                PermissionMode::BypassPermissions,
+                PermissionMode::DontAsk,
+            ] {
+                assert_eq!(decide_gate(mode, &interaction), GateDecision::Ask);
+            }
+        }
     }
 }

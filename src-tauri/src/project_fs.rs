@@ -1,13 +1,23 @@
 //! Project workspace helpers: directory listing + git working-tree status.
 
+use parking_lot::Mutex;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
+use std::thread;
+use std::time::{Duration, Instant};
+
+const GIT_OUTPUT_MAX_BYTES: usize = 1024 * 1024;
+const GIT_TIMEOUT: Duration = Duration::from_secs(10);
+const GIT_CACHE_TTL: Duration = Duration::from_secs(1);
 
 /// One entry in a directory listing (non-recursive).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DirEntry {
     pub name: String,
@@ -69,15 +79,72 @@ pub fn list_dir(root: &str, path: Option<&str>) -> Result<Vec<DirEntry>, String>
     Ok(entries)
 }
 
-/// Uncommitted changes via `git status --porcelain=v1 -uall` in `cwd`.
+struct GitCacheEntry {
+    at: Instant,
+    changes: Vec<GitChange>,
+}
+
+fn git_cache() -> &'static Mutex<HashMap<String, GitCacheEntry>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, GitCacheEntry>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn active_git_requests() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    static ACTIVE: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+    ACTIVE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+struct ActiveGitRequest {
+    key: String,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl Drop for ActiveGitRequest {
+    fn drop(&mut self) {
+        let mut active = active_git_requests().lock();
+        if active
+            .get(&self.key)
+            .is_some_and(|token| Arc::ptr_eq(token, &self.cancelled))
+        {
+            active.remove(&self.key);
+        }
+    }
+}
+
+/// Uncommitted changes via bounded `git status --porcelain=v1 -z` in `cwd`.
 ///
 /// Returns an empty list when the directory is not a git work tree.
 pub fn git_status(cwd: &str) -> Result<Vec<GitChange>, String> {
     let root = resolve_root(cwd)?;
+    let cache_key = path_for_ui(&root);
+    if let Some(entry) = git_cache().lock().get(&cache_key) {
+        if entry.at.elapsed() < GIT_CACHE_TTL {
+            return Ok(entry.changes.clone());
+        }
+    }
+
+    // A newer request for the same worktree supersedes the older subprocess.
+    // The frontend already ignores stale responses; this also stops their CPU
+    // and filesystem work instead of merely discarding the eventual result.
+    let cancelled = Arc::new(AtomicBool::new(false));
+    if let Some(previous) = active_git_requests()
+        .lock()
+        .insert(cache_key.clone(), Arc::clone(&cancelled))
+    {
+        previous.store(true, Ordering::Release);
+    }
+    let _active_request = ActiveGitRequest {
+        key: cache_key.clone(),
+        cancelled: Arc::clone(&cancelled),
+    };
+
     let mut command = Command::new("git");
     command
-        .args(["status", "--porcelain=v1", "-uall"])
-        .current_dir(&root);
+        .args(["status", "--porcelain=v1", "-z", "--untracked-files=normal"])
+        .current_dir(&root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     // A GUI application has no parent console on Windows. Without this flag,
     // every background Git refresh briefly creates a visible console window.
@@ -88,49 +155,133 @@ pub fn git_status(cwd: &str) -> Result<Vec<GitChange>, String> {
         command.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let output = command
-        .output()
+    let mut child = command
+        .spawn()
         .map_err(|e| format!("git status failed to start: {e}"))?;
+    let stdout = child.stdout.take().ok_or("git stdout unavailable")?;
+    let stderr = child.stderr.take().ok_or("git stderr unavailable")?;
+    let stdout_reader = thread::spawn(move || read_limited(stdout, GIT_OUTPUT_MAX_BYTES));
+    let stderr_reader = thread::spawn(move || read_limited(stderr, 64 * 1024));
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    let deadline = Instant::now() + GIT_TIMEOUT;
+    let status = loop {
+        if cancelled.load(Ordering::Acquire) {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err("git status superseded by a newer refresh".into());
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(25)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(format!(
+                    "git status timed out after {}s",
+                    GIT_TIMEOUT.as_secs()
+                ));
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(format!("git status wait failed: {error}"));
+            }
+        }
+    };
+    let (stdout, stdout_truncated) = stdout_reader
+        .join()
+        .map_err(|_| "git stdout reader panicked".to_string())??;
+    let (stderr, _) = stderr_reader
+        .join()
+        .map_err(|_| "git stderr reader panicked".to_string())??;
+
+    if !status.success() {
+        let stderr = String::from_utf8_lossy(&stderr);
         // Not a git repo → empty list (not an error for the UI).
         if stderr.contains("not a git repository")
             || stderr.contains("not a git repo")
-            || output.status.code() == Some(128)
+            || status.code() == Some(128)
         {
             return Ok(vec![]);
         }
         return Err(format!(
             "git status exited {}: {}",
-            output.status.code().unwrap_or(-1),
+            status.code().unwrap_or(-1),
             stderr.trim()
         ));
     }
+    if stdout_truncated {
+        return Err(format!(
+            "git status output exceeded {} MiB; narrow the workspace or ignore generated files",
+            GIT_OUTPUT_MAX_BYTES / (1024 * 1024)
+        ));
+    }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let changes = parse_porcelain_z(&stdout);
+    git_cache().lock().insert(
+        cache_key,
+        GitCacheEntry {
+            at: Instant::now(),
+            changes: changes.clone(),
+        },
+    );
+    Ok(changes)
+}
+
+fn read_limited<R: Read>(mut reader: R, limit: usize) -> Result<(Vec<u8>, bool), String> {
+    let mut bytes = Vec::with_capacity(limit.min(64 * 1024));
+    reader
+        .by_ref()
+        .take((limit + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("read git output: {error}"))?;
+    let truncated = bytes.len() > limit;
+    bytes.truncate(limit);
+    // Keep draining when the cap is reached so Git cannot block on a full pipe.
+    if truncated {
+        std::io::copy(&mut reader, &mut std::io::sink())
+            .map_err(|error| format!("drain git output: {error}"))?;
+    }
+    Ok((bytes, truncated))
+}
+
+fn parse_porcelain_z(stdout: &[u8]) -> Vec<GitChange> {
+    let fields: Vec<&[u8]> = stdout
+        .split(|byte| *byte == 0)
+        .filter(|field| !field.is_empty())
+        .collect();
     let mut changes = Vec::new();
-    for line in stdout.lines() {
-        if line.len() < 3 {
+    let mut index = 0;
+    while index < fields.len() {
+        let record = fields[index];
+        index += 1;
+        if record.len() < 3 {
             continue;
         }
-        let status = line[..2].to_string();
-        let rest = line[2..].trim_start();
-        // Renames: `R  old -> new`
-        let path = if let Some((from, to)) = rest.split_once(" -> ") {
-            // Prefer the destination path for display.
-            let _ = from;
-            to.to_string()
-        } else {
-            rest.to_string()
-        };
+        let status = String::from_utf8_lossy(&record[..2]).into_owned();
+        let path = String::from_utf8_lossy(&record[3..]).into_owned();
+        let rename_or_copy = status
+            .as_bytes()
+            .iter()
+            .any(|letter| matches!(*letter, b'R' | b'C'));
+        if rename_or_copy && index < fields.len() {
+            // In -z mode Git emits destination first, then the source as a
+            // separate NUL field. The UI intentionally opens the destination.
+            index += 1;
+        }
         if path.is_empty() {
             continue;
         }
         let kind = classify_status(&status);
         changes.push(GitChange { status, path, kind });
     }
-    Ok(changes)
+    changes
 }
 
 fn classify_status(xy: &str) -> String {
@@ -441,5 +592,29 @@ fn image_mime_for_path(path: &Path) -> Option<&'static str> {
         "avif" => Some("image/avif"),
         "tif" | "tiff" => Some("image/tiff"),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn porcelain_z_preserves_special_names_and_rename_destination() {
+        let bytes =
+            b" M path -> literal.txt\0?? \xe4\xb8\xad\xe6\x96\x87 name.txt\0R  new\nname.txt\0old.txt\0";
+        let changes = parse_porcelain_z(bytes);
+        assert_eq!(changes.len(), 3);
+        assert_eq!(changes[0].path, "path -> literal.txt");
+        assert_eq!(changes[1].path, "中文 name.txt");
+        assert_eq!(changes[2].path, "new\nname.txt");
+        assert_eq!(changes[2].kind, "renamed");
+    }
+
+    #[test]
+    fn limited_reader_reports_truncation() {
+        let (bytes, truncated) = read_limited(&b"abcdef"[..], 3).expect("read");
+        assert_eq!(bytes, b"abc");
+        assert!(truncated);
     }
 }

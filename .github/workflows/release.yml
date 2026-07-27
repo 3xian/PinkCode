@@ -134,9 +134,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Release runs are tag-scoped, so a target cache saved for vX cannot
+          # be restored by vY. Keep the Cargo registry/git cache, but avoid
+          # spending ~30-40s uploading an unusable target directory per tag.
+          cache-targets: false
 
       - name: Install dependencies
-        run: npm ci
+        # setup-node already restores ~/.npm. Avoid npm's unrelated audit/fund
+        # network work on the noticeably slower Windows runner.
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: Configure ad-hoc macOS signing
         if: runner.os == 'macOS'

@@ -21,11 +21,6 @@
 - [ ] Subagent hierarchy — parent/child relationships, depth, and fork budget
 - [ ] Background-task status — TaskTool, WaitTasksTool, and KillTaskTool
 
-## ACP client
-
-- [ ] Replace blocking `mpsc` / `recv_timeout` client with an async channel-based gateway
-- [ ] Replace raw `serde_json::Value` requests with a type-safe protocol layer
-
 ## Reliability
 
 - [ ] Distinguish channel send failures from receive failures

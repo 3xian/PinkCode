@@ -245,10 +245,6 @@ export function SessionDetailView({
             value={`+${card.agentLinesAdded} / −${card.agentLinesRemoved}`}
           />
           <Metric
-            label="Files touched"
-            value={String(card.agentFilesTouched)}
-          />
-          <Metric
             label="Duration"
             value={formatDuration(card.sessionDurationSeconds)}
           />

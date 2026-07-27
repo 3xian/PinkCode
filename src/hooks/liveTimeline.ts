@@ -8,6 +8,7 @@ import {
   describeUpdate,
   extractUpdateEventId,
   extractUpdateTsMs,
+  formatTurnCompletedTitle,
   mergeToolCardParts,
 } from "../utils/format";
 
@@ -124,6 +125,36 @@ export function shellCardTitle(
   return `$ ${cmd} · ${status || "in_progress"}`;
 }
 
+/**
+ * Sole owner of turn_completed titles: apply wall-clock elapsed since the last
+ * user card (Grok Build "Worked for …"). Wire payloads rarely carry duration.
+ */
+export function enrichTurnCompletedDescription(
+  description: UpdateDescription,
+  list: TimelineItem[],
+  now: number,
+): UpdateDescription {
+  if (!description.turnStopReason) return description;
+
+  let lastUserTs: number | null = null;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].kind === "user" && list[i].ts > 0) {
+      lastUserTs = list[i].ts;
+      break;
+    }
+  }
+  let elapsedMs: number | null = null;
+  if (lastUserTs != null && now > lastUserTs) {
+    const gap = now - lastUserTs;
+    // Ignore absurd gaps (stale ts / clock skew).
+    if (gap <= 24 * 60 * 60 * 1000) elapsedMs = gap;
+  }
+  return {
+    ...description,
+    title: formatTurnCompletedTitle(description.turnStopReason, elapsedMs),
+  };
+}
+
 export function reduceAgentUpdate(
   previous: Map<string, TimelineItem[]>,
   input: {
@@ -139,11 +170,16 @@ export function reduceAgentUpdate(
   shellIndexes: ShellIndexes,
   retention: TimelineRetention = "live",
 ): Map<string, TimelineItem[]> {
-  const { handleId, sessionId, description, now, nextId, sourceEventId } = input;
+  const { handleId, sessionId, now, nextId, sourceEventId } = input;
   const key = sessionId || handleId;
-  const textUpdate = isTextUpdate(description);
   const next = new Map(previous);
   const list = [...(next.get(key) ?? [])];
+  const description = enrichTurnCompletedDescription(
+    input.description,
+    list,
+    now,
+  );
+  const textUpdate = isTextUpdate(description);
   const markStreaming =
     input.streaming !== undefined ? input.streaming : textUpdate ? true : undefined;
 

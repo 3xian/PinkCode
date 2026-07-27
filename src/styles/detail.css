@@ -88,7 +88,8 @@
 
 .metric-grid {
   display: grid;
-  grid-template-columns: minmax(150px, 1.6fr) repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: 100%;
   gap: 0;
   align-items: stretch;
 }
@@ -350,10 +351,6 @@
 
 .tl-item.kind-shell .shell-collapse-bar {
   padding: 2px 0 0;
-}
-
-.tl-item.kind-shell .shell-waiting {
-  padding: 4px 0 0;
 }
 
 .empty-state {

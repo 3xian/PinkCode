@@ -138,12 +138,6 @@
   user-select: none;
 }
 
-/* Keep horizontal chip inside the vertical expand rail. */
-.workspace-expand-rail .shortcut-hint {
-  writing-mode: horizontal-tb;
-  transform: none;
-}
-
 .workspace-section {
   display: flex;
   flex-direction: column;

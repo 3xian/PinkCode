@@ -124,9 +124,7 @@ export const ShellCard = memo(function ShellCard({
           )}
           <pre className="shell-out">{displayOut}</pre>
         </>
-      ) : (
-        <div className="muted small shell-waiting">waiting for output…</div>
-      )}
+      ) : null}
     </div>
   );
 });

@@ -146,6 +146,85 @@ describe("live timeline reducer", () => {
     expect(items[0].detail ?? "").not.toMatch(/^call-/);
   });
 
+  it("enriches turn_completed with elapsed since last user card", () => {
+    const shells: ShellIndexes = new Map();
+    let map = new Map<string, TimelineItem[]>();
+    map = reduceAgentUpdate(
+      map,
+      {
+        handleId: "h1",
+        sessionId: "sess-1",
+        description: {
+          kind: "user",
+          title: "User",
+          detail: "do the thing",
+          coalesce: true,
+        },
+        now: 1_000,
+        nextId: () => "u1",
+      },
+      shells,
+    );
+    map = reduceAgentUpdate(
+      map,
+      {
+        handleId: "h1",
+        sessionId: "sess-1",
+        description: {
+          kind: "event",
+          title: "Turn completed",
+          turnStopReason: "end_turn",
+          detail: "1.2k tok",
+        },
+        now: 13_500,
+        nextId: () => "t1",
+      },
+      shells,
+    );
+    const items = map.get("sess-1") ?? [];
+    const terminal = items.find((i) => i.kind === "event");
+    expect(terminal?.title).toBe("Worked for 12.5s");
+    expect(terminal?.detail).toBe("1.2k tok");
+  });
+
+  it("timeline elapsed always owns turn_completed title", () => {
+    const shells: ShellIndexes = new Map();
+    let map = new Map<string, TimelineItem[]>();
+    map = reduceAgentUpdate(
+      map,
+      {
+        handleId: "h1",
+        sessionId: "sess-1",
+        description: {
+          kind: "user",
+          title: "User",
+          detail: "hi",
+          coalesce: true,
+        },
+        now: 1_000,
+        nextId: () => "u1",
+      },
+      shells,
+    );
+    map = reduceAgentUpdate(
+      map,
+      {
+        handleId: "h1",
+        sessionId: "sess-1",
+        description: {
+          kind: "event",
+          title: "Turn completed",
+          turnStopReason: "end_turn",
+        },
+        now: 4_000,
+        nextId: () => "t1",
+      },
+      shells,
+    );
+    const terminal = (map.get("sess-1") ?? []).find((i) => i.kind === "event");
+    expect(terminal?.title).toBe("Worked for 3.0s");
+  });
+
   it("merges disk hydrate without dropping local slash cards", () => {
     const local: TimelineItem = {
       id: "local-1",

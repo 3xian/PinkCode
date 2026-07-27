@@ -207,6 +207,92 @@ function numField(
 }
 
 /**
+ * Wall-clock duration for turn-terminal markers (Grok Build style).
+ * Sub-minute values always keep one decimal; longer spans use m/h.
+ */
+export function formatTurnElapsed(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  const secs = ms / 1000;
+  // Sub-minute: always one decimal (Grok Build "Worked for 12.3s").
+  if (secs < 60) return `${secs.toFixed(1)}s`;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.round(secs % 60);
+  if (h > 0) {
+    if (m > 0) return `${h}h ${m}m`;
+    if (s > 0) return `${h}h ${s}s`;
+    return `${h}h`;
+  }
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
+/** Normalize ACP stop_reason / stopReason enums for display mapping. */
+export function normalizeStopReason(stopReason: string): string {
+  return (stopReason || "end_turn").trim().toLowerCase().replace(/-/g, "_");
+}
+
+/**
+ * Human title for turn_completed — mirrors Grok Build session markers.
+ * Does not surface protocol enums like `end_turn` in the happy path.
+ * Elapsed comes from the timeline reducer (last user card → now), not the wire.
+ */
+export function formatTurnCompletedTitle(
+  stopReason: string,
+  elapsedMs?: number | null,
+): string {
+  const stop = normalizeStopReason(stopReason);
+  const elapsed =
+    elapsedMs != null && Number.isFinite(elapsedMs) && elapsedMs > 0
+      ? formatTurnElapsed(elapsedMs)
+      : "";
+
+  switch (stop) {
+    case "cancelled":
+    case "canceled":
+      return elapsed
+        ? `Turn cancelled by user in ${elapsed}`
+        : "Turn cancelled by user";
+    case "error":
+      return elapsed ? `Turn failed in ${elapsed}` : "Turn failed";
+    case "rate_limit":
+      return "Rate limited";
+    // end_turn / max_tokens / max_turn_requests / refusal / unknown → done
+    // (same mapping as Grok Build session markers — no protocol enums in title)
+    default:
+      return elapsed ? `Worked for ${elapsed}` : "Turn completed";
+  }
+}
+
+function formatTurnCompletedDetail(
+  stopReason: string,
+  agentResult: string | undefined,
+  usageParts: string[],
+): string | undefined {
+  const stop = normalizeStopReason(stopReason);
+  const parts: string[] = [];
+  if (stop === "error" && agentResult) {
+    parts.push(agentResult);
+  } else if (
+    (stop === "max_tokens" || stop === "max_turn_requests") &&
+    !agentResult
+  ) {
+    // Subtle hint only when useful; title stays "Worked for…" / "Turn completed"
+    parts.push(
+      stop === "max_tokens" ? "Hit output token limit" : "Hit max turn requests",
+    );
+  } else if (
+    agentResult &&
+    stop !== "end_turn" &&
+    stop !== "cancelled" &&
+    stop !== "canceled"
+  ) {
+    parts.push(agentResult);
+  }
+  parts.push(...usageParts);
+  return parts.length ? parts.join(" · ") : undefined;
+}
+
+/**
  * Whether Rust `maybe_emit_shell` would emit an `agent-shell` event for this
  * ACP update. Keep in sync with `agent_manager.rs` (title / meta / raw I/O).
  */
@@ -257,6 +343,11 @@ export function describeUpdate(update: unknown): {
   isShell?: boolean;
   /** Slash commands from `available_commands_update` (not shown as a live card). */
   availableCommands?: AvailableCommand[];
+  /**
+   * When set, the timeline reducer is the sole owner of the final title and
+   * applies wall-clock elapsed since the last user card (Grok Build "Worked for …").
+   */
+  turnStopReason?: string;
 } {
   if (!update || typeof update !== "object") {
     return { kind: "unknown", title: String(update) };
@@ -353,25 +444,43 @@ export function describeUpdate(update: unknown): {
       };
     }
     case "turn_completed": {
-      const stop = String(
-        inner.stop_reason ?? inner.stopReason ?? "end_turn",
+      const stop = normalizeStopReason(
+        String(inner.stop_reason ?? inner.stopReason ?? "end_turn"),
       );
+      const agentResultRaw =
+        inner.agent_result ?? inner.agentResult ?? undefined;
+      const agentResult =
+        typeof agentResultRaw === "string"
+          ? agentResultRaw.trim()
+          : agentResultRaw != null
+            ? String(agentResultRaw).trim()
+            : undefined;
       const usage = (inner.usage ?? {}) as Record<string, unknown>;
       const total = numField(usage, "totalTokens", "total_tokens");
       const inTok = numField(usage, "inputTokens", "input_tokens");
       const outTok = numField(usage, "outputTokens", "output_tokens");
-      const turns = numField(usage, "numTurns", "num_turns");
-      const parts: string[] = [];
+      const turns = numField(
+        usage,
+        "numTurns",
+        "num_turns",
+      ) || numField(usage, "modelCalls", "model_calls");
+      const usageParts: string[] = [];
       if (total > 0) {
-        parts.push(
+        usageParts.push(
           `${formatTokensShort(total)} tok (in ${formatTokensShort(inTok)} / out ${formatTokensShort(outTok)})`,
         );
       }
-      if (turns > 0) parts.push(`${turns} model calls`);
+      if (turns > 0) usageParts.push(`${turns} model calls`);
+      // Title without elapsed; reducer applies last-user → now wall-clock.
       return {
         kind: "event",
-        title: `Turn completed · ${stop}`,
-        detail: parts.length ? parts.join(" · ") : undefined,
+        title: formatTurnCompletedTitle(stop),
+        detail: formatTurnCompletedDetail(
+          stop,
+          agentResult || undefined,
+          usageParts,
+        ),
+        turnStopReason: stop,
       };
     }
     case "session_recap": {

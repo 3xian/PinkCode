@@ -225,16 +225,16 @@ impl AgentManager {
     /// Send x.ai/yolo_mode_changed notification to shell so its permission
     /// manager stays in sync with the host-side mode.
     fn notify_mode_changed(client: &AcpClient, mode: PermissionMode) {
-        let params = json!({
-            "yolo_mode": mode == PermissionMode::BypassPermissions,
-            "auto_mode": mode == PermissionMode::Auto,
-            "permission_mode": match mode {
-                PermissionMode::BypassPermissions => "always-approve",
-                PermissionMode::Auto => "auto",
-                _ => "ask",
-            },
-        });
-        if let Err(e) = client.notify("x.ai/yolo_mode_changed", params) {
+        let permission_mode = match mode {
+            PermissionMode::BypassPermissions => "always-approve",
+            PermissionMode::Auto => "auto",
+            _ => "ask",
+        };
+        if let Err(e) = client.notify_yolo_mode(
+            mode == PermissionMode::BypassPermissions,
+            mode == PermissionMode::Auto,
+            permission_mode,
+        ) {
             eprintln!("[pinkcode] failed to send yolo_mode_changed notification: {e}");
         }
     }
@@ -879,24 +879,19 @@ impl AgentManager {
             }
         };
 
-        let session_id = match result.get("sessionId").and_then(|s| s.as_str()) {
-            Some(s) => s.to_string(),
-            None => {
-                return Err(Self::fail_registered_agent(
-                    &self.inner,
-                    &handle_id,
-                    &mut info,
-                    "session/new missing sessionId".into(),
-                ));
-            }
-        };
+        let session_id = result.session_id.clone();
+        if session_id.is_empty() {
+            return Err(Self::fail_registered_agent(
+                &self.inner,
+                &handle_id,
+                &mut info,
+                "session/new missing sessionId".into(),
+            ));
+        }
 
         info.session_id = Some(session_id.clone());
         task_prefs::set_permission_mode(&session_id, permission_mode)?;
-        if let Some(m) = result
-            .pointer("/models/currentModelId")
-            .and_then(|v| v.as_str())
-        {
+        if let Some(m) = result.current_model_id() {
             info.model_id = Some(m.to_string());
         }
         info.status = ManagedStatus::Ready;
@@ -1001,10 +996,7 @@ impl AgentManager {
             }
         };
 
-        if let Some(m) = result
-            .pointer("/models/currentModelId")
-            .and_then(|v| v.as_str())
-        {
+        if let Some(m) = result.current_model_id() {
             info.model_id = Some(m.to_string());
         }
         info.status = ManagedStatus::Ready;

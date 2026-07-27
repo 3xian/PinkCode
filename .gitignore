@@ -36,6 +36,7 @@ _win_probe*
 reasonix.toml
 AGENTS.md
 docs/TODO2.md
+docs/GROK_BUILD_WATCH.md
 
 # Tauri / Rust
 src-tauri/target/

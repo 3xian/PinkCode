@@ -942,7 +942,6 @@ function App() {
                 ‹
               </span>
               <span className="workspace-expand-text">Workspace</span>
-              <kbd className="shortcut-hint">ctrl+h</kbd>
             </button>
           ) : (
             <WorkspacePanel

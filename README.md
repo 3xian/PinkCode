@@ -3,10 +3,10 @@
   <img src="docs/logo.png" alt="PinkCode" width="128" />
 </p>
 
-<h1 align="center">PinkCode</h1>
+<h1 align="center">PinkCode - Grok Build GUI</h1>
 
 <p align="center">
-  <strong>Desktop control plane for Grok Build.</strong>
+  <strong>Effortless Parallel Tasks & Crystal-Clear Usage Visuals.</strong>
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
   <a href="docs/TODO.md">Roadmap</a>
 </p>
 
-A desktop GUI for [Grok Build](https://x.ai/cli) — multi-session task board, live timeline, workspace browser, permission management, and usage dashboard. PinkCode attaches to `grok` over [ACP](https://spec.acp.dev) (Agent Client Protocol) via stdio; it does not run its own agent loop.
+Run multiple [Grok Build](https://x.ai/cli) tasks side by side, follow every task in a readable live timeline, and see where your credits and tokens go. PinkCode turns Grok Build's CLI workflow into a visual desktop workspace while keeping `grok` itself in charge: it connects over [ACP](https://spec.acp.dev) (Agent Client Protocol) via stdio and does not run a separate agent loop.
 
 **Tauri 2 · React 19 · TypeScript · Rust**
 
@@ -35,16 +35,23 @@ A desktop GUI for [Grok Build](https://x.ai/cli) — multi-session task board, l
 
 ## Features
 
+PinkCode is centered on two things that are difficult to manage from a terminal alone: keeping several agent tasks moving at once and understanding their activity and cost at a glance.
+
+| Focus | What PinkCode makes easier |
+|------|----------|
+| **Parallel tasks** | Work across multiple Grok Build sessions from one task board. Create, switch, prompt, and stop tasks independently; each task connects to `grok` over ACP when you first send a message. Existing sessions are loaded from `~/.grok` (`%USERPROFILE%\.grok` on Windows). |
+| **Clear task activity** | Read user messages, agent responses, thoughts, tool calls, shell output, plans, and events in one live timeline. Filter the stream when you need focus; reconnect later and PinkCode restores history from `updates.jsonl`. |
+| **Usage visuals** | See weekly Grok credit usage with a per-product breakdown, alongside a 7-day token-usage series derived from session logs. |
+
+The rest of the interface keeps those parallel workflows practical:
+
 | Area | Behavior |
 |------|----------|
-| **Tasks** | Multi-session board: sessions under `~/.grok` (`%USERPROFILE%\.grok` on Windows). Create, select, prompt, and stop tasks. First send auto-connects via ACP. |
-| **Timeline** | Unified stream of user messages, agent responses, thoughts, tool calls, shell output, plans, and events. Live ACP when connected; disk-hydrated from `updates.jsonl` otherwise. Filter chips + auto-scroll. |
-| **File changes** | Agent file-hunk display from `hunk_records.jsonl`. |
-| **Workspace** | Project file tree and Git porcelain status in a side panel. Supports file preview (text, images, binary detection). |
-| **Mode** | Grok-style cycle: **Normal → Plan → Auto → Always-approve**. Plan is orthogonal to permission mode — the next user message becomes `/plan …`. When the agent exits plan mode, a review panel appears (Approve / Request changes / Quit). |
-| **Permissions** | Five-level gate: Default (ask), Accept edits, Auto (classified by Grok), Bypass permissions, and Don't ask. Per-task preferences persist in `~/.pinkcode/task_prefs.json`. Handles reverse RPCs for tool permissions, file writes, plan approval, and user questions. |
-| **Usage** | Weekly credit usage (Grok billing API) with per-product breakdown, plus 7-day token usage series derived from session logs. |
-| **Updates** | Auto-checks GitHub Releases on startup with optional one-click install. |
+| **File changes** | Review agent file hunks from `hunk_records.jsonl`. |
+| **Workspace** | Browse the project tree, preview text and images, identify binary files, and check Git porcelain status without leaving the task view. |
+| **Modes & plans** | Move through the Grok-style cycle: **Normal → Plan → Auto → Always-approve**. Plan is independent of permission mode—the next user message becomes `/plan …`. When the agent exits plan mode, review the result and choose Approve, Request changes, or Quit. |
+| **Permissions** | Choose among Default (ask), Accept edits, Auto (classified by Grok), Bypass permissions, and Don't ask. Per-task preferences persist in `~/.pinkcode/task_prefs.json`; PinkCode handles permission requests, file writes, plan approval, and agent questions. |
+| **Updates** | Check GitHub Releases automatically on startup and optionally install an update in one click. |
 
 ## Installation
 

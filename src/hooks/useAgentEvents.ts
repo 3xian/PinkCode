@@ -13,7 +13,6 @@ import { describeUpdate, extractUpdateTsMs } from "../utils/format";
 import {
   LOCAL_HANDLE_ID,
   hydrateLiveFromDiskUpdates,
-  isTextUpdate,
   mergeDiskLiveIntoMap,
   mergeTimelineItems,
   reduceAgentUpdate,
@@ -22,9 +21,6 @@ import {
   settleStreamingItems,
   shouldDropUpdate,
 } from "./liveTimeline";
-
-/** After last text chunk for a handle, mark its streaming cards settled. */
-const STREAM_SETTLE_MS = 320;
 
 export interface AgentEventsOptions {
   /** ACP current_mode_update (plan ↔ default). Prefer over window events. */
@@ -167,8 +163,6 @@ export function useAgentEvents(
     // smooth window drag on Windows when agents stream many tiny chunks.
     let liveBuf: Map<string, TimelineItem[]> | null = null;
     let liveRaf = 0;
-    /** Per-handle settle timers so concurrent agents do not block each other. */
-    const settleTimers = new Map<string, number>();
     /** toolCallId → list index for O(1) shell merge when list is long. */
     const shellIndexByKey = new Map<string, Map<string, number>>();
 
@@ -191,17 +185,6 @@ export function useAgentEvents(
       if (!liveRaf) {
         liveRaf = window.requestAnimationFrame(flushLive);
       }
-    };
-
-    const bumpSettleTimer = (handleId: string) => {
-      const prev = settleTimers.get(handleId);
-      if (prev) window.clearTimeout(prev);
-      const t = window.setTimeout(() => {
-        settleTimers.delete(handleId);
-        if (cancelled) return;
-        scheduleLive((map) => settleStreamingItems(map, { handleId }));
-      }, STREAM_SETTLE_MS);
-      settleTimers.set(handleId, t);
     };
 
     async function setup() {
@@ -269,7 +252,6 @@ export function useAgentEvents(
         }
 
         const now = extractUpdateTsMs(e.payload.params) ?? Date.now();
-        const isTextChunk = isTextUpdate(desc);
         scheduleLive((prev) =>
           reduceAgentUpdate(
             prev,
@@ -284,8 +266,6 @@ export function useAgentEvents(
             shellIndexByKey,
           ),
         );
-
-        if (isTextChunk) bumpSettleTimer(handleId);
       });
       const u3 = await listen<{ handleId: string; error?: string }>(
         "agent-prompt-complete",
@@ -293,11 +273,6 @@ export function useAgentEvents(
           if (cancelled) return;
           if (e.payload.error) setLastError(e.payload.error);
           const hid = e.payload.handleId;
-          const t = settleTimers.get(hid);
-          if (t) {
-            window.clearTimeout(t);
-            settleTimers.delete(hid);
-          }
           // Turn finished → Markdown-render any still-streaming text cards.
           scheduleLive((prev) => settleStreamingItems(prev, { handleId: hid }));
         },
@@ -345,8 +320,6 @@ export function useAgentEvents(
       if (liveRaf) window.cancelAnimationFrame(liveRaf);
       liveRaf = 0;
       liveBuf = null;
-      for (const t of settleTimers.values()) window.clearTimeout(t);
-      settleTimers.clear();
       shellIndexByKey.clear();
       unsubs.forEach((u) => u());
     };

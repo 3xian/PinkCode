@@ -4,11 +4,20 @@ import { FilePathLink } from "./FilePathLink";
 
 interface Props {
   hunks: HunkRecord[];
+  /** Full-session count from Grok's signals, not limited to the recent tail. */
+  totalFilesTouched: number;
+  /** Whether `hunks` contains only the latest records. */
+  hasMore: boolean;
   /** Open a file path in the workspace preview pane. */
   onOpenFile?: (path: string) => void;
 }
 
-export function DiffPanel({ hunks, onOpenFile }: Props) {
+export function DiffPanel({
+  hunks,
+  totalFilesTouched,
+  hasMore,
+  onOpenFile,
+}: Props) {
   if (hunks.length === 0) {
     return (
       <div className="empty-hint">
@@ -46,8 +55,18 @@ export function DiffPanel({ hunks, onOpenFile }: Props) {
   return (
     <div className="diff-panel">
       <div className="diff-summary">
-        <strong>{files.length}</strong> files · <strong>{hunks.length}</strong>{" "}
-        hunks
+        {hasMore ? (
+          <>
+            <strong>{totalFilesTouched}</strong> files touched · latest{" "}
+            <strong>{hunks.length}</strong> hunks cover{" "}
+            <strong>{files.length}</strong> files
+          </>
+        ) : (
+          <>
+            <strong>{files.length}</strong> files ·{" "}
+            <strong>{hunks.length}</strong> hunks
+          </>
+        )}
       </div>
 
       <div className="file-list">

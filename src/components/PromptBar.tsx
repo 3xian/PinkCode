@@ -165,7 +165,7 @@ export function PromptBar({
             aria-label="Slash commands"
           >
             <div className="slash-menu-hint muted small">
-              Grok slash commands · Tab insert · Enter send when complete · Esc
+              Grok slash commands · tab insert · enter send when complete · esc
               close
             </div>
             {filteredCommands.map((cmd, i) => (
@@ -203,10 +203,10 @@ export function PromptBar({
               ? awaiting
                 ? "Approve or deny the permission request above to continue…"
                 : running
-                  ? "Agent is working… Enter adds this message to the queue"
+                  ? "Agent is working… enter adds this message to the queue"
                   : sessionMode === "plan"
-                    ? "Plan mode · next free-text send becomes /plan … · Shift+Tab to cycle"
-                    : "Message the agent… / for commands · Enter to send · Shift+Tab mode · Ctrl+Enter newline"
+                    ? "Plan mode · next free-text send becomes /plan … · shift+tab to cycle"
+                    : "Message the agent… / for commands · enter to send · shift+tab mode · ctrl+enter newline"
               : "Message the agent… first send connects · /usage /context work offline"
           }
           value={text}
@@ -315,11 +315,11 @@ export function PromptBar({
               label="Mode"
               value={sessionMode}
               displayLabel={modeMeta.label}
-              title={`${modeMeta.hint} · Shift+Tab to cycle`}
+              title={`${modeMeta.hint} · shift+tab to cycle`}
               accent={modeMeta.accent}
               glyph={modeGlyph(sessionMode)}
               options={SESSION_MODE_OPTIONS}
-              shortcut="Shift+Tab"
+              shortcut="shift+tab"
               disabled={busy || running || awaiting}
               onChange={onSessionModeChange}
             />
@@ -328,7 +328,7 @@ export function PromptBar({
             className="btn primary prompt-send"
             type="button"
             disabled={!canSend}
-            title="Enter to send · Ctrl+Enter for newline · Shift+Tab mode"
+            title="enter to send · ctrl+enter for newline · shift+tab mode"
             onClick={sendIfReady}
           >
             {running || awaiting ? "Queue" : "Send"}

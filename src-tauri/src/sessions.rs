@@ -1,5 +1,5 @@
 use crate::models::{
-    ActiveSession, DashboardStats, HunkRecord, SessionCard, SessionDetail, SessionStatus,
+    ActiveSession, DashboardStats, HunkPage, HunkRecord, SessionCard, SessionDetail, SessionStatus,
     SessionUpdatePage, TokenDayPoint, TokenUsageSeries,
 };
 use crate::session_usage::{completed_turn_usage, session_token_usage, SessionTokenUsage};
@@ -722,15 +722,18 @@ fn parse_hunk(v: &Value) -> HunkRecord {
     }
 }
 
-pub fn list_hunks(session_id: &str, limit: Option<usize>) -> Result<Vec<HunkRecord>> {
-    let (dir, _) = find_session_dir(session_id)?;
-    let path = dir.join("hunk_records.jsonl");
-    let max = limit.unwrap_or(200);
-    let values = read_jsonl_tail(&path, max)?;
+fn read_hunk_page(path: &Path, limit: usize) -> Result<HunkPage> {
+    let values = read_jsonl_tail(path, limit.saturating_add(1))?;
     let mut hunks: Vec<HunkRecord> = values.iter().map(parse_hunk).collect();
     hunks.reverse(); // newest first after tail
-                     // tail keeps last N in file order (oldest->newest in ring). reverse for newest first.
-    Ok(hunks)
+    let has_more = hunks.len() > limit;
+    hunks.truncate(limit);
+    Ok(HunkPage { hunks, has_more })
+}
+
+pub fn list_hunks(session_id: &str, limit: Option<usize>) -> Result<HunkPage> {
+    let (dir, _) = find_session_dir(session_id)?;
+    read_hunk_page(&dir.join("hunk_records.jsonl"), limit.unwrap_or(200))
 }
 
 pub fn list_session_updates(
@@ -770,7 +773,7 @@ pub fn get_session_detail(session_id: &str) -> Result<SessionDetail> {
     // user asks for older Timeline entries and preserves that depth on refresh.
     let recent_events = read_jsonl_tail(&dir.join("events.jsonl"), 30)?;
     let update_page = read_update_page(&dir.join("updates.jsonl"), None, 200)?;
-    let hunks = list_hunks(session_id, Some(50))?;
+    let recent_hunks = list_hunks(session_id, Some(50))?;
 
     Ok(SessionDetail {
         card,
@@ -780,7 +783,7 @@ pub fn get_session_detail(session_id: &str) -> Result<SessionDetail> {
         recent_updates: update_page.updates,
         recent_updates_cursor: update_page.next_cursor,
         recent_updates_has_more: update_page.has_more,
-        hunks,
+        recent_hunks,
     })
 }
 
@@ -1179,6 +1182,43 @@ mod tests {
         assert_eq!(tail.len(), 3);
         assert_eq!(tail[0]["index"], 117);
         assert_eq!(tail[2]["index"], 119);
+    }
+
+    #[test]
+    fn hunk_page_reports_older_records_without_exposing_the_probe_item() {
+        let path = std::env::temp_dir().join(format!(
+            "pinkcode-hunk-page-{}-{}.jsonl",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let records = (0..51)
+            .map(|index| {
+                serde_json::json!({
+                    "hunkId": format!("hunk-{index}"),
+                    "filePath": format!("src/file-{}.ts", index % 3),
+                    "linesAdded": 1,
+                    "linesRemoved": 0
+                })
+                .to_string()
+            })
+            .collect::<Vec<_>>();
+
+        fs::write(&path, records[..50].join("\n")).expect("write exact page");
+        let exact = read_hunk_page(&path, 50).expect("read exact page");
+        assert!(!exact.has_more);
+        assert_eq!(exact.hunks.len(), 50);
+        assert_eq!(exact.hunks[0].hunk_id.as_deref(), Some("hunk-49"));
+
+        fs::write(&path, records.join("\n")).expect("write overflow page");
+        let overflow = read_hunk_page(&path, 50).expect("read overflow page");
+        let _ = fs::remove_file(&path);
+        assert!(overflow.has_more);
+        assert_eq!(overflow.hunks.len(), 50);
+        assert_eq!(overflow.hunks[0].hunk_id.as_deref(), Some("hunk-50"));
+        assert_eq!(overflow.hunks[49].hunk_id.as_deref(), Some("hunk-1"));
     }
 
     #[test]

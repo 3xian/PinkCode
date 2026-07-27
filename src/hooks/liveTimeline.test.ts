@@ -327,6 +327,50 @@ describe("live timeline reducer", () => {
     ).toBe(false);
   });
 
+  it("keeps a coalesced row identity stable while text is streaming", () => {
+    const indexes: ShellIndexes = new Map();
+    let state = reduceAgentUpdate(
+      new Map(),
+      {
+        handleId: "handle",
+        sessionId: "session",
+        description: {
+          kind: "agent",
+          title: "Agent",
+          detail: "# Long answer\n\n",
+          coalesce: true,
+        },
+        now: 1,
+        nextId: () => "stable-row",
+        sourceEventId: "chunk-1",
+      },
+      indexes,
+    );
+    state = reduceAgentUpdate(
+      state,
+      {
+        handleId: "handle",
+        sessionId: "session",
+        description: {
+          kind: "agent",
+          title: "Agent",
+          detail: "- more content",
+          coalesce: true,
+        },
+        now: 2,
+        nextId: () => "unused",
+        sourceEventId: "chunk-2",
+      },
+      indexes,
+    );
+
+    const item = state.get("session")?.[0];
+    expect(item?.id).toBe("event-chunk-1");
+    expect(item?.sourceEventId).toBe("chunk-2");
+    expect(item?.detail).toBe("# Long answer\n\n- more content");
+    expect(item?.streaming).toBe(true);
+  });
+
   it("merges shell snapshots without regressing output", () => {
     const indexes: ShellIndexes = new Map();
     let state = reduceShellUpdate(

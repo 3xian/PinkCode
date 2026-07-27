@@ -50,6 +50,11 @@ export interface HunkRecord {
   timestamp?: string | null;
 }
 
+export interface HunkPage {
+  hunks: HunkRecord[];
+  hasMore: boolean;
+}
+
 export interface SessionDetail {
   card: SessionCard;
   summaryRaw: unknown;
@@ -58,7 +63,7 @@ export interface SessionDetail {
   recentUpdates: unknown[];
   recentUpdatesCursor?: number | null;
   recentUpdatesHasMore: boolean;
-  hunks: HunkRecord[];
+  recentHunks: HunkPage;
 }
 
 export interface SessionUpdatePage {

@@ -29,7 +29,7 @@ use agent_types::{
 };
 use billing::WeekUsage;
 use models::{
-    ActiveSession, DashboardStats, HunkRecord, SessionCard, SessionDetail, SessionUpdatePage,
+    ActiveSession, DashboardStats, HunkPage, SessionCard, SessionDetail, SessionUpdatePage,
     TokenUsageSeries,
 };
 use project_fs::{DirEntry, GitChange};
@@ -89,10 +89,7 @@ async fn get_session_plan(session_id: String) -> Result<Option<sessions::Session
 }
 
 #[tauri::command]
-async fn list_session_hunks(
-    session_id: String,
-    limit: Option<usize>,
-) -> Result<Vec<HunkRecord>, String> {
+async fn list_session_hunks(session_id: String, limit: Option<usize>) -> Result<HunkPage, String> {
     tauri::async_runtime::spawn_blocking(move || sessions::list_hunks(&session_id, limit))
         .await
         .map_err(|e| format!("hunk scan task failed: {e}"))?

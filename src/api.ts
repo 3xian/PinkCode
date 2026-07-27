@@ -6,7 +6,7 @@ import type {
   DirEntry,
   FilePreview,
   GitChange,
-  HunkRecord,
+  HunkPage,
   ManagedAgentInfo,
   PendingPermission,
   PermissionMode,
@@ -50,8 +50,8 @@ export async function listSessionUpdates(
 export async function listSessionHunks(
   sessionId: string,
   limit?: number,
-): Promise<HunkRecord[]> {
-  return invoke<HunkRecord[]>("list_session_hunks", {
+): Promise<HunkPage> {
+  return invoke<HunkPage>("list_session_hunks", {
     sessionId,
     limit: limit ?? null,
   });

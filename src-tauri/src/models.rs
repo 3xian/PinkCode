@@ -66,7 +66,7 @@ pub struct SessionDetail {
     pub recent_updates: Vec<serde_json::Value>,
     pub recent_updates_cursor: Option<u64>,
     pub recent_updates_has_more: bool,
-    pub hunks: Vec<HunkRecord>,
+    pub recent_hunks: HunkPage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +89,13 @@ pub struct HunkRecord {
     pub author_type: Option<String>,
     pub session_id: Option<String>,
     pub timestamp: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HunkPage {
+    pub hunks: Vec<HunkRecord>,
+    pub has_more: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

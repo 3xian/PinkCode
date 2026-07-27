@@ -164,14 +164,10 @@ export function reduceAgentUpdate(
     ) {
       list[list.length - 1] = {
         ...last,
-        id: sourceEventId ? `event-${sourceEventId}` : last.id,
         sourceEventId: sourceEventId ?? last.sourceEventId,
         detail: (last.detail ?? "") + (description.detail ?? ""),
         ts: now,
-        streaming:
-          markStreaming === undefined
-            ? last.streaming === true
-            : markStreaming,
+        streaming: markStreaming ?? last.streaming,
       };
       next.set(key, list);
       return next;

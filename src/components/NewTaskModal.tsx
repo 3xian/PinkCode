@@ -80,7 +80,7 @@ export function NewTaskModal({
         </div>
         <p className="muted small">
           Spawns <code>grok agent stdio</code>, creates an ACP session, and
-          streams updates live. Mode matches the composer chip (Shift+Tab):
+          streams updates live. Mode matches the composer chip (shift+tab):
           Normal → Plan → Auto → Always approve.
         </p>
 

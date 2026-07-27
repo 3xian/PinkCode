@@ -173,7 +173,7 @@ export function PermissionModal({
                 className="btn"
                 disabled={busy}
                 onClick={() => onResolve(item, "cancelled")}
-                title="Cancel the current turn (Esc / Cmd+C)"
+                title="Cancel the current turn (esc / cmd+c)"
               >
                 Cancel turn
               </button>

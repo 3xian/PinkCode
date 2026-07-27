@@ -799,13 +799,13 @@ function App() {
       type="button"
       className="btn ghost workspace-collapse-btn"
       onClick={toggleWorkspaceCollapsed}
-      title="Collapse workspace (Ctrl+H)"
+      title="Collapse workspace (ctrl+h)"
       aria-label="Collapse workspace panel"
       aria-expanded={!workspaceCollapsed}
       aria-keyshortcuts="Control+H"
     >
       <span className="workspace-collapse-label">Collapse</span>
-      <kbd className="shortcut-hint">Ctrl+H</kbd>
+      <kbd className="shortcut-hint">ctrl+h</kbd>
     </button>
   );
 
@@ -933,7 +933,7 @@ function App() {
               type="button"
               className="workspace-expand-rail"
               onClick={toggleWorkspaceCollapsed}
-              title="Show workspace (Ctrl+H)"
+              title="Show workspace (ctrl+h)"
               aria-label="Show workspace panel"
               aria-expanded={false}
               aria-keyshortcuts="Control+H"
@@ -942,7 +942,7 @@ function App() {
                 ‹
               </span>
               <span className="workspace-expand-text">Workspace</span>
-              <kbd className="shortcut-hint">Ctrl+H</kbd>
+              <kbd className="shortcut-hint">ctrl+h</kbd>
             </button>
           ) : (
             <WorkspacePanel

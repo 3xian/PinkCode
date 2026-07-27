@@ -244,7 +244,10 @@ export function SessionDetailView({
             label="Diff"
             value={`+${card.agentLinesAdded} / −${card.agentLinesRemoved}`}
           />
-          <Metric label="Files" value={String(card.agentFilesTouched)} />
+          <Metric
+            label="Files touched"
+            value={String(card.agentFilesTouched)}
+          />
           <Metric
             label="Duration"
             value={formatDuration(card.sessionDurationSeconds)}
@@ -269,8 +272,11 @@ export function SessionDetailView({
             {id === "timeline" && timelineItems.length > 0 && (
               <span className="tab-count">{timelineItems.length}</span>
             )}
-            {id === "diff" && detail.hunks.length > 0 && (
-              <span className="tab-count">{detail.hunks.length}</span>
+            {id === "diff" && detail.recentHunks.hunks.length > 0 && (
+              <span className="tab-count">
+                {detail.recentHunks.hunks.length}
+                {detail.recentHunks.hasMore ? "+" : ""}
+              </span>
             )}
           </button>
         ))}
@@ -292,7 +298,12 @@ export function SessionDetailView({
           />
         )}
         {tab === "diff" && (
-          <DiffPanel hunks={detail.hunks} onOpenFile={onOpenFile} />
+          <DiffPanel
+            hunks={detail.recentHunks.hunks}
+            totalFilesTouched={card.agentFilesTouched}
+            hasMore={detail.recentHunks.hasMore}
+            onOpenFile={onOpenFile}
+          />
         )}
         {tab === "raw" && <RawStream detail={detail} />}
       </div>

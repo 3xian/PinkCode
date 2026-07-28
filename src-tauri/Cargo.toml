@@ -1,6 +1,6 @@
 [package]
 name = "pinkcode"
-version = "0.2.13"
+version = "0.3.0"
 description = "Desktop control plane for Grok Build multi-task observability"
 authors = ["PinkCode"]
 license = "Apache-2.0"
@@ -33,6 +33,17 @@ ureq = { version = "2", features = ["json"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2.3.1"
 base64 = "0.22"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-updater = "2.10.1"
+
+# Reload multi-size PE icons for title bar + taskbar (Tauri only applies ICO entry[0]).
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_LibraryLoader",
+  "Win32_UI_HiDpi",
+  "Win32_UI_WindowsAndMessaging",
+] }

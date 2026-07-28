@@ -111,7 +111,7 @@ fn http_agent() -> ureq::Agent {
                 builder = builder.proxy(p);
             }
             Err(e) => {
-                eprintln!("[pinkcode] ignore invalid proxy {url:?}: {e}");
+                tracing::warn!(url = %url, error = %e, "ignore invalid proxy");
             }
         }
     }

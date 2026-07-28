@@ -6,6 +6,8 @@ mod agent_types;
 mod ask_user_question;
 mod auth;
 mod billing;
+mod config;
+mod fs_atomic;
 mod json_util;
 mod models;
 mod permission_policy;
@@ -21,6 +23,8 @@ mod shell_emitter;
 mod shell_stream;
 mod task_prefs;
 mod watcher;
+#[cfg(windows)]
+mod windows_icons;
 
 use agent_manager::AgentManager;
 use agent_types::{
@@ -35,6 +39,7 @@ use models::{
 use project_fs::{DirEntry, GitChange};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::Path;
 use tauri::Manager;
 
 #[tauri::command]
@@ -315,9 +320,16 @@ fn list_task_permission_modes() -> HashMap<String, PermissionMode> {
     task_prefs::all_permission_modes()
 }
 
+/// Default permission for New Task / seed. Optional `project_cwd` pulls in
+/// project-layer config when the modal knows a workspace root.
 #[tauri::command]
-fn get_last_spawn_permission_mode() -> PermissionMode {
-    task_prefs::last_spawn_mode()
+fn get_last_spawn_permission_mode(project_cwd: Option<String>) -> PermissionMode {
+    let cwd = project_cwd
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(Path::new);
+    task_prefs::effective_permission_mode(None, cwd)
 }
 
 #[tauri::command]
@@ -377,6 +389,9 @@ async fn git_status(cwd: String) -> Result<Vec<GitChange>, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Layered config + structured logging before any agent/watcher work.
+    config::init_tracing();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -398,6 +413,10 @@ pub fn run() {
                 let version = app.package_info().version.to_string();
                 let _ = window.set_title(&format!("{name} {version}"));
             }
+            // Tauri's default window icon is a single ICO frame; re-apply native
+            // multi-size PE icons so title bar + taskbar stay crisp on high DPI.
+            #[cfg(windows)]
+            windows_icons::apply_to_app(app);
             let manager = app.state::<AgentManager>();
             manager.set_app(app.handle().clone());
             // Disk-driven session index: FS events + debounce (no fixed 4s poll).

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
 import type { ManagedStatus, SessionCard } from "../types";
 import {
   contextPct,
@@ -6,6 +6,13 @@ import {
   formatTokens,
   projectName,
 } from "../utils/format";
+import {
+  isPinkcodeAttached,
+  rankManagedCard,
+  resolveCardState,
+  stateLabel,
+  stateTitle,
+} from "../utils/managedChrome";
 
 interface Props {
   sessions: SessionCard[];
@@ -14,11 +21,9 @@ interface Props {
   onQuery: (q: string) => void;
   onSelect: (id: string) => void;
   /**
-   * ACP-attached sessions (not starting/stopped/error).
-   * Used for sort + “live” accent when not actively running.
+   * sessionId → PinkCode managed status (any non-terminal attach state,
+   * including `starting`). Sort + card chrome derive from this alone.
    */
-  managedSessionIds?: Set<string>;
-  /** Per-session managed status for run-state chrome (running pulse, etc.). */
   managedStatuses?: Record<string, ManagedStatus>;
   onNewTask?: () => void;
 }
@@ -29,7 +34,6 @@ export function SessionList({
   query,
   onQuery,
   onSelect,
-  managedSessionIds,
   managedStatuses,
   onNewTask,
 }: Props) {
@@ -47,12 +51,12 @@ export function SessionList({
 
     // Mid-turn first, then attached / open elsewhere, keep relative order.
     list.sort((a, b) => {
-      const ar = rankCard(a, managedSessionIds, managedStatuses);
-      const br = rankCard(b, managedSessionIds, managedStatuses);
+      const ar = rankManagedCard(managedStatuses?.[a.id], a.isActive);
+      const br = rankManagedCard(managedStatuses?.[b.id], b.isActive);
       return ar - br;
     });
     return list;
-  }, [sessions, query, managedSessionIds, managedStatuses]);
+  }, [sessions, query, managedStatuses]);
 
   return (
     <div className="session-list">
@@ -87,69 +91,85 @@ export function SessionList({
           <div className="empty-hint">No sessions match.</div>
         )}
         {visible.map((s) => {
-          // Priority: running (mid-turn) > awaiting > live > open-elsewhere > idle
-          const managed = managedSessionIds?.has(s.id) ?? false;
           const managedStatus = managedStatuses?.[s.id];
+          const attached = isPinkcodeAttached(managedStatus);
           // Live PID in active_sessions.json, not attached here — "open", not mid-turn.
-          const openElsewhere = s.isActive && !managed;
-          const state = resolveCardState({
-            managed,
-            managedStatus,
-            openElsewhere,
-          });
+          const openElsewhere = s.isActive && !attached;
+          const state = resolveCardState(managedStatus, openElsewhere);
           const cardClass = [
             "session-card",
             selectedId === s.id ? "selected" : "",
-            state !== "idle" ? `state-${state}` : "",
+            `state-${state}`,
           ]
             .filter(Boolean)
             .join(" ");
+          const ctxPct = contextPct(
+            s.contextTokensUsed,
+            s.contextWindowTokens,
+          );
+          const ctxLevel =
+            ctxPct >= 90 ? "high" : ctxPct >= 70 ? "mid" : "ok";
+          const ctxStyle = {
+            "--ctx-pct": `${Math.min(100, Math.max(0, ctxPct))}%`,
+          } as CSSProperties;
           return (
             <div
               key={s.id}
               className={cardClass}
               onClick={() => onSelect(s.id)}
-              aria-busy={state === "running" ? true : undefined}
+              title={stateTitle(state)}
+              aria-busy={
+                state === "running" || state === "starting"
+                  ? true
+                  : undefined
+              }
             >
-              <div className="card-top" title={stateTitle(state)}>
-                <span className="card-title" title={s.title}>
+              {state !== "idle" && (
+                <div className="card-status">
+                  <span className="card-status-text">{stateLabel(state)}</span>
+                </div>
+              )}
+              <div className="card-body">
+                <div className="card-title" title={s.title}>
                   {s.title}
-                </span>
-                {state === "awaiting" && (
-                  <span className="card-await-label">Waiting</span>
-                )}
-              </div>
-              <div className="card-meta">
-                <span title={s.cwd}>{projectName(s.cwd)}</span>
-                {s.headBranch && (
-                  <span className="branch">⎇ {s.headBranch}</span>
-                )}
-                <span className="time">
-                  {formatRelative(s.lastActiveAt ?? s.updatedAt)}
-                </span>
-              </div>
-              <div className="card-metrics">
-                <span
-                  title={
-                    !s.tokenUsageAvailable
-                      ? "Completed-turn token usage is not available for this session"
-                      : s.tokenUsageIncomplete
-                      ? "Approximate completed-turn total tokens; one or more turns may be incomplete"
-                      : "Completed-turn total tokens (input + output, including cached reads)"
-                  }
-                >
-                  {!s.tokenUsageAvailable
-                    ? "? tok"
-                    : `${s.tokenUsageIncomplete ? "≈" : ""}${formatTokens(s.totalTokens)} tok`}
-                </span>
-                <span>
-                  {contextPct(s.contextTokensUsed, s.contextWindowTokens)}% ctx
-                </span>
-                {(s.agentLinesAdded > 0 || s.agentLinesRemoved > 0) && (
-                  <span className="diff-stat">
-                    +{s.agentLinesAdded}/−{s.agentLinesRemoved}
+                </div>
+                <div className="card-meta">
+                  <span title={s.cwd}>{projectName(s.cwd)}</span>
+                  {s.headBranch && (
+                    <span className="branch">⎇ {s.headBranch}</span>
+                  )}
+                  <span className="time">
+                    {formatRelative(s.lastActiveAt ?? s.updatedAt)}
                   </span>
-                )}
+                </div>
+                <div className="card-metrics">
+                  <span
+                    className="card-chip"
+                    title={
+                      !s.tokenUsageAvailable
+                        ? "Completed-turn token usage is not available for this session"
+                        : s.tokenUsageIncomplete
+                          ? "Approximate completed-turn total tokens; one or more turns may be incomplete"
+                          : "Completed-turn total tokens (input + output, including cached reads)"
+                    }
+                  >
+                    {!s.tokenUsageAvailable
+                      ? "? tok"
+                      : `${s.tokenUsageIncomplete ? "≈" : ""}${formatTokens(s.totalTokens)} tok`}
+                  </span>
+                  <span
+                    className={`card-chip card-chip-ctx level-${ctxLevel}`}
+                    style={ctxStyle}
+                    title={`Context ${ctxPct}% (${formatTokens(s.contextTokensUsed, { decimals: false })} / ${formatTokens(s.contextWindowTokens, { decimals: false })})`}
+                  >
+                    {ctxPct}% ctx
+                  </span>
+                  {(s.agentLinesAdded > 0 || s.agentLinesRemoved > 0) && (
+                    <span className="card-chip diff-stat">
+                      +{s.agentLinesAdded}/−{s.agentLinesRemoved}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -159,55 +179,4 @@ export function SessionList({
   );
 }
 
-/**
- * Visual run-state for a task card.
- * - running: PinkCode ACP mid-turn only (true "agent is working")
- * - open: Grok Build (or other host) process still open — not mid-turn
- * - awaiting / live: PinkCode attached
- */
-type CardState = "running" | "awaiting" | "live" | "open" | "idle";
 
-function resolveCardState(opts: {
-  managed: boolean;
-  managedStatus?: ManagedStatus;
-  openElsewhere: boolean;
-}): CardState {
-  if (opts.managed) {
-    if (opts.managedStatus === "running") return "running";
-    if (opts.managedStatus === "awaitingPermission") return "awaiting";
-    return "live";
-  }
-  if (opts.openElsewhere) return "open";
-  return "idle";
-}
-
-/** Sort rank: lower = higher in list. */
-function rankCard(
-  session: SessionCard,
-  managedIds?: Set<string>,
-  statuses?: Record<string, ManagedStatus>,
-): number {
-  const id = session.id;
-  const managed = managedIds?.has(id) ?? false;
-  const st = statuses?.[id];
-  if (st === "running") return 0;
-  if (st === "awaitingPermission") return 1;
-  if (managed) return 2;
-  if (session.isActive) return 3;
-  return 4;
-}
-
-function stateTitle(state: CardState): string {
-  switch (state) {
-    case "running":
-      return "Agent is working on this task in PinkCode";
-    case "open":
-      return "Open in Grok Build — send a message here to connect";
-    case "awaiting":
-      return "Waiting for permission or input";
-    case "live":
-      return "Connected in PinkCode";
-    case "idle":
-      return "Idle";
-  }
-}

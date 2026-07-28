@@ -37,18 +37,26 @@ fn run_loop(app: AppHandle) {
     }) {
         Ok(w) => w,
         Err(e) => {
-            eprintln!("[pinkcode] sessions watcher unavailable: {e}");
+            tracing::error!(error = %e, "sessions watcher unavailable");
             return;
         }
     };
 
     if let Err(e) = watcher.watch(&sessions_dir, RecursiveMode::Recursive) {
-        eprintln!("[pinkcode] watch {} failed: {e}", sessions_dir.display());
+        tracing::error!(
+            path = %sessions_dir.display(),
+            error = %e,
+            "watch sessions dir failed"
+        );
     }
     // Non-recursive on ~/.grok so active_sessions.json creates/writes are seen
     // without re-walking the whole sessions tree twice.
     if let Err(e) = watcher.watch(&home, RecursiveMode::NonRecursive) {
-        eprintln!("[pinkcode] watch {} failed: {e}", home.display());
+        tracing::error!(
+            path = %home.display(),
+            error = %e,
+            "watch grok home failed"
+        );
     }
 
     let mut pending: HashMap<(String, Option<String>), (Instant, String)> = HashMap::new();
@@ -76,7 +84,7 @@ fn run_loop(app: AppHandle) {
                 }
             }
             Ok(Err(e)) => {
-                eprintln!("[pinkcode] watch error: {e}");
+                tracing::warn!(error = %e, "sessions watch error");
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 let ready: Vec<_> = pending

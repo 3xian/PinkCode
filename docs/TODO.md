@@ -26,8 +26,3 @@
 - [ ] Distinguish channel send failures from receive failures
 - [ ] Reconnect when the ACP transport dies
 - [ ] Add fallback paths for operations whose primary implementation fails
-
-## Infrastructure
-
-- [ ] Replace `eprintln!` with structured `tracing`
-- [ ] Layered configuration — environment → global → project → session, with atomic writes

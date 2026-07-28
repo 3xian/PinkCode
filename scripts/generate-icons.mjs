@@ -7,7 +7,8 @@
  *   - Windows: same subject proportion as default (height fill 0.66), but
  *       composed at 2048 and processed for taskbar: soft gradient art looks
  *       mushy at 16–48px, so small rungs get a hardened plate + solid mark
- *       alpha. ICO puts 32px first and stores ≤128 as BMP DIB.
+ *       alpha. ICO stores ≤128 as BMP DIB; entry0 is 16 for Tauri fallback.
+ *       On Windows, runtime also reloads multi-size PE icons (see windows_icons.rs).
  */
 import sharp from "sharp";
 import {

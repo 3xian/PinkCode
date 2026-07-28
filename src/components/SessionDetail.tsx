@@ -37,6 +37,7 @@ import { PromptBar } from "./PromptBar";
 import { PromptQueue } from "./PromptQueue";
 import { ShellCard } from "./ShellPanel";
 import { TimelineRowChrome, timelineStackClass } from "./TimelineRow";
+import { TurnStatusBar } from "./TurnStatusBar";
 
 interface Props {
   detail: Detail | null;
@@ -305,6 +306,11 @@ export function SessionDetailView({
       </div>
 
       <PromptQueue controller={promptQueue} />
+      <TurnStatusBar
+        managed={managed}
+        timelineItems={timelineItems}
+        sessionIsActive={Boolean(card?.isActive)}
+      />
       <PromptBar
         managed={managed}
         busy={controlBusy}

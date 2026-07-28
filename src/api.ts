@@ -226,8 +226,13 @@ export async function listTaskPermissionModes(): Promise<
   return invoke<Record<string, PermissionMode>>("list_task_permission_modes");
 }
 
-export async function getLastSpawnPermissionMode(): Promise<PermissionMode> {
-  return invoke<PermissionMode>("get_last_spawn_permission_mode");
+/** New Task default mode. Pass `projectCwd` so project-layer config can apply. */
+export async function getLastSpawnPermissionMode(
+  projectCwd?: string | null,
+): Promise<PermissionMode> {
+  return invoke<PermissionMode>("get_last_spawn_permission_mode", {
+    projectCwd: projectCwd?.trim() || null,
+  });
 }
 
 /** Persist Grok Plan arming (Pending) for a session. */

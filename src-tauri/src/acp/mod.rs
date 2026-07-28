@@ -205,7 +205,9 @@ impl AcpClient {
     }
 
     pub fn session_load(&self, session_id: &str, cwd: &str) -> Result<SessionBootstrapResult> {
-        self.call(
+        // Grok `LoadSessionResponse` often omits `sessionId` (client already
+        // knows it). Normalize via the shared helper so the field is stable.
+        let mut result: SessionBootstrapResult = self.call(
             "session/load",
             &SessionLoadParams {
                 session_id: session_id.to_string(),
@@ -213,7 +215,9 @@ impl AcpClient {
                 mcp_servers: vec![],
             },
             Duration::from_secs(60),
-        )
+        )?;
+        result.session_id = result.resolve_session_id(Some(session_id));
+        Ok(result)
     }
 
     pub fn session_prompt(&self, session_id: &str, prompt_id: &str, text: &str) -> Result<Value> {
@@ -549,8 +553,24 @@ mod tests {
             "models": { "currentModelId": "grok-4" }
         }))
         .unwrap();
-        assert_eq!(r.session_id, "sess-1");
+        assert_eq!(r.session_id.as_deref(), Some("sess-1"));
         assert_eq!(r.current_model_id(), Some("grok-4"));
+        assert_eq!(r.resolve_session_id(None).as_deref(), Some("sess-1"));
+    }
+
+    #[test]
+    fn session_load_response_without_session_id_deserializes() {
+        // Mirrors Grok ACP `LoadSessionResponse::new()` — no sessionId field.
+        let r: SessionBootstrapResult = serde_json::from_value(json!({
+            "models": { "currentModelId": "grok-4" }
+        }))
+        .unwrap();
+        assert!(r.session_id.is_none());
+        assert_eq!(r.current_model_id(), Some("grok-4"));
+        assert_eq!(
+            r.resolve_session_id(Some("known-sess")).as_deref(),
+            Some("known-sess")
+        );
     }
 
     #[test]
@@ -608,7 +628,11 @@ mod tests {
         let res = client
             .session_new(&cwd.display().to_string())
             .expect("session/new");
-        assert!(!res.session_id.is_empty());
+        assert!(res
+            .session_id
+            .as_deref()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false));
         client.kill().expect("kill");
         assert!(notifs.load(Ordering::SeqCst) > 0);
     }

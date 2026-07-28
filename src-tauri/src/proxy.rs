@@ -28,7 +28,7 @@ fn proxy_from_env(reader: impl Fn(&str) -> Result<String, std::env::VarError>) -
             if looks_like_proxy_url(&val) {
                 return Some(val);
             }
-            eprintln!("[pinkcode] ignoring invalid {key}={val:?}");
+            tracing::warn!(key, value = %val, "ignoring invalid proxy env value");
         }
     }
     None

@@ -812,35 +812,14 @@ function App() {
   const defaultCwd = detail?.card.cwd ?? sessions[0]?.cwd ?? "";
 
   /**
-   * Sessions confirmed live (ready/running/awaitingPermission).
-   * Exclude `starting` so the task list only reorders after connect succeeds.
+   * sessionId → managed status for left-rail sort + run chrome.
+   * Includes `starting`; SessionList ranks it below mid-turn so connect
+   * does not jump the card to the top until work actually begins.
    */
-  const managedSessionIds = useMemo(
-    () =>
-      new Set(
-        managedList
-          .filter(
-            (m) =>
-              m.sessionId &&
-              m.status !== "stopped" &&
-              m.status !== "error" &&
-              m.status !== "starting",
-          )
-          .map((m) => m.sessionId as string),
-      ),
-    [managedList],
-  );
-
-  /** sessionId → managed status for left-rail run chrome. */
   const managedStatuses = useMemo(() => {
     const out: Record<string, (typeof managedList)[number]["status"]> = {};
     for (const m of managedList) {
-      if (
-        m.sessionId &&
-        m.status !== "stopped" &&
-        m.status !== "error" &&
-        m.status !== "starting"
-      ) {
+      if (m.sessionId && m.status !== "stopped" && m.status !== "error") {
         out[m.sessionId] = m.status;
       }
     }
@@ -884,7 +863,6 @@ function App() {
             onSelect={(id) => {
               setSelectedId(id);
             }}
-            managedSessionIds={managedSessionIds}
             managedStatuses={managedStatuses}
             onNewTask={() => setModalOpen(true)}
           />

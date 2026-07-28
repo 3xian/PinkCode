@@ -203,9 +203,10 @@ fn load_session_metadata(dir: &Path) -> Option<(Value, Option<Value>)> {
         Ok(Some(value)) => value,
         Ok(None) => return None,
         Err(error) => {
-            eprintln!(
-                "[sessions] skipping invalid {}: {error}",
-                summary_path.display()
+            tracing::warn!(
+                path = %summary_path.display(),
+                error = %error,
+                "skipping invalid session summary"
             );
             return None;
         }
@@ -215,9 +216,10 @@ fn load_session_metadata(dir: &Path) -> Option<(Value, Option<Value>)> {
     let signals = match load_json_value(&signals_path) {
         Ok(value) => value,
         Err(error) => {
-            eprintln!(
-                "[sessions] ignoring invalid {}: {error}",
-                signals_path.display()
+            tracing::warn!(
+                path = %signals_path.display(),
+                error = %error,
+                "ignoring invalid session signals"
             );
             None
         }

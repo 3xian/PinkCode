@@ -87,7 +87,7 @@ impl AcpGateway {
                         if line.trim().is_empty() {
                             continue;
                         }
-                        eprintln!("[grok-agent stderr] {line}");
+                        tracing::debug!(target: "grok_agent", "{line}");
                         let mut tail = stderr_tail.lock();
                         if tail.len() >= STDERR_TAIL_LINES {
                             tail.pop_front();
@@ -315,7 +315,11 @@ fn run_stdout_reader(
         let msg: Value = match serde_json::from_str(line) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("[acp] bad json: {e}; line={}", &line[..line.len().min(200)]);
+                tracing::warn!(
+                    error = %e,
+                    line = %&line[..line.len().min(200)],
+                    "ACP stdout line is not valid JSON"
+                );
                 continue;
             }
         };

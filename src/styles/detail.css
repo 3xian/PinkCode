@@ -18,7 +18,18 @@
   font-size: 20px;
   font-weight: 650;
   line-height: 1.3;
-  color: var(--title-selected);
+  /* Match rosepinetheme.com/palette “3 Variants & 15 Colours”:
+     rose → iris → foam gradient text */
+  background: linear-gradient(
+    90deg,
+    var(--accent) 0%,
+    var(--title-selected) 50%,
+    var(--live) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
   min-width: 0;
   max-width: 100%;
   /* Long titles: 2 lines then ellipsis — keeps header height stable */
@@ -335,7 +346,7 @@
 }
 
 .tl-item.kind-shell .shell-card-top {
-  padding: 0;
+  padding: 0 3.25rem 0 0; /* clear absolute clock; output stays full-width */
 }
 
 .tl-item.kind-shell .shell-cmd {
@@ -470,13 +481,16 @@
 .tl-body {
   min-width: 0;
   padding-top: 0;
-  padding-right: 48px;
+  /* Full width for body copy — no reserved column for the clock.
+     Only the first line (title / shell chrome) clears the absolute timestamp. */
+  padding-right: 0;
 }
 
 .tl-time {
   position: absolute;
   top: 5px;
   right: 2px;
+  z-index: 2;
   font-family: inherit;
   font-size: 10px;
   font-weight: 600;
@@ -506,7 +520,8 @@
   font-weight: 650;
   letter-spacing: 0.005em;
   color: var(--text);
-  padding-right: 4px;
+  /* Clear absolute HH:mm:ss clock; detail below uses full width */
+  padding-right: 3.25rem;
   font-size: 13px;
   line-height: 1.4;
 }
@@ -518,6 +533,8 @@
   word-break: break-word;
   font-size: 12.5px;
   line-height: 1.45;
+  /* Body text may use the full row width (under the clock’s x-band). */
+  padding-right: 0;
 }
 
 /* Copy: always visible, bottom-right of agent body */

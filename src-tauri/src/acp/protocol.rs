@@ -174,10 +174,15 @@ pub struct SessionModelsInfo {
 }
 
 /// Shared shape for `session/new` and `session/load` results.
+///
+/// ACP `session/new` returns `sessionId`. `session/load` (Grok
+/// `LoadSessionResponse`) often omits it — the client already knows the id —
+/// so the field is optional and callers should fall back to the request id.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionBootstrapResult {
-    pub session_id: String,
+    #[serde(default)]
+    pub session_id: Option<String>,
     #[serde(default)]
     pub models: Option<SessionModelsInfo>,
 }
@@ -187,6 +192,21 @@ impl SessionBootstrapResult {
         self.models
             .as_ref()
             .and_then(|m| m.current_model_id.as_deref())
+    }
+
+    /// Prefer response `sessionId`; if missing/empty, use `fallback` (load path).
+    pub fn resolve_session_id(&self, fallback: Option<&str>) -> Option<String> {
+        self.session_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                fallback
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+            })
     }
 }
 

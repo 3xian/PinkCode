@@ -1,0 +1,268 @@
+/* Turn status (activity strip attached above the composer).
+   Same horizontal inset / border / elevated fill as .prompt-composer.
+   Indicator: minimal arc / soft pulse — no multi-layer HUD chrome. */
+.turn-status {
+  --turn-accent: var(--live);
+  --turn-accent-rgb: var(--live-rgb);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  min-height: 30px;
+  margin: 0 18px;
+  padding: 8px 12px;
+  overflow: hidden;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  box-shadow: var(--inset-spec);
+  animation: turn-status-in 0.18s ease-out;
+}
+
+.turn-status.tone-muted,
+.turn-status.tone-wait {
+  --turn-accent: var(--live);
+  --turn-accent-rgb: var(--live-rgb);
+}
+
+.turn-status.tone-tool {
+  --turn-accent: var(--pine);
+  --turn-accent-rgb: var(--pine-rgb);
+}
+
+.turn-status.tone-danger {
+  --turn-accent: var(--danger);
+  --turn-accent-rgb: var(--danger-rgb);
+}
+
+.turn-status.tone-user {
+  --turn-accent: var(--title-selected);
+  --turn-accent-rgb: var(--title-selected-rgb);
+}
+
+.turn-status-left {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+}
+
+.turn-status-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.turn-status-hint {
+  font-size: 10px;
+  line-height: 1.25;
+  color: var(--text-muted);
+  opacity: 0.72;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-status.source-external {
+  background: color-mix(in srgb, var(--bg-elevated) 94%, var(--hl-low));
+}
+
+/* ── Minimal mark: thin arc (busy) or soft pulse (wait) ── */
+.turn-mark {
+  --mark-size: 13px;
+  position: relative;
+  flex-shrink: 0;
+  width: var(--mark-size);
+  height: var(--mark-size);
+  display: grid;
+  place-items: center;
+}
+
+.turn-mark-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgb(var(--turn-accent-rgb) / 0.18);
+  border-top-color: var(--turn-accent);
+  border-right-color: rgb(var(--turn-accent-rgb) / 0.45);
+  animation: turn-mark-spin 0.75s linear infinite;
+}
+
+.turn-mark-dot {
+  position: relative;
+  z-index: 1;
+  width: 3.5px;
+  height: 3.5px;
+  border-radius: 50%;
+  background: var(--turn-accent);
+  opacity: 0.9;
+}
+
+/* Wait / external: breathe instead of spin */
+.turn-mark.mode-wait .turn-mark-ring {
+  border-color: transparent;
+  background: rgb(var(--turn-accent-rgb) / 0.2);
+  animation: turn-mark-pulse 1.7s ease-in-out infinite;
+}
+
+.turn-mark.mode-wait .turn-mark-dot {
+  width: 5px;
+  height: 5px;
+  animation: turn-mark-dot-breathe 1.7s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgb(var(--turn-accent-rgb) / 0.35);
+}
+
+/* Cancel: slightly snappier */
+.turn-mark.mode-danger .turn-mark-ring {
+  animation-duration: 0.55s;
+}
+
+.turn-status.tone-muted .turn-status-label-main,
+.turn-status.tone-wait .turn-status-label-main {
+  color: var(--text-muted);
+}
+
+.turn-status.tone-tool .turn-status-label-detail {
+  color: var(--pine);
+}
+
+.turn-status.tone-tool .turn-status-label-main {
+  color: var(--text-muted);
+}
+
+.turn-status.tone-danger .turn-status-label-main {
+  color: var(--danger);
+}
+
+.turn-status.tone-user .turn-status-label-main {
+  color: var(--title-selected);
+}
+
+.turn-status-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-status-label-main {
+  font-weight: 500;
+  letter-spacing: 0.005em;
+}
+
+.turn-status-label-detail {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-weight: 500;
+  font-size: 11.5px;
+}
+
+.turn-status-phase {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--hl-low);
+  border: 1px solid transparent;
+}
+
+.turn-status-turn {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0.75;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+@keyframes turn-status-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes turn-mark-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes turn-mark-pulse {
+  0%,
+  100% {
+    transform: scale(0.82);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+}
+
+@keyframes turn-mark-dot-breathe {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-status {
+    animation: none;
+  }
+  .turn-mark-ring,
+  .turn-mark-dot {
+    animation: none !important;
+  }
+  .turn-mark.mode-wait .turn-mark-ring {
+    opacity: 0.55;
+    transform: none;
+  }
+  .turn-mark:not(.mode-wait) .turn-mark-ring {
+    /* Static open arc */
+    transform: rotate(-45deg);
+  }
+}
+
+/* Status strip + composer share one vertical card (no gap, no fade wash). */
+.turn-status + .prompt-bar {
+  padding-top: 0;
+}
+
+.turn-status + .prompt-bar::before {
+  content: none;
+}
+
+.turn-status + .prompt-bar .prompt-composer {
+  /* Continuous card with status: drop only the shared top edge / double inset.
+     Keep left / right / bottom border so the composer still reads as framed. */
+  border-top-color: transparent;
+  box-shadow: none;
+}
+
+/* Focus ring should still frame the whole stack when status is attached */
+.turn-status + .prompt-bar .prompt-composer:focus-within {
+  box-shadow: 0 0 0 1px var(--accent);
+}

@@ -2,15 +2,16 @@
 //!
 //! Stored under `~/.pinkcode/task_prefs.json` so permission mode and Plan
 //! arming survive restarts and re-attach, independent of Grok's own session files.
+//! This is the **session** layer of the layered config stack (see `config`).
 
 use crate::agent_types::PermissionMode;
+use crate::fs_atomic;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,9 +37,7 @@ static STORE: OnceLock<Store> = OnceLock::new();
 const PREFS_PRUNE_THRESHOLD: usize = 2_048;
 
 fn prefs_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".pinkcode")
+    crate::config::pinkcode_home()
 }
 
 fn store() -> &'static Store {
@@ -68,51 +67,7 @@ fn load_file(path: &Path) -> Result<TaskPrefsFile, String> {
 }
 
 fn save_locked(path: &Path, data: &TaskPrefsFile) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| format!("create prefs dir: {error}"))?;
-    }
-    let raw =
-        serde_json::to_string_pretty(data).map_err(|error| format!("serialize prefs: {error}"))?;
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
-    let tmp = path.with_extension(format!("json.tmp.{}.{}", std::process::id(), nonce));
-    fs::write(&tmp, raw).map_err(|error| format!("write {}: {error}", tmp.display()))?;
-    if let Err(error) = replace_file(&tmp, path) {
-        let _ = fs::remove_file(&tmp);
-        return Err(format!("replace {}: {error}", path.display()));
-    }
-    Ok(())
-}
-
-#[cfg(not(windows))]
-fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
-    fs::rename(source, target)
-}
-
-#[cfg(windows)]
-fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    extern "system" {
-        fn MoveFileExW(existing: *const u16, new_name: *const u16, flags: u32) -> i32;
-    }
-    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
-    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
-    let source_wide: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
-    let target_wide: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
-    let ok = unsafe {
-        MoveFileExW(
-            source_wide.as_ptr(),
-            target_wide.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if ok == 0 {
-        Err(std::io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    fs_atomic::write_json_atomic(path, data)
 }
 
 fn ensure_store_writable(store: &Store) -> Result<(), String> {
@@ -163,13 +118,30 @@ pub fn set_permission_mode(session_id: &str, mode: PermissionMode) -> Result<(),
     Ok(())
 }
 
-/// Mode used as the default in the New Task modal.
-pub fn last_spawn_mode() -> PermissionMode {
-    store()
-        .data
-        .lock()
-        .last_spawn_mode
-        .unwrap_or(PermissionMode::Default)
+/// Raw last-spawn seed without layered fallback (None if never set).
+pub fn last_spawn_mode_raw() -> Option<PermissionMode> {
+    store().data.lock().last_spawn_mode
+}
+
+/// Canonical permission mode: session prefs → last-spawn seed → layered config.
+///
+/// - `session_id`: when set, use that session's stored mode if present.
+/// - `project_cwd`: when set, project `.pinkcode/config.json` participates in
+///   the layered default (see [`crate::config::resolve`]).
+///
+/// New Task seed: `effective_permission_mode(None, project_cwd)`.
+/// Attach without request mode: `effective_permission_mode(Some(id), Some(cwd))`.
+pub fn effective_permission_mode(
+    session_id: Option<&str>,
+    project_cwd: Option<&Path>,
+) -> PermissionMode {
+    if let Some(id) = session_id {
+        if let Some(mode) = get_permission_mode(id) {
+            return mode;
+        }
+    }
+    last_spawn_mode_raw()
+        .unwrap_or_else(|| crate::config::resolve(project_cwd).default_permission_mode)
 }
 
 pub fn set_last_spawn_mode(mode: PermissionMode) -> Result<(), String> {

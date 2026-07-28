@@ -543,7 +543,8 @@ button.user-question-option:hover:not(:disabled),
 /* Server-authoritative prompt queue, directly above the composer. */
 .prompt-queue {
   flex-shrink: 0;
-  margin: 0 14px;
+  /* Align with `.prompt-bar` / `.turn-status` (18px) for one vertical stack */
+  margin: 0 18px;
   border: 1px solid var(--border);
   border-bottom: none;
   background: color-mix(in srgb, var(--bg-elevated) 88%, var(--accent-dim));
@@ -669,7 +670,8 @@ button.user-question-option:hover:not(:disabled),
 }
 
 /* Let the content above the composer fade into its background instead of
-   ending at a hard divider. */
+   ending at a hard divider. Hidden when turn-status is stacked above so
+   there is no frosted band between status and input. */
 .prompt-bar::before {
   content: "";
   position: absolute;

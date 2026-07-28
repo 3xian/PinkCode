@@ -235,7 +235,7 @@ impl AgentManager {
             mode == PermissionMode::Auto,
             permission_mode,
         ) {
-            eprintln!("[pinkcode] failed to send yolo_mode_changed notification: {e}");
+            tracing::warn!(error = %e, "failed to send yolo_mode_changed notification");
         }
     }
 
@@ -679,7 +679,7 @@ impl AgentManager {
             }
         };
         if let Err(error) = client.authenticate_if_available(&initialized) {
-            eprintln!("[pinkcode] ACP eager authentication failed; continuing: {error}");
+            tracing::warn!(error = %error, "ACP eager authentication failed; continuing");
         }
         Ok((info, client))
     }
@@ -790,7 +790,7 @@ impl AgentManager {
             if let Err(e) =
                 self.set_permission_mode(&req.handle_id, PermissionMode::BypassPermissions)
             {
-                eprintln!("[pinkcode] failed to activate YOLO mode: {e}");
+                tracing::warn!(error = %e, "failed to activate YOLO mode");
             }
         }
 
@@ -879,15 +879,17 @@ impl AgentManager {
             }
         };
 
-        let session_id = result.session_id.clone();
-        if session_id.is_empty() {
-            return Err(Self::fail_registered_agent(
-                &self.inner,
-                &handle_id,
-                &mut info,
-                "session/new missing sessionId".into(),
-            ));
-        }
+        let session_id = match result.resolve_session_id(None) {
+            Some(id) => id,
+            None => {
+                return Err(Self::fail_registered_agent(
+                    &self.inner,
+                    &handle_id,
+                    &mut info,
+                    "session/new missing sessionId".into(),
+                ));
+            }
+        };
 
         info.session_id = Some(session_id.clone());
         task_prefs::set_permission_mode(&session_id, permission_mode)?;
@@ -907,7 +909,7 @@ impl AgentManager {
             .filter(|s| !s.is_empty())
         {
             if let Err(e) = client.session_set_mode(&session_id, mode_id) {
-                eprintln!("[pinkcode] session/set_mode({mode_id}) after spawn failed: {e}");
+                tracing::warn!(mode_id, error = %e, "session/set_mode after spawn failed");
             }
         }
 
@@ -956,8 +958,9 @@ impl AgentManager {
         let permission_mode = match (req.permission_mode, req.always_approve) {
             (Some(m), _) => m,
             (None, Some(true)) => PermissionMode::BypassPermissions,
+            // Session prefs → last-spawn → layered config (project-aware).
             (None, Some(false)) | (None, None) => {
-                task_prefs::get_permission_mode(&session_id).unwrap_or(PermissionMode::Default)
+                task_prefs::effective_permission_mode(Some(&session_id), Some(Path::new(&cwd)))
             }
         };
         let always_approve = permission_mode.spawns_always_approve();
@@ -1223,8 +1226,9 @@ impl AgentManager {
                     thread::sleep(Duration::from_millis(50));
                 }
                 if !settled {
-                    eprintln!(
-                        "[pinkcode] forcing agent shutdown after cancellation grace period: {handle_id}"
+                    tracing::warn!(
+                        handle_id,
+                        "forcing agent shutdown after cancellation grace period"
                     );
                 }
             }

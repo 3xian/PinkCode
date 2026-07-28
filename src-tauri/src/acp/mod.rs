@@ -33,6 +33,10 @@ pub enum AcpError {
     },
     #[error("timeout waiting for response to {0}")]
     Timeout(String),
+    #[error("ACP channel send failed: {0}")]
+    SendFailed(String),
+    #[error("ACP channel receive failed: {0}")]
+    RecvFailed(String),
     #[error("ACP transport closed: {0}")]
     TransportClosed(String),
     #[error("{0}")]
@@ -42,6 +46,14 @@ pub enum AcpError {
 pub type Result<T> = std::result::Result<T, AcpError>;
 
 impl AcpError {
+    pub fn transport_failure_tag(&self) -> Option<&'static str> {
+        match self {
+            Self::SendFailed(_) => Some("send_failed"),
+            Self::RecvFailed(_) | Self::TransportClosed(_) => Some("recv_failed"),
+            _ => None,
+        }
+    }
+
     /// Stable, actionable text for UI surfaces. The error itself retains the
     /// original protocol fields so logs and callers can still inspect them.
     pub fn user_message(&self) -> String {
@@ -426,11 +438,11 @@ mod tests {
 
         assert!(pending.lock().is_empty());
         match rx1.recv().expect("first waiter") {
-            Err(AcpError::TransportClosed(msg)) => assert_eq!(msg, "closed"),
+            Err(AcpError::RecvFailed(msg)) => assert_eq!(msg, "closed"),
             other => panic!("unexpected {other:?}"),
         }
         match rx2.recv().expect("second waiter") {
-            Err(AcpError::TransportClosed(msg)) => assert_eq!(msg, "closed"),
+            Err(AcpError::RecvFailed(msg)) => assert_eq!(msg, "closed"),
             other => panic!("unexpected {other:?}"),
         }
     }
@@ -486,6 +498,22 @@ mod tests {
         assert_eq!(
             user_facing_rpc_message(-32603, "Internal error", None),
             "Grok Build returned an internal error (RPC -32603)."
+        );
+    }
+
+    #[test]
+    fn transport_failure_classification_preserves_direction() {
+        assert_eq!(
+            AcpError::SendFailed("closed".into()).transport_failure_tag(),
+            Some("send_failed")
+        );
+        assert_eq!(
+            AcpError::RecvFailed("closed".into()).transport_failure_tag(),
+            Some("recv_failed")
+        );
+        assert_eq!(
+            AcpError::Timeout("method".into()).transport_failure_tag(),
+            None
         );
     }
 
@@ -571,6 +599,15 @@ mod tests {
             r.resolve_session_id(Some("known-sess")).as_deref(),
             Some("known-sess")
         );
+    }
+
+    #[test]
+    fn session_load_response_reads_running_prompt_fallback() {
+        let r: SessionBootstrapResult = serde_json::from_value(json!({
+            "_meta": { "x.ai/runningPromptId": "prompt-live" }
+        }))
+        .unwrap();
+        assert_eq!(r.running_prompt_id(), Some("prompt-live"));
     }
 
     #[test]

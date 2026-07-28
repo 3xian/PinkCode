@@ -3,13 +3,13 @@ import {
   DISK_HANDLE_ID,
   LOCAL_HANDLE_ID,
   capShellOutput,
+  createTimelineReducerState,
   hydrateLiveFromDiskUpdates,
   mergeDiskLiveIntoMap,
   mergeTimelineItems,
   reduceAgentUpdate,
   reduceShellUpdate,
   settleStreamingItems,
-  type ShellIndexes,
 } from "./liveTimeline";
 import type { TimelineItem } from "../types";
 
@@ -146,8 +146,45 @@ describe("live timeline reducer", () => {
     expect(items[0].detail ?? "").not.toMatch(/^call-/);
   });
 
+  it("keeps suppressed control-plane tools hidden through title-less completion", () => {
+    const toolCallId = "call-todo-1";
+    const updates = [
+      {
+        params: {
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId,
+            title: "todo_write",
+            rawInput: { variant: "TodoWrite" },
+          },
+        },
+      },
+      {
+        params: {
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId,
+            title: "Updating plan",
+            rawInput: { variant: "TodoWrite" },
+          },
+        },
+      },
+      {
+        params: {
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId,
+            status: "completed",
+          },
+        },
+      },
+    ];
+
+    expect(hydrateLiveFromDiskUpdates(updates, "sess-todo")).toEqual([]);
+  });
+
   it("enriches turn_completed with elapsed since last user card", () => {
-    const shells: ShellIndexes = new Map();
+    const shells = createTimelineReducerState();
     let map = new Map<string, TimelineItem[]>();
     map = reduceAgentUpdate(
       map,
@@ -188,7 +225,7 @@ describe("live timeline reducer", () => {
   });
 
   it("timeline elapsed always owns turn_completed title", () => {
-    const shells: ShellIndexes = new Map();
+    const shells = createTimelineReducerState();
     let map = new Map<string, TimelineItem[]>();
     map = reduceAgentUpdate(
       map,
@@ -332,7 +369,7 @@ describe("live timeline reducer", () => {
   });
 
   it("keeps same-timestamp events distinct and gives mirrors stable ids", () => {
-    const indexes: ShellIndexes = new Map();
+    const indexes = createTimelineReducerState();
     let state = reduceAgentUpdate(
       new Map(),
       {
@@ -365,7 +402,7 @@ describe("live timeline reducer", () => {
   });
 
   it("coalesces text chunks and settles them", () => {
-    const indexes: ShellIndexes = new Map();
+    const indexes = createTimelineReducerState();
     let state = reduceAgentUpdate(
       new Map(),
       {
@@ -407,7 +444,7 @@ describe("live timeline reducer", () => {
   });
 
   it("keeps a coalesced row identity stable while text is streaming", () => {
-    const indexes: ShellIndexes = new Map();
+    const indexes = createTimelineReducerState();
     let state = reduceAgentUpdate(
       new Map(),
       {
@@ -451,7 +488,7 @@ describe("live timeline reducer", () => {
   });
 
   it("merges shell snapshots without regressing output", () => {
-    const indexes: ShellIndexes = new Map();
+    const indexes = createTimelineReducerState();
     let state = reduceShellUpdate(
       new Map(),
       {
@@ -495,7 +532,7 @@ describe("live timeline reducer", () => {
   });
 
   it("appends shell deltas without replacing prior output", () => {
-    const indexes: ShellIndexes = new Map();
+    const indexes = createTimelineReducerState();
     let state = reduceShellUpdate(
       new Map(),
       {

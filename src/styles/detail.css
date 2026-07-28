@@ -243,7 +243,7 @@
 .timeline-filter-chip {
   --chip-accent: var(--text-muted);
   --chip-bg: transparent;
-  --chip-bg-active: var(--kind-plan-dim);
+  --chip-bg-active: var(--kind-user-dim);
   --chip-fg-active: var(--text);
   border: none;
   background: var(--chip-bg);
@@ -317,11 +317,6 @@
   --chip-bg-active: color-mix(in srgb, var(--kind-event) 38%, transparent);
   --chip-fg-active: var(--text);
 }
-.timeline-filter-chip.filter-plan {
-  --chip-accent: var(--kind-plan);
-  --chip-bg-active: color-mix(in srgb, var(--kind-plan) 38%, transparent);
-  --chip-fg-active: var(--text);
-}
 .timeline-filter-chip.filter-unknown {
   --chip-accent: var(--kind-unknown);
   --chip-bg-active: color-mix(in srgb, var(--kind-unknown) 32%, transparent);
@@ -329,7 +324,7 @@
 }
 .timeline-filter-chip.filter-all {
   --chip-accent: var(--text-muted);
-  --chip-bg-active: var(--kind-plan-dim);
+  --chip-bg-active: var(--kind-user-dim);
   --chip-fg-active: var(--text);
 }
 
@@ -429,6 +424,19 @@
   margin-top: 0;
   padding-top: 4px;
   border-top: none;
+}
+
+/*
+ * Filtering must not visually merge entries that were separated by other
+ * activity in the full stream. Give each surviving kind-group enough space
+ * to read as a distinct moment while preserving compact same-kind runs.
+ */
+.timeline.is-filtered .tl-item:not(.tl-stack-continue) {
+  margin-top: 8px;
+}
+
+.timeline.is-filtered .tl-item:not(.tl-stack-continue):first-child {
+  margin-top: 0;
 }
 
 /* Group end: a little breathing room before the next separator */
@@ -535,6 +543,14 @@
   line-height: 1.45;
   /* Body text may use the full row width (under the clock’s x-band). */
   padding-right: 0;
+}
+
+/* Grok Build renders prompts and assistant output as the block body, without
+   redundant "User" / "Agent" headers above the content. */
+.tl-conversation-body {
+  margin-top: 0;
+  color: var(--text);
+  font-size: 13px;
 }
 
 /* Copy: always visible, bottom-right of agent body */
@@ -787,15 +803,10 @@
   color: color-mix(in srgb, var(--kind-event) 40%, var(--text));
 }
 
-.tl-item.kind-plan {
-  --tl-kind: var(--kind-plan);
-}
-
 .tl-item.kind-unknown {
   --tl-kind: var(--kind-unknown);
 }
 
-.tl-item.kind-plan .tl-detail,
 .tl-item.kind-event .tl-detail {
   white-space: pre-wrap;
   font-family: var(--mono);

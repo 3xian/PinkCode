@@ -12,6 +12,7 @@ import type { LocalSlashItem } from "../utils/localSlash";
 import { describeUpdate, extractUpdateTsMs } from "../utils/format";
 import {
   LOCAL_HANDLE_ID,
+  createTimelineReducerState,
   hydrateLiveFromDiskUpdates,
   mergeDiskLiveIntoMap,
   mergeTimelineItems,
@@ -163,8 +164,7 @@ export function useAgentEvents(
     // smooth window drag on Windows when agents stream many tiny chunks.
     let liveBuf: Map<string, TimelineItem[]> | null = null;
     let liveRaf = 0;
-    /** toolCallId → list index for O(1) shell merge when list is long. */
-    const shellIndexByKey = new Map<string, Map<string, number>>();
+    const timelineReducerState = createTimelineReducerState();
 
     const flushLive = () => {
       liveRaf = 0;
@@ -263,7 +263,7 @@ export function useAgentEvents(
               nextId: () => `${now}-${seq.current++}`,
               sourceEventId: e.payload.eventId,
             },
-            shellIndexByKey,
+            timelineReducerState,
           ),
         );
       });
@@ -304,7 +304,7 @@ export function useAgentEvents(
       const u6 = await listen<ShellEntry>("agent-shell", (e) => {
         if (cancelled) return;
         scheduleLive((prev) =>
-          reduceShellUpdate(prev, e.payload, shellIndexByKey),
+          reduceShellUpdate(prev, e.payload, timelineReducerState),
         );
       });
       if (!cancelled) {
@@ -320,7 +320,8 @@ export function useAgentEvents(
       if (liveRaf) window.cancelAnimationFrame(liveRaf);
       liveRaf = 0;
       liveBuf = null;
-      shellIndexByKey.clear();
+      timelineReducerState.shellIndexes.clear();
+      timelineReducerState.suppressedToolIds.clear();
       unsubs.forEach((u) => u());
     };
   }, []);

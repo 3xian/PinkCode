@@ -266,7 +266,6 @@ export function formatTurnCompletedTitle(
 function formatTurnCompletedDetail(
   stopReason: string,
   agentResult: string | undefined,
-  usageParts: string[],
 ): string | undefined {
   const stop = normalizeStopReason(stopReason);
   const parts: string[] = [];
@@ -288,7 +287,6 @@ function formatTurnCompletedDetail(
   ) {
     parts.push(agentResult);
   }
-  parts.push(...usageParts);
   return parts.length ? parts.join(" · ") : undefined;
 }
 
@@ -328,11 +326,71 @@ export function isShellToolUpdate(inner: Record<string, unknown>): boolean {
   return rawOutput?.type === "Bash";
 }
 
+/**
+ * Grok Build keeps control-plane tools out of scrollback because their state is
+ * represented by dedicated UI (todo/task/goal/workflow panes and blocks).
+ */
+export function isGrokScrollbackSuppressedTool(
+  inner: Record<string, unknown>,
+): boolean {
+  const rawInput = inner.rawInput as Record<string, unknown> | undefined;
+  const meta = extractToolMeta(inner);
+  const rawTitle = String(inner.title ?? "").trim();
+  const name = String(meta.name ?? "").trim();
+  const variant = String(
+    rawInput?.variant ??
+      (meta.input as Record<string, unknown> | undefined)?.variant ??
+      "",
+  ).trim();
+  const identifiers = [rawTitle, name];
+
+  if (
+    identifiers.some((value) =>
+      ["todo_write", "TodoWrite", "Updating plan"].includes(value),
+    ) ||
+    variant === "TodoWrite"
+  ) {
+    return true;
+  }
+  if (
+    identifiers.some((value) =>
+      ["task", "Task", "spawn_subagent"].includes(value),
+    ) ||
+    variant === "Task"
+  ) {
+    return true;
+  }
+  if (
+    identifiers.some(
+      (value) => value === "update_goal" || value.startsWith("Goal:"),
+    ) ||
+    variant === "UpdateGoal" ||
+    variant === "WorkflowSignal"
+  ) {
+    return true;
+  }
+  if (
+    identifiers.some((value) => value.startsWith("scheduler_")) ||
+    variant.startsWith("Scheduler")
+  ) {
+    return true;
+  }
+
+  const isWorkflow =
+    identifiers.includes("workflow") || variant === "Workflow";
+  const validateOnly =
+    rawTitle.startsWith("Validating workflow") ||
+    rawInput?.validate_only === true;
+  return isWorkflow && !validateOnly;
+}
+
 /** Best-effort parse of ACP session/update stream for timeline display. */
 export function describeUpdate(update: unknown): {
   kind: string;
   title: string;
   detail?: string;
+  /** Grok Build does not render this protocol/control-plane update in scrollback. */
+  hidden?: boolean;
   /** True when this is a text stream chunk (merge with previous same kind). */
   coalesce?: boolean;
   toolCallId?: string;
@@ -404,10 +462,12 @@ export function describeUpdate(update: unknown): {
       const toolCallId =
         (inner.toolCallId as string | undefined) ?? undefined;
       const parts = formatToolCardParts(inner);
+      const hidden = isGrokScrollbackSuppressedTool(inner);
       return {
         kind: "tool",
         title: parts.title,
         detail: parts.detail,
+        hidden,
         toolCallId,
         toolBase: parts.baseTitle,
         toolStatus: parts.status,
@@ -418,29 +478,10 @@ export function describeUpdate(update: unknown): {
       };
     }
     case "plan": {
-      const entries = Array.isArray(inner.entries)
-        ? (inner.entries as Array<Record<string, unknown>>)
-        : [];
-      const lines = entries.map((e) => {
-        const status = String(e.status ?? "pending");
-        const mark =
-          status === "completed"
-            ? "✓"
-            : status === "in_progress"
-              ? "→"
-              : status === "failed" || status === "blocked"
-                ? "!"
-                : "·";
-        return `${mark} ${String(e.content ?? e.title ?? "").trim()}`;
-      });
-      const done = entries.filter((e) => e.status === "completed").length;
       return {
         kind: "plan",
-        title:
-          entries.length > 0
-            ? `Plan · ${done}/${entries.length}`
-            : "Plan update",
-        detail: lines.filter(Boolean).join("\n") || undefined,
+        title: "Plan update",
+        hidden: true,
       };
     }
     case "turn_completed": {
@@ -455,22 +496,6 @@ export function describeUpdate(update: unknown): {
           : agentResultRaw != null
             ? String(agentResultRaw).trim()
             : undefined;
-      const usage = (inner.usage ?? {}) as Record<string, unknown>;
-      const total = numField(usage, "totalTokens", "total_tokens");
-      const inTok = numField(usage, "inputTokens", "input_tokens");
-      const outTok = numField(usage, "outputTokens", "output_tokens");
-      const turns = numField(
-        usage,
-        "numTurns",
-        "num_turns",
-      ) || numField(usage, "modelCalls", "model_calls");
-      const usageParts: string[] = [];
-      if (total > 0) {
-        usageParts.push(
-          `${formatTokensShort(total)} tok (in ${formatTokensShort(inTok)} / out ${formatTokensShort(outTok)})`,
-        );
-      }
-      if (turns > 0) usageParts.push(`${turns} model calls`);
       // Title without elapsed; reducer applies last-user → now wall-clock.
       return {
         kind: "event",
@@ -478,7 +503,6 @@ export function describeUpdate(update: unknown): {
         detail: formatTurnCompletedDetail(
           stop,
           agentResult || undefined,
-          usageParts,
         ),
         turnStopReason: stop,
       };
@@ -488,7 +512,7 @@ export function describeUpdate(update: unknown): {
       const auto = inner.auto === true;
       return {
         kind: "event",
-        title: auto ? "Session recap (auto)" : "Session recap",
+        title: auto ? "Recap (auto)" : "Recap",
         detail: summary || undefined,
       };
     }
@@ -503,11 +527,13 @@ export function describeUpdate(update: unknown): {
             : undefined;
       return {
         kind: "event",
-        title: "Auto-compact completed",
+        title: "Context compacted",
         detail:
-          before || after
-            ? `${formatTokensShort(before)} → ${formatTokensShort(after)} tok${preview ? `\n${preview}` : ""}`
-            : preview,
+          before > 0
+            ? `${formatTokensShort(before)} → ${formatTokensShort(after)} tokens${preview ? `\n${preview}` : ""}`
+            : after > 0
+              ? `→ ${formatTokensShort(after)} tokens${preview ? `\n${preview}` : ""}`
+              : preview,
       };
     }
     case "compaction_checkpoint": {
@@ -519,8 +545,8 @@ export function describeUpdate(update: unknown): {
       return {
         kind: "event",
         title: id ? `Compaction checkpoint · ${id}…` : "Compaction checkpoint",
-        detail:
-          typeof idx === "number" ? `At prompt index ${idx}` : undefined,
+        detail: typeof idx === "number" ? `At prompt index ${idx}` : undefined,
+        hidden: true,
       };
     }
     case "rewind_marker": {
@@ -528,8 +554,8 @@ export function describeUpdate(update: unknown): {
       return {
         kind: "event",
         title: "Rewind marker",
-        detail:
-          typeof idx === "number" ? `Target prompt index ${idx}` : undefined,
+        detail: typeof idx === "number" ? `Target prompt index ${idx}` : undefined,
+        hidden: true,
       };
     }
     case "available_commands_update": {

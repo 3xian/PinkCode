@@ -128,7 +128,6 @@ export type TimelineFilterKind =
   | "thought"
   | "tool"
   | "shell"
-  | "plan"
   | "event"
   | "unknown";
 

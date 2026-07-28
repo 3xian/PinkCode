@@ -74,6 +74,7 @@ impl AcpGateway {
 
         let child = Arc::new(Mutex::new(Some(child)));
         let pending: Arc<Mutex<HashMap<u64, PendingEntry>>> = Arc::new(Mutex::new(HashMap::new()));
+        let close_reported = Arc::new(AtomicBool::new(false));
         let stderr_tail: Arc<Mutex<VecDeque<String>>> =
             Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_TAIL_LINES)));
 
@@ -114,6 +115,7 @@ impl AcpGateway {
         let stderr_for_close = Arc::clone(&stderr_tail);
         let reverse_dispatch = Arc::clone(&on_notify);
         let close_notify = Arc::clone(&on_notify);
+        let close_reported_reader = Arc::clone(&close_reported);
         thread::Builder::new()
             .name("acp-stdout".into())
             .spawn(move || {
@@ -124,6 +126,7 @@ impl AcpGateway {
                     notify_tx,
                     reverse_dispatch,
                     close_notify,
+                    close_reported_reader,
                 );
             })
             .map_err(|e| AcpError::Other(format!("spawn stdout thread: {e}")))?;
@@ -131,10 +134,19 @@ impl AcpGateway {
         let (cmd_tx, cmd_rx) = mpsc::sync_channel::<GatewayCmd>(CMD_QUEUE_CAPACITY);
         let pending_writer = Arc::clone(&pending);
         let child_for_kill = Arc::clone(&child);
+        let close_notify = Arc::clone(&on_notify);
+        let close_reported_writer = Arc::clone(&close_reported);
         thread::Builder::new()
             .name("acp-gateway".into())
             .spawn(move || {
-                run_gateway(stdin, cmd_rx, pending_writer, child_for_kill);
+                run_gateway(
+                    stdin,
+                    cmd_rx,
+                    pending_writer,
+                    child_for_kill,
+                    close_notify,
+                    close_reported_writer,
+                );
             })
             .map_err(|e| AcpError::Other(format!("spawn gateway thread: {e}")))?;
 
@@ -157,7 +169,7 @@ impl AcpGateway {
                 reply: reply_tx,
                 token: Arc::clone(&token),
             })
-            .map_err(|_| AcpError::TransportClosed("ACP gateway command channel closed".into()))?;
+            .map_err(|_| AcpError::SendFailed("ACP gateway command channel closed".into()))?;
         match reply_rx.recv_timeout(timeout) {
             Ok(r) => r,
             Err(RecvTimeoutError::Timeout) => {
@@ -168,7 +180,7 @@ impl AcpGateway {
                 let _ = self.cmd_tx.try_send(GatewayCmd::Abandon { token });
                 Err(AcpError::Timeout(method.to_string()))
             }
-            Err(RecvTimeoutError::Disconnected) => Err(AcpError::TransportClosed(
+            Err(RecvTimeoutError::Disconnected) => Err(AcpError::RecvFailed(
                 "ACP gateway dropped request reply".into(),
             )),
         }
@@ -181,10 +193,10 @@ impl AcpGateway {
                 line,
                 reply: reply_tx,
             })
-            .map_err(|_| AcpError::TransportClosed("ACP gateway command channel closed".into()))?;
+            .map_err(|_| AcpError::SendFailed("ACP gateway command channel closed".into()))?;
         reply_rx
             .recv()
-            .map_err(|_| AcpError::TransportClosed("ACP gateway dropped write reply".into()))?
+            .map_err(|_| AcpError::RecvFailed("ACP gateway dropped write reply".into()))?
     }
 
     pub fn kill(&self) -> Result<()> {
@@ -212,6 +224,8 @@ fn run_gateway(
     cmd_rx: Receiver<GatewayCmd>,
     pending: Arc<Mutex<HashMap<u64, PendingEntry>>>,
     child: Arc<Mutex<Option<Child>>>,
+    close_notify: NotifyFn,
+    close_reported: Arc<AtomicBool>,
 ) {
     let mut next_id: u64 = 10_000; // high start avoids agent-issued id collisions
 
@@ -241,12 +255,19 @@ fn run_gateway(
                 };
 
                 if let Err(e) = writeln!(stdin, "{line}").and_then(|_| stdin.flush()) {
+                    let message = format!("ACP stdin write failed: {e}");
                     // Caller may already have timed out — only surface Io if still waiting.
                     if !token.load(Ordering::SeqCst) {
-                        let _ = reply.send(Err(AcpError::Io(e)));
+                        let _ = reply.send(Err(AcpError::SendFailed(message.clone())));
                     }
                     // stdin is dead — fail everyone and exit
-                    fail_all_pending(&pending, "ACP stdin write failed");
+                    fail_all_pending_send(&pending, &message);
+                    report_transport_closed(
+                        &close_notify,
+                        &close_reported,
+                        &message,
+                        "send_failed",
+                    );
                     break;
                 }
 
@@ -274,18 +295,22 @@ fn run_gateway(
                     .retain(|_, entry| !Arc::ptr_eq(&entry.token, &token));
             }
             GatewayCmd::Write { line, reply } => {
-                let result = writeln!(stdin, "{line}")
-                    .and_then(|_| stdin.flush())
-                    .map_err(AcpError::Io);
-                if result.is_err() {
-                    let _ = reply.send(result);
-                    fail_all_pending(&pending, "ACP stdin write failed");
+                if let Err(error) = writeln!(stdin, "{line}").and_then(|_| stdin.flush()) {
+                    let message = format!("ACP stdin write failed: {error}");
+                    let _ = reply.send(Err(AcpError::SendFailed(message.clone())));
+                    fail_all_pending_send(&pending, &message);
+                    report_transport_closed(
+                        &close_notify,
+                        &close_reported,
+                        &message,
+                        "send_failed",
+                    );
                     break;
                 }
                 let _ = reply.send(Ok(()));
             }
             GatewayCmd::Kill { reply } => {
-                fail_all_pending(&pending, "ACP client killed");
+                fail_all_pending_receive(&pending, "ACP client killed");
                 let _ = reply.send(kill_child(&child));
                 break;
             }
@@ -293,7 +318,7 @@ fn run_gateway(
     }
 
     // Channel closed (all AcpGateway handles dropped) — reap process.
-    fail_all_pending(&pending, "ACP gateway stopped");
+    fail_all_pending_receive(&pending, "ACP gateway stopped");
     let _ = kill_child(&child);
 }
 
@@ -304,6 +329,7 @@ fn run_stdout_reader(
     notify_tx: SyncSender<Value>,
     reverse_dispatch: NotifyFn,
     close_notify: NotifyFn,
+    close_reported: Arc<AtomicBool>,
 ) {
     let reader = BufReader::new(stdout);
     for line in reader.lines() {
@@ -367,11 +393,8 @@ fn run_stdout_reader(
     thread::sleep(Duration::from_millis(50));
     let reason = transport_closed_message(&stderr_tail);
 
-    close_notify(json!({
-        "method": "_pinkcode/transport_closed",
-        "params": { "reason": reason }
-    }));
-    fail_all_pending(&pending, &reason);
+    report_transport_closed(&close_notify, &close_reported, &reason, "recv_failed");
+    fail_all_pending_receive(&pending, &reason);
 }
 
 fn decode_rpc_response(resp: Value) -> std::result::Result<Value, AcpError> {
@@ -395,13 +418,44 @@ fn decode_rpc_response(resp: Value) -> std::result::Result<Value, AcpError> {
     Ok(resp.get("result").cloned().unwrap_or(Value::Null))
 }
 
-fn fail_all_pending(pending: &Mutex<HashMap<u64, PendingEntry>>, message: &str) {
+fn fail_all_pending_with(
+    pending: &Mutex<HashMap<u64, PendingEntry>>,
+    make_error: impl Fn(&str) -> AcpError,
+    message: &str,
+) {
     let waiters: Vec<PendingEntry> = pending.lock().drain().map(|(_, e)| e).collect();
     for entry in waiters {
-        let _ = entry
-            .reply
-            .send(Err(AcpError::TransportClosed(message.to_string())));
+        let _ = entry.reply.send(Err(make_error(message)));
     }
+}
+
+fn fail_all_pending_send(pending: &Mutex<HashMap<u64, PendingEntry>>, message: &str) {
+    fail_all_pending_with(
+        pending,
+        |message| AcpError::SendFailed(message.to_string()),
+        message,
+    );
+}
+
+fn fail_all_pending_receive(pending: &Mutex<HashMap<u64, PendingEntry>>, message: &str) {
+    fail_all_pending_with(
+        pending,
+        |message| AcpError::RecvFailed(message.to_string()),
+        message,
+    );
+}
+
+fn report_transport_closed(notify: &NotifyFn, reported: &AtomicBool, reason: &str, failure: &str) {
+    if reported.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    notify(json!({
+        "method": "_pinkcode/transport_closed",
+        "params": {
+            "reason": reason,
+            "failure": failure,
+        }
+    }));
 }
 
 fn kill_child(child: &Mutex<Option<Child>>) -> Result<()> {
@@ -433,7 +487,7 @@ pub(super) fn fail_all_pending_for_test(
     pending: &Mutex<HashMap<u64, PendingEntry>>,
     message: &str,
 ) {
-    fail_all_pending(pending, message);
+    fail_all_pending_receive(pending, message);
 }
 
 #[cfg(test)]

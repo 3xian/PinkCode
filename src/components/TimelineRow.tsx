@@ -7,7 +7,6 @@ const KIND_LABELS: Record<string, string> = {
   thought: "Thought",
   tool: "Tool",
   shell: "Shell",
-  plan: "Plan",
   event: "Event",
   unknown: "Other",
 };
@@ -83,14 +82,6 @@ function KindIcon({ kind }: { kind: string }) {
         <svg {...common}>
           <rect x="2" y="3" width="12" height="10" rx="1.5" />
           <path d="M5 6.5 7 8l-2 1.5M8.5 10.5H11" />
-        </svg>
-      );
-      break;
-    case "plan":
-      glyph = (
-        <svg {...common}>
-          <path d="M4 3.5h8v10H4z" />
-          <path d="M6 6h4M6 8.5h4M6 11h2.5" />
         </svg>
       );
       break;

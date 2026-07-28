@@ -67,8 +67,7 @@ describe("describeUpdate turn_completed", () => {
     expect(desc.title).toBe("Turn completed");
     expect(desc.title).not.toMatch(/end_turn/);
     expect(desc.turnStopReason).toBe("end_turn");
-    expect(desc.detail).toContain("12.4k tok");
-    expect(desc.detail).toContain("7 model calls");
+    expect(desc.detail).toBeUndefined();
   });
 
   it("surfaces agent_result on error", () => {
@@ -100,5 +99,70 @@ describe("describeUpdate turn_completed", () => {
     });
     expect(desc.title).toBe("Turn completed");
     expect(desc.turnStopReason).toBe("end_turn");
+  });
+});
+
+describe("describeUpdate Grok Build scrollback parity", () => {
+  it("hides plan and persistence-only timeline markers", () => {
+    expect(
+      describeUpdate({ sessionUpdate: "plan", entries: [] }).hidden,
+    ).toBe(true);
+    expect(
+      describeUpdate({
+        sessionUpdate: "compaction_checkpoint",
+        checkpoint_id: "checkpoint",
+      }).hidden,
+    ).toBe(true);
+    expect(
+      describeUpdate({
+        sessionUpdate: "rewind_marker",
+        target_prompt_index: 2,
+      }).hidden,
+    ).toBe(true);
+  });
+
+  it("hides control-plane tools but keeps normal tools", () => {
+    expect(
+      describeUpdate({
+        sessionUpdate: "tool_call",
+        toolCallId: "call-todo",
+        title: "todo_write",
+      }).hidden,
+    ).toBe(true);
+    expect(
+      describeUpdate({
+        sessionUpdate: "tool_call",
+        toolCallId: "call-read",
+        title: "Read `src/main.ts`",
+      }).hidden,
+    ).toBe(false);
+  });
+
+  it("uses Grok Build recap and compaction wording", () => {
+    expect(
+      describeUpdate({
+        sessionUpdate: "session_recap",
+        summary: "Where we left off",
+      }),
+    ).toMatchObject({ title: "Recap", detail: "Where we left off" });
+    expect(
+      describeUpdate({
+        sessionUpdate: "auto_compact_completed",
+        tokens_before: 12_000,
+        tokens_after: 4_000,
+      }),
+    ).toMatchObject({
+      title: "Context compacted",
+      detail: "12.0k → 4.0k tokens",
+    });
+    expect(
+      describeUpdate({
+        sessionUpdate: "auto_compact_completed",
+        tokens_after: 4_000,
+      }),
+    ).toMatchObject({
+      title: "Context compacted",
+      detail: "→ 4.0k tokens",
+    });
   });
 });

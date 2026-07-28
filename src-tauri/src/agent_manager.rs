@@ -23,12 +23,33 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
+mod reconnect;
+
 struct LiveAgent {
     info: ManagedAgentInfo,
     client: Arc<AcpClient>,
+    connection_generation: u64,
+    reconnecting: bool,
+    grok_bin: String,
+    global_args: Vec<String>,
+    agent_args: Vec<String>,
     in_flight_prompts: HashSet<String>,
     current_prompt_id: Option<String>,
 }
+
+struct RequestTarget {
+    client: Arc<AcpClient>,
+    permission_mode: PermissionMode,
+    session_hint: Option<String>,
+}
+
+#[derive(Clone)]
+struct PendingGate {
+    permission: PendingPermission,
+    client: Arc<AcpClient>,
+}
+
+const INITIAL_CONNECTION_GENERATION: u64 = 1;
 
 fn finish_prompt(
     in_flight: &mut HashSet<String>,
@@ -41,6 +62,83 @@ fn finish_prompt(
         *current_prompt_id = None;
     }
     is_current
+}
+
+fn finish_prompt_status(
+    in_flight: &mut HashSet<String>,
+    current_prompt_id: &mut Option<String>,
+    pending_permission_count: u32,
+    prompt_id: &str,
+) -> Option<ManagedStatus> {
+    if !finish_prompt(in_flight, current_prompt_id, prompt_id) {
+        return None;
+    }
+    Some(if pending_permission_count > 0 {
+        ManagedStatus::AwaitingPermission
+    } else if in_flight.is_empty() {
+        ManagedStatus::Ready
+    } else {
+        ManagedStatus::Running
+    })
+}
+
+fn pending_count(inner: &Inner, handle_id: &str) -> u32 {
+    inner
+        .pending
+        .lock()
+        .values()
+        .filter(|entry| entry.permission.handle_id == handle_id)
+        .count() as u32
+}
+
+fn take_pending_for_handle(inner: &Inner, handle_id: &str) -> Vec<PendingGate> {
+    let mut pending = inner.pending.lock();
+    let keys: Vec<String> = pending
+        .iter()
+        .filter(|(_, entry)| entry.permission.handle_id == handle_id)
+        .map(|(key, _)| key.clone())
+        .collect();
+    keys.into_iter()
+        .filter_map(|key| pending.remove(&key))
+        .collect()
+}
+
+fn is_active_generation(inner: &Inner, handle_id: &str, generation: u64) -> bool {
+    inner
+        .agents
+        .lock()
+        .get(handle_id)
+        .is_some_and(|agent| agent.connection_generation == generation && !agent.reconnecting)
+}
+
+fn terminal_prompt_id<'a>(method: &str, params: &'a Value) -> Option<Option<&'a str>> {
+    if method == "x.ai/session/prompt_complete" {
+        return Some(
+            params
+                .get("promptId")
+                .or_else(|| params.get("prompt_id"))
+                .and_then(Value::as_str),
+        );
+    }
+    if method != "session/update" && !method.ends_with("/session/update") {
+        return None;
+    }
+    let update = params.get("update").unwrap_or(params);
+    if update.get("sessionUpdate").and_then(Value::as_str) != Some("turn_completed") {
+        return None;
+    }
+    Some(
+        update
+            .get("prompt_id")
+            .or_else(|| update.get("promptId"))
+            .and_then(Value::as_str)
+            .or_else(|| {
+                params
+                    .pointer("/_meta/promptId")
+                    .or_else(|| params.pointer("/_meta/prompt_id"))
+                    .and_then(Value::as_str)
+            }),
+    )
 }
 
 struct AttachReservation {
@@ -61,7 +159,7 @@ pub(crate) struct Inner {
     pub(crate) app: Mutex<Option<AppHandle>>,
     pub(crate) shell_stream: ShellStream,
     agents: Mutex<HashMap<String, LiveAgent>>,
-    pending: Mutex<HashMap<String, PendingPermission>>,
+    pending: Mutex<HashMap<String, PendingGate>>,
     early_requests: Mutex<Vec<(String, Value)>>,
     attaching_sessions: Mutex<HashSet<String>>,
     grok_bin: Mutex<Option<String>>,
@@ -244,17 +342,19 @@ impl AgentManager {
             let pending = self.inner.pending.lock();
             pending
                 .values()
-                .filter(|p| p.handle_id == handle_id)
-                .filter_map(|p| {
-                    let decision = decide_gate(mode, p);
+                .map(|entry| &entry.permission)
+                .filter(|permission| permission.handle_id == handle_id)
+                .filter_map(|permission| {
+                    let decision = decide_gate(mode, permission);
                     match decision {
                         GateDecision::Ask => None,
-                        GateDecision::Allow => {
-                            Some((p.request_key.clone(), pick_allow_option(&p.options)))
-                        }
+                        GateDecision::Allow => Some((
+                            permission.request_key.clone(),
+                            pick_allow_option(&permission.options),
+                        )),
                         GateDecision::Deny => Some((
-                            p.request_key.clone(),
-                            pick_reject_option(&p.options, "reject-once"),
+                            permission.request_key.clone(),
+                            pick_reject_option(&permission.options, "reject-once"),
                         )),
                     }
                 })
@@ -277,26 +377,27 @@ impl AgentManager {
         info: &mut ManagedAgentInfo,
         err: String,
     ) -> String {
-        {
-            let mut pending = inner.pending.lock();
-            pending.retain(|_, p| p.handle_id != handle_id);
-        }
+        drop(take_pending_for_handle(inner, handle_id));
 
+        // Publish the terminal state before killing the child so its expected
+        // stdout EOF cannot race the transport-close handler into reconnecting
+        // a bootstrap that already failed.
+        info.status = ManagedStatus::Error;
+        info.last_error = Some(err.clone());
+        info.pid = None;
+        info.pending_permission_count = 0;
         let client = {
             let mut agents = inner.agents.lock();
-            agents.get_mut(handle_id).map(|a| Arc::clone(&a.client))
+            agents.get_mut(handle_id).map(|agent| {
+                agent.reconnecting = false;
+                agent.info = info.clone();
+                Arc::clone(&agent.client)
+            })
         };
         if let Some(client) = client {
             let _ = client.kill();
         }
 
-        info.status = ManagedStatus::Error;
-        info.last_error = Some(err.clone());
-        info.pid = None;
-        info.pending_permission_count = 0;
-        if let Some(a) = inner.agents.lock().get_mut(handle_id) {
-            a.info = info.clone();
-        }
         Self::emit_status(inner, info);
         err
     }
@@ -336,7 +437,14 @@ impl AgentManager {
 
     pub fn resolve_grok_bin(&self) -> Result<String, String> {
         if let Some(cached) = self.inner.grok_bin.lock().clone() {
-            return Ok(cached);
+            if Path::new(&cached).is_file() {
+                return Ok(cached);
+            }
+            tracing::warn!(
+                path = cached,
+                "cached Grok binary disappeared; falling back to discovery"
+            );
+            *self.inner.grok_bin.lock() = None;
         }
         let bin = find_grok_bin().ok_or_else(|| {
             "Could not find `grok` binary. Set GROK_BIN or install Grok Build.".to_string()
@@ -377,10 +485,11 @@ impl AgentManager {
             .pending
             .lock()
             .values()
-            .filter(|p| {
+            .map(|entry| &entry.permission)
+            .filter(|permission| {
                 handle_id
                     .as_ref()
-                    .map(|h| h == &p.handle_id)
+                    .map(|h| h == &permission.handle_id)
                     .unwrap_or(true)
             })
             .cloned()
@@ -389,7 +498,7 @@ impl AgentManager {
         list
     }
 
-    fn make_notify(inner: &Arc<Inner>, handle_id: &str) -> NotifyFn {
+    fn make_notify(inner: &Arc<Inner>, handle_id: &str, generation: u64) -> NotifyFn {
         let inner = Arc::clone(inner);
         let handle_id = handle_id.to_string();
         Arc::new(move |msg: Value| {
@@ -398,64 +507,125 @@ impl AgentManager {
                 .and_then(|m| m.as_str())
                 .unwrap_or("")
                 .to_string();
-            let has_id = msg.get("id").is_some();
-            let is_response_shape = msg.get("result").is_some() || msg.get("error").is_some();
 
             if method == "_pinkcode/transport_closed" {
                 let reason = msg
                     .pointer("/params/reason")
                     .and_then(Value::as_str)
                     .unwrap_or("ACP transport closed");
-                Self::handle_transport_closed(&inner, &handle_id, reason);
+                let failure = msg
+                    .pointer("/params/failure")
+                    .and_then(Value::as_str)
+                    .unwrap_or("recv_failed");
+                Self::handle_transport_closed(&inner, &handle_id, generation, reason, failure);
                 return;
             }
 
-            if has_id && !method.is_empty() && !is_response_shape {
-                Self::handle_server_request(&inner, &handle_id, &msg);
-                return;
-            }
+            Self::route_agent_message(&inner, &handle_id, generation, msg);
+        })
+    }
 
-            let params = msg.get("params").cloned().unwrap_or(Value::Null);
-            let session_id = params
-                .get("sessionId")
-                .or_else(|| params.get("session_id"))
-                .and_then(|s| s.as_str())
-                .map(|s| s.to_string());
-            let event_id = msg
-                .pointer("/_meta/eventId")
-                .or_else(|| msg.pointer("/_meta/event_id"))
-                .or_else(|| params.pointer("/_meta/eventId"))
-                .and_then(Value::as_str);
+    fn route_agent_message(inner: &Arc<Inner>, handle_id: &str, generation: u64, msg: Value) {
+        // A replaced transport can still flush buffered messages. Keep every
+        // state transition and UI event scoped to the transport that owns the
+        // handle now.
+        if !is_active_generation(inner, handle_id, generation) {
+            return;
+        }
 
-            if method == "x.ai/queue/changed" {
-                if let Some(prompt_id) = params.get("runningPromptId").and_then(Value::as_str) {
-                    if let Some(agent) = inner.agents.lock().get_mut(&handle_id) {
+        let method = msg
+            .get("method")
+            .and_then(|m| m.as_str())
+            .unwrap_or("")
+            .to_string();
+        let has_id = msg.get("id").is_some();
+        let is_response_shape = msg.get("result").is_some() || msg.get("error").is_some();
+
+        if has_id && !method.is_empty() && !is_response_shape {
+            Self::handle_server_request(inner, handle_id, &msg);
+            return;
+        }
+
+        let params = msg.get("params").cloned().unwrap_or(Value::Null);
+        let session_id = params
+            .get("sessionId")
+            .or_else(|| params.get("session_id"))
+            .and_then(|s| s.as_str())
+            .map(|s| s.to_string());
+        let event_id = msg
+            .pointer("/_meta/eventId")
+            .or_else(|| msg.pointer("/_meta/event_id"))
+            .or_else(|| params.pointer("/_meta/eventId"))
+            .and_then(Value::as_str);
+
+        if let Some(prompt_id) = terminal_prompt_id(&method, &params) {
+            Self::finish_notified_prompt(inner, handle_id, generation, prompt_id);
+        }
+
+        if method == "x.ai/queue/changed" {
+            if let Some(prompt_id) = params.get("runningPromptId").and_then(Value::as_str) {
+                if reconnect::should_adopt_prompt_id(prompt_id) {
+                    if let Some(agent) = inner.agents.lock().get_mut(handle_id) {
                         agent.current_prompt_id = Some(prompt_id.to_string());
                     }
                 }
             }
+        }
 
-            let payload = json!({
-                "handleId": handle_id,
-                "sessionId": session_id,
-                "method": method,
-                "eventId": event_id,
-                "params": params,
-            });
+        let payload = json!({
+            "handleId": handle_id,
+            "sessionId": session_id,
+            "method": method,
+            "eventId": event_id,
+            "params": params,
+        });
 
-            if method == "session/update" || method.ends_with("/session/update") {
-                Self::emit(&inner, "agent-update", payload.clone());
-                shell_emitter::maybe_emit_shell(
-                    &inner.shell_stream,
-                    &inner,
-                    &handle_id,
-                    &session_id,
-                    &params,
-                );
-            } else if !method.is_empty() {
-                Self::emit(&inner, "agent-notification", payload);
+        if method == "session/update" || method.ends_with("/session/update") {
+            Self::emit(inner, "agent-update", payload.clone());
+            shell_emitter::maybe_emit_shell(
+                &inner.shell_stream,
+                inner,
+                handle_id,
+                &session_id,
+                &params,
+            );
+        } else if !method.is_empty() {
+            Self::emit(inner, "agent-notification", payload);
+        }
+    }
+
+    fn finish_notified_prompt(
+        inner: &Arc<Inner>,
+        handle_id: &str,
+        generation: u64,
+        prompt_id: Option<&str>,
+    ) {
+        let updated = {
+            let mut agents = inner.agents.lock();
+            let Some(agent) = agents.get_mut(handle_id) else {
+                return;
+            };
+            if agent.connection_generation != generation || agent.reconnecting {
+                return;
             }
-        })
+            let completed_prompt_id = prompt_id
+                .map(str::to_string)
+                .or_else(|| agent.current_prompt_id.clone());
+            let Some(completed_prompt_id) = completed_prompt_id else {
+                return;
+            };
+            let Some(status) = finish_prompt_status(
+                &mut agent.in_flight_prompts,
+                &mut agent.current_prompt_id,
+                agent.info.pending_permission_count,
+                &completed_prompt_id,
+            ) else {
+                return;
+            };
+            agent.info.status = status;
+            agent.info.clone()
+        };
+        Self::emit_status(inner, &updated);
     }
 
     fn dispatch_handle_request(
@@ -487,51 +657,82 @@ impl AgentManager {
             }
         };
 
+        Self::dispatch_handle_request_to(
+            inner,
+            handle_id,
+            request_id,
+            method,
+            params,
+            RequestTarget {
+                client,
+                permission_mode,
+                session_hint,
+            },
+        );
+    }
+
+    fn dispatch_handle_request_to(
+        inner: &Arc<Inner>,
+        handle_id: &str,
+        request_id: Value,
+        method: &str,
+        params: Value,
+        target: RequestTarget,
+    ) {
         let session_id = params
             .get("sessionId")
             .and_then(|s| s.as_str())
             .map(|s| s.to_string())
-            .or(session_hint);
+            .or(target.session_hint);
 
         let handler = rpc_handler::find_handler(&inner.handlers, method);
         match handler {
             Some(h) => match h.handle_request(handle_id, session_id, request_id.clone(), &params) {
                 HandleResult::Respond(value) => {
-                    let _ = client.respond_result(&request_id, value);
+                    let _ = target.client.respond_result(&request_id, value);
                 }
-                HandleResult::Gate(pending) => match decide_gate(permission_mode, &pending) {
-                    GateDecision::Allow => {
-                        let action = rpc_handler::build_allow_response(h, &pending);
-                        match action {
-                            Ok(a) => {
-                                let _ = Self::send_action(&client, &pending.request_id, a);
-                            }
-                            Err(e) => {
-                                let _ = client.respond_error(&request_id, -32000, &e);
-                            }
-                        }
-                    }
-                    GateDecision::Deny => {
-                        let action = rpc_handler::build_deny_response(h, &pending);
-                        match action {
-                            Ok(a) => {
-                                let _ = Self::send_action(&client, &pending.request_id, a);
-                            }
-                            Err(e) => {
-                                let _ = client.respond_error(&request_id, -32000, &e);
+                HandleResult::Gate(pending) => {
+                    match decide_gate(target.permission_mode, &pending) {
+                        GateDecision::Allow => {
+                            let action = rpc_handler::build_allow_response(h, &pending);
+                            match action {
+                                Ok(a) => {
+                                    let _ =
+                                        Self::send_action(&target.client, &pending.request_id, a);
+                                }
+                                Err(e) => {
+                                    let _ = target.client.respond_error(&request_id, -32000, &e);
+                                }
                             }
                         }
+                        GateDecision::Deny => {
+                            let action = rpc_handler::build_deny_response(h, &pending);
+                            match action {
+                                Ok(a) => {
+                                    let _ =
+                                        Self::send_action(&target.client, &pending.request_id, a);
+                                }
+                                Err(e) => {
+                                    let _ = target.client.respond_error(&request_id, -32000, &e);
+                                }
+                            }
+                        }
+                        GateDecision::Ask => {
+                            Self::enqueue_permission(
+                                inner,
+                                handle_id,
+                                *pending,
+                                Arc::clone(&target.client),
+                            );
+                        }
                     }
-                    GateDecision::Ask => {
-                        Self::enqueue_permission(inner, handle_id, *pending);
-                    }
-                },
+                }
                 HandleResult::Error(code, msg) => {
-                    let _ = client.respond_error(&request_id, code, &msg);
+                    let _ = target.client.respond_error(&request_id, code, &msg);
                 }
             },
             None => {
-                let _ = client.respond_error(
+                let _ = target.client.respond_error(
                     &request_id,
                     -32601,
                     &format!("PinkCode does not implement {method}"),
@@ -540,22 +741,33 @@ impl AgentManager {
         }
     }
 
-    fn handle_transport_closed(inner: &Arc<Inner>, handle_id: &str, reason: &str) {
-        inner.shell_stream.clear_handle(handle_id);
-        let cancelled: Vec<PendingPermission> = {
-            let mut pending = inner.pending.lock();
-            let keys: Vec<String> = pending
-                .iter()
-                .filter(|(_, item)| item.handle_id == handle_id)
-                .map(|(key, _)| key.clone())
-                .collect();
-            keys.into_iter()
-                .filter_map(|key| pending.remove(&key))
-                .collect()
-        };
+    fn handle_transport_closed(
+        inner: &Arc<Inner>,
+        handle_id: &str,
+        generation: u64,
+        reason: &str,
+        failure: &str,
+    ) {
+        let is_current = inner
+            .agents
+            .lock()
+            .get(handle_id)
+            .map(|agent| {
+                agent.connection_generation == generation
+                    && !agent.reconnecting
+                    && !matches!(
+                        agent.info.status,
+                        ManagedStatus::Stopping | ManagedStatus::Stopped | ManagedStatus::Error
+                    )
+            })
+            .unwrap_or(false);
+        if !is_current {
+            return;
+        }
 
-        for item in cancelled {
-            if let Ok(value) = serde_json::to_value(&item) {
+        inner.shell_stream.clear_handle(handle_id);
+        for entry in take_pending_for_handle(inner, handle_id) {
+            if let Ok(value) = serde_json::to_value(&entry.permission) {
                 Self::emit(
                     inner,
                     "agent-permission-resolved",
@@ -568,25 +780,48 @@ impl AgentManager {
             }
         }
 
-        let updated = {
+        let (updated, should_reconnect) = {
             let mut agents = inner.agents.lock();
-            agents.get_mut(handle_id).and_then(|agent| {
-                if matches!(
-                    agent.info.status,
-                    ManagedStatus::Stopped | ManagedStatus::Error
-                ) {
-                    return None;
+            match agents.get_mut(handle_id) {
+                Some(agent) => {
+                    if agent.connection_generation != generation || agent.reconnecting {
+                        return;
+                    }
+                    if matches!(
+                        agent.info.status,
+                        ManagedStatus::Stopping | ManagedStatus::Stopped | ManagedStatus::Error
+                    ) {
+                        return;
+                    }
+                    let can_reconnect = agent.info.session_id.is_some();
+                    agent.info.status = if can_reconnect {
+                        ManagedStatus::Starting
+                    } else {
+                        ManagedStatus::Error
+                    };
+                    agent.reconnecting = can_reconnect;
+                    agent.info.pid = None;
+                    agent.info.pending_permission_count = 0;
+                    agent.info.last_error = Some(if can_reconnect {
+                        format!("ACP {failure}; reconnecting after transport loss: {reason}")
+                    } else {
+                        format!("ACP {failure}: {reason}")
+                    });
+                    (Some(agent.info.clone()), can_reconnect)
                 }
-                agent.info.status = ManagedStatus::Error;
-                agent.info.pid = None;
-                agent.info.pending_permission_count = 0;
-                agent.info.last_error = Some(reason.to_string());
-                Some(agent.info.clone())
-            })
+                None => (None, false),
+            }
         };
         if let Some(info) = updated {
             Self::emit_status(inner, &info);
         }
+        if should_reconnect {
+            Self::spawn_reconnect(Arc::clone(inner), handle_id.to_string(), generation);
+        }
+    }
+
+    fn spawn_reconnect(inner: Arc<Inner>, handle_id: String, failed_generation: u64) {
+        reconnect::spawn(inner, handle_id, failed_generation);
     }
 
     fn handle_server_request(inner: &Arc<Inner>, handle_id: &str, msg: &Value) {
@@ -600,7 +835,12 @@ impl AgentManager {
         Self::dispatch_handle_request(inner, handle_id, request_id, &method, params);
     }
 
-    fn enqueue_permission(inner: &Arc<Inner>, handle_id: &str, pending: PendingPermission) {
+    fn enqueue_permission(
+        inner: &Arc<Inner>,
+        handle_id: &str,
+        pending: PendingPermission,
+        client: Arc<AcpClient>,
+    ) {
         let key = pending.request_key.clone();
         if let Ok(v) = serde_json::to_value(&pending) {
             Self::emit(inner, "agent-permission", v);
@@ -608,8 +848,16 @@ impl AgentManager {
         let mut agents = inner.agents.lock();
         let count = {
             let mut map = inner.pending.lock();
-            map.insert(key, pending);
-            map.values().filter(|p| p.handle_id == handle_id).count() as u32
+            map.insert(
+                key,
+                PendingGate {
+                    permission: pending,
+                    client,
+                },
+            );
+            map.values()
+                .filter(|entry| entry.permission.handle_id == handle_id)
+                .count() as u32
         };
         if let Some(a) = agents.get_mut(handle_id) {
             a.info.pending_permission_count = count;
@@ -645,10 +893,12 @@ impl AgentManager {
     ) -> Result<(ManagedAgentInfo, Arc<AcpClient>), String> {
         let handle_id = info.handle_id.clone();
         Self::emit_status(&self.inner, &info);
-        let notify = Self::make_notify(&self.inner, &handle_id);
+        let generation = INITIAL_CONNECTION_GENERATION;
+        let notify = Self::make_notify(&self.inner, &handle_id, generation);
+        let grok_bin = self.resolve_grok_bin()?;
         let client = Arc::new(
             AcpClient::spawn_with_notify(
-                &self.resolve_grok_bin()?,
+                &grok_bin,
                 info.always_approve,
                 global_args,
                 agent_args,
@@ -662,6 +912,11 @@ impl AgentManager {
             LiveAgent {
                 info: info.clone(),
                 client: Arc::clone(&client),
+                connection_generation: generation,
+                reconnecting: false,
+                grok_bin,
+                global_args: global_args.to_vec(),
+                agent_args: agent_args.to_vec(),
                 in_flight_prompts: HashSet::new(),
                 current_prompt_id: None,
             },
@@ -688,33 +943,24 @@ impl AgentManager {
         &self,
         req: ResolvePermissionRequest,
     ) -> Result<PendingPermission, String> {
-        let mut pending_map = self.inner.pending.lock();
-        let pending = pending_map
+        let entry = self
+            .inner
+            .pending
+            .lock()
             .remove(&req.request_key)
             .ok_or_else(|| format!("unknown permission request {}", req.request_key))?;
-        drop(pending_map);
 
-        if pending.handle_id != req.handle_id {
+        if entry.permission.handle_id != req.handle_id {
             self.inner
                 .pending
                 .lock()
-                .insert(req.request_key.clone(), pending.clone());
+                .insert(req.request_key.clone(), entry);
             return Err("handle_id mismatch".into());
         }
-
-        let client = {
-            let agents = self.inner.agents.lock();
-            match agents.get(&req.handle_id).map(|a| Arc::clone(&a.client)) {
-                Some(c) => c,
-                None => {
-                    self.inner
-                        .pending
-                        .lock()
-                        .insert(req.request_key.clone(), pending);
-                    return Err("agent gone".into());
-                }
-            }
-        };
+        let PendingGate {
+            permission: pending,
+            client,
+        } = entry;
 
         let allow = match rpc_handler::find_handler_by_kind(&self.inner.handlers, pending.kind) {
             Some(handler) => handler.is_allow_option(&req.option_id),
@@ -760,17 +1006,22 @@ impl AgentManager {
                 .lock()
                 .get(&req.handle_id)
                 .map(|agent| {
-                    !matches!(
-                        agent.info.status,
-                        ManagedStatus::Stopped | ManagedStatus::Error
-                    )
+                    !agent.reconnecting
+                        && Arc::ptr_eq(&agent.client, &client)
+                        && !matches!(
+                            agent.info.status,
+                            ManagedStatus::Stopped | ManagedStatus::Error
+                        )
                 })
                 .unwrap_or(false);
             if agent_can_retry {
-                self.inner
-                    .pending
-                    .lock()
-                    .insert(req.request_key.clone(), pending);
+                self.inner.pending.lock().insert(
+                    req.request_key.clone(),
+                    PendingGate {
+                        permission: pending,
+                        client: Arc::clone(&client),
+                    },
+                );
             } else if let Ok(value) = serde_json::to_value(&pending) {
                 Self::emit(
                     &self.inner,
@@ -796,13 +1047,7 @@ impl AgentManager {
 
         {
             let mut agents = self.inner.agents.lock();
-            let count = self
-                .inner
-                .pending
-                .lock()
-                .values()
-                .filter(|p| p.handle_id == req.handle_id)
-                .count() as u32;
+            let count = pending_count(&self.inner, &req.handle_id);
             if let Some(a) = agents.get_mut(&req.handle_id) {
                 a.info.pending_permission_count = count;
                 if count == 0 && a.info.status == ManagedStatus::AwaitingPermission {
@@ -914,7 +1159,13 @@ impl AgentManager {
         }
 
         if let Some(prompt) = req.prompt.filter(|p| !p.trim().is_empty()) {
-            self.dispatch_prompt(&handle_id, &session_id, prompt, client);
+            self.dispatch_prompt(
+                &handle_id,
+                &session_id,
+                prompt,
+                client,
+                INITIAL_CONNECTION_GENERATION,
+            );
             // dispatch_prompt flips status to Running and emits; return the live
             // snapshot so the spawn invoke does not clobber UI back to Ready.
             if let Some(live) = self.get(&handle_id) {
@@ -1015,7 +1266,7 @@ impl AgentManager {
         if text.trim().is_empty() {
             return Err("prompt is empty".into());
         }
-        let (session_id, client) = {
+        let (session_id, client, generation) = {
             let agents = self.inner.agents.lock();
             let agent = agents
                 .get(handle_id)
@@ -1034,10 +1285,10 @@ impl AgentManager {
                 .session_id
                 .clone()
                 .ok_or_else(|| "agent has no session_id".to_string())?;
-            (sid, Arc::clone(&agent.client))
+            (sid, Arc::clone(&agent.client), agent.connection_generation)
         };
 
-        self.dispatch_prompt(handle_id, &session_id, text.to_string(), client);
+        self.dispatch_prompt(handle_id, &session_id, text.to_string(), client, generation);
         // Include post-dispatch status so the host can paint Running without
         // waiting on the agent-status event (avoids race with other upserts).
         let status = self
@@ -1058,17 +1309,12 @@ impl AgentManager {
         session_id: &str,
         text: String,
         client: Arc<AcpClient>,
+        connection_generation: u64,
     ) {
         let prompt_id = Uuid::new_v4().to_string();
         {
             let mut agents = self.inner.agents.lock();
-            let pending_count = self
-                .inner
-                .pending
-                .lock()
-                .values()
-                .filter(|p| p.handle_id == handle_id)
-                .count() as u32;
+            let pending_count = pending_count(&self.inner, handle_id);
             if let Some(a) = agents.get_mut(handle_id) {
                 if a.current_prompt_id.is_none() {
                     a.current_prompt_id = Some(prompt_id.clone());
@@ -1096,8 +1342,22 @@ impl AgentManager {
 
         tauri::async_runtime::spawn_blocking(move || {
             let result = client.session_prompt(&session_id, &prompt_id, &text);
+            if let Err(error) = &result {
+                if let Some(failure) = error.transport_failure_tag() {
+                    Self::handle_transport_closed(
+                        &inner,
+                        &handle_id,
+                        connection_generation,
+                        &error.user_message(),
+                        failure,
+                    );
+                }
+            }
             let mut agents = inner.agents.lock();
             if let Some(a) = agents.get_mut(&handle_id) {
+                if a.connection_generation != connection_generation || a.reconnecting {
+                    return;
+                }
                 let is_current = finish_prompt(
                     &mut a.in_flight_prompts,
                     &mut a.current_prompt_id,
@@ -1163,28 +1423,21 @@ impl AgentManager {
             (agent.info.session_id.clone(), Arc::clone(&agent.client))
         };
 
-        let cancelled: Vec<PendingPermission> = {
-            let mut pending = self.inner.pending.lock();
-            let keys: Vec<_> = pending
-                .iter()
-                .filter(|(_, p)| p.handle_id == handle_id)
-                .map(|(k, _)| k.clone())
-                .collect();
-            keys.into_iter()
-                .filter_map(|k| pending.remove(&k))
-                .collect()
-        };
-
-        for p in cancelled {
-            match p.kind {
+        for entry in take_pending_for_handle(&self.inner, handle_id) {
+            let permission = entry.permission;
+            match permission.kind {
                 PermissionKind::ToolPermission => {
-                    let _ = client.respond_result(
-                        &p.request_id,
+                    let _ = entry.client.respond_result(
+                        &permission.request_id,
                         json!({ "outcome": { "outcome": "cancelled" } }),
                     );
                 }
                 _ => {
-                    let _ = client.respond_error(&p.request_id, -32000, "Session stopped");
+                    let _ = entry.client.respond_error(
+                        &permission.request_id,
+                        -32000,
+                        "Session stopped",
+                    );
                 }
             }
         }
@@ -1207,12 +1460,22 @@ impl AgentManager {
 
         // Cancellation is asynchronous. Keep the ACP transport alive long
         // enough for Grok to flush its cancelled turn, hunks and durable
-        // notifications. Force-kill only when the grace period expires.
+        // notifications. If graceful cancellation cannot be delivered, fall
+        // back to force-killing the child instead of leaving the task stuck in
+        // Stopping with a dead transport.
         if let Some(ref sid) = session_id {
-            client
-                .session_cancel(sid, "user")
-                .map_err(|error| error.user_message())?;
-            if had_running_turn {
+            let cancel_delivered = match client.session_cancel(sid, "user") {
+                Ok(()) => true,
+                Err(error) => {
+                    tracing::warn!(
+                        handle_id,
+                        error = %error,
+                        "graceful session cancellation failed; forcing shutdown"
+                    );
+                    false
+                }
+            };
+            if had_running_turn && cancel_delivered {
                 let deadline = Instant::now() + Duration::from_secs(5);
                 let mut settled = false;
                 while Instant::now() < deadline {
@@ -1253,7 +1516,8 @@ impl AgentManager {
 
 #[cfg(test)]
 mod tests {
-    use super::finish_prompt;
+    use super::{finish_prompt, finish_prompt_status, terminal_prompt_id, ManagedStatus};
+    use serde_json::json;
     use std::collections::HashSet;
 
     #[test]
@@ -1268,5 +1532,62 @@ mod tests {
         assert!(finish_prompt(&mut in_flight, &mut current, "running"));
         assert_eq!(current, None);
         assert!(in_flight.is_empty());
+    }
+
+    #[test]
+    fn adopted_prompt_terminal_notification_returns_agent_to_ready() {
+        let mut in_flight = HashSet::from(["adopted".to_string()]);
+        let mut current = Some("adopted".to_string());
+
+        assert_eq!(
+            finish_prompt_status(&mut in_flight, &mut current, 0, "adopted"),
+            Some(ManagedStatus::Ready)
+        );
+        assert!(in_flight.is_empty());
+        assert_eq!(current, None);
+    }
+
+    #[test]
+    fn prompt_complete_notification_identifies_terminal_prompt() {
+        let params = json!({
+            "sessionId": "session-1",
+            "promptId": "prompt-live",
+            "stopReason": "end_turn"
+        });
+        assert_eq!(
+            terminal_prompt_id("x.ai/session/prompt_complete", &params),
+            Some(Some("prompt-live"))
+        );
+        assert_eq!(
+            terminal_prompt_id(
+                "x.ai/session/prompt_complete",
+                &json!({ "sessionId": "session-1" }),
+            ),
+            Some(None)
+        );
+    }
+
+    #[test]
+    fn durable_turn_completed_identifies_terminal_prompt() {
+        let params = json!({
+            "update": {
+                "sessionUpdate": "turn_completed",
+                "prompt_id": "prompt-live",
+                "stop_reason": "end_turn"
+            }
+        });
+        assert_eq!(
+            terminal_prompt_id("session/update", &params),
+            Some(Some("prompt-live"))
+        );
+        assert_eq!(
+            terminal_prompt_id(
+                "session/update",
+                &json!({
+                    "update": { "sessionUpdate": "agent_message_chunk" }
+                })
+            ),
+            None
+        );
     }
 }

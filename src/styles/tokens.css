@@ -102,8 +102,6 @@
   --kind-shell-dim: rgb(var(--rp-pine-rgb) / 0.12);
   --kind-event: var(--rp-subtle);
   --kind-event-dim: rgb(var(--rp-subtle-rgb) / 0.14);
-  --kind-plan: var(--rp-iris);
-  --kind-plan-dim: rgb(var(--rp-iris-rgb) / 0.16);
   --kind-unknown: var(--rp-muted);
   --kind-unknown-dim: rgb(var(--rp-muted-rgb) / 0.12);
   /* Per-kind RGB for timeline washes / accent bars (must match above) */
@@ -113,7 +111,6 @@
   --kind-tool-rgb: var(--rp-rose-rgb);
   --kind-shell-rgb: var(--rp-pine-rgb);
   --kind-event-rgb: var(--rp-subtle-rgb);
-  --kind-plan-rgb: var(--rp-iris-rgb);
   --kind-unknown-rgb: var(--rp-muted-rgb);
 
   /* ── Elevation (text-tinted, not pure black) ───────────────── */

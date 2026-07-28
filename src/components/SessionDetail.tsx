@@ -75,7 +75,6 @@ const TIMELINE_FILTER_LABELS: Record<string, string> = {
   thought: "Thought",
   tool: "Tool",
   shell: "Shell",
-  plan: "Plan",
   event: "Event",
   unknown: "Other",
 };
@@ -87,7 +86,6 @@ const TIMELINE_FILTER_ORDER: TimelineFilterKind[] = [
   "thought",
   "tool",
   "shell",
-  "plan",
   "event",
   "unknown",
 ];
@@ -405,8 +403,11 @@ function TimelinePanel({
   }, [filter, kindCounts]);
 
   const filtered = useMemo(() => {
-    if (filter === "all") return items;
-    return items.filter((i) => (i.kind || "unknown") === filter);
+    const indexed = items.map((item, sourceIndex) => ({ item, sourceIndex }));
+    if (filter === "all") return indexed;
+    return indexed.filter(
+      ({ item }) => (item.kind || "unknown") === filter,
+    );
   }, [items, filter]);
 
   const scrollToEnd = (behavior: ScrollBehavior = "auto") => {
@@ -517,15 +518,20 @@ function TimelinePanel({
           this stream.
         </div>
       ) : (
-        <div className="timeline stream-timeline" ref={rootRef}>
-          {filtered.map((item, i) => (
+        <div
+          className={`timeline stream-timeline${
+            filter === "all" ? "" : " is-filtered"
+          }`}
+          ref={rootRef}
+        >
+          {filtered.map(({ item, sourceIndex }) => (
             <LiveItemRow
               key={item.id}
               item={item}
               stackClass={timelineStackClass(
-                filtered[i - 1]?.kind,
+                items[sourceIndex - 1]?.kind,
                 item.kind,
-                filtered[i + 1]?.kind,
+                items[sourceIndex + 1]?.kind,
               )}
               onOpenFile={onOpenFile}
             />
@@ -571,6 +577,13 @@ const LiveItemRow = memo(function LiveItemRow({
 
   const canCopyAgent =
     item.kind === "agent" && Boolean(item.detail?.trim()) && !item.streaming;
+  const isConversationBody = item.kind === "user" || item.kind === "agent";
+  const displayTitle =
+    item.kind === "thought"
+      ? item.streaming
+        ? "Thinking…"
+        : "Thought"
+      : item.title;
 
   const copyAgentOutput = useCallback(async () => {
     const text = item.detail?.trim();
@@ -591,21 +604,23 @@ const LiveItemRow = memo(function LiveItemRow({
         <ShellCard shell={item.shell} />
       ) : (
         <>
-          {toolPath ? (
+          {isConversationBody ? null : toolPath ? (
             <FilePathLink
               path={toolPath}
               onOpen={onOpenFile}
               className="tl-title"
             >
-              {item.title}
+              {displayTitle}
             </FilePathLink>
           ) : (
-            <div className="tl-title">{item.title}</div>
+            <div className="tl-title">{displayTitle}</div>
           )}
           {item.detail && (
             <div
               className={
-                "tl-detail" + (canCopyAgent ? " has-copy" : "")
+                "tl-detail" +
+                (isConversationBody ? " tl-conversation-body" : "") +
+                (canCopyAgent ? " has-copy" : "")
               }
             >
               {useMarkdown ? (

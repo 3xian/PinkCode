@@ -185,6 +185,8 @@ pub struct SessionBootstrapResult {
     pub session_id: Option<String>,
     #[serde(default)]
     pub models: Option<SessionModelsInfo>,
+    #[serde(default, rename = "_meta")]
+    pub meta: Option<Value>,
 }
 
 impl SessionBootstrapResult {
@@ -192,6 +194,15 @@ impl SessionBootstrapResult {
         self.models
             .as_ref()
             .and_then(|m| m.current_model_id.as_deref())
+    }
+
+    pub fn running_prompt_id(&self) -> Option<&str> {
+        self.meta
+            .as_ref()
+            .and_then(|meta| meta.get("x.ai/runningPromptId"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
     }
 
     /// Prefer response `sessionId`; if missing/empty, use `fallback` (load path).

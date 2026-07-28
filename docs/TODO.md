@@ -20,9 +20,3 @@
 
 - [ ] Subagent hierarchy — parent/child relationships, depth, and fork budget
 - [ ] Background-task status — TaskTool, WaitTasksTool, and KillTaskTool
-
-## Reliability
-
-- [ ] Distinguish channel send failures from receive failures
-- [ ] Reconnect when the ACP transport dies
-- [ ] Add fallback paths for operations whose primary implementation fails

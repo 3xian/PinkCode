@@ -14,6 +14,10 @@ import {
 
 export type UpdateDescription = ReturnType<typeof describeUpdate>;
 export type ShellIndexes = Map<string, Map<string, number>>;
+export interface TimelineReducerState {
+  shellIndexes: ShellIndexes;
+  suppressedToolIds: Map<string, Set<string>>;
+}
 export type TimelineRetention = "live" | "history";
 
 export const MAX_LIVE_ITEMS = 400;
@@ -21,6 +25,13 @@ export const MAX_SHELL_OUTPUT_CHARS = 200_000;
 /** Synthetic handle for on-disk Grok Build updates (vs ACP / local slash). */
 export const DISK_HANDLE_ID = "disk";
 export const LOCAL_HANDLE_ID = "local";
+
+export function createTimelineReducerState(): TimelineReducerState {
+  return {
+    shellIndexes: new Map(),
+    suppressedToolIds: new Map(),
+  };
+}
 
 export function capShellOutput(output: string): string {
   if (output.length <= MAX_SHELL_OUTPUT_CHARS) return output;
@@ -100,6 +111,9 @@ export function isTextUpdate(description: UpdateDescription): boolean {
 
 /** Shared noise filter for ACP stream and disk hydrate. */
 export function shouldDropUpdate(description: UpdateDescription): boolean {
+  // Hidden tool updates must reach the reducer so suppression survives later
+  // title-less updates carrying only the same toolCallId.
+  if (description.hidden && description.kind !== "tool") return true;
   if (description.kind === "commands") return true;
   if (
     description.kind === "event" &&
@@ -167,7 +181,7 @@ export function reduceAgentUpdate(
     /** Disk hydrate: never leave cards in streaming state. */
     streaming?: boolean;
   },
-  shellIndexes: ShellIndexes,
+  reducerState: TimelineReducerState,
   retention: TimelineRetention = "live",
 ): Map<string, TimelineItem[]> {
   const { handleId, sessionId, now, nextId, sourceEventId } = input;
@@ -182,12 +196,59 @@ export function reduceAgentUpdate(
   const textUpdate = isTextUpdate(description);
   const markStreaming =
     input.streaming !== undefined ? input.streaming : textUpdate ? true : undefined;
+  let listChanged = false;
 
   if (!textUpdate) {
     for (let index = 0; index < list.length; index++) {
       if (list[index].streaming && list[index].handleId === handleId) {
         list[index] = { ...list[index], streaming: false };
+        listChanged = true;
       }
+    }
+  }
+
+  if (description.kind === "tool" && description.toolCallId) {
+    let suppressed = reducerState.suppressedToolIds.get(key);
+    if (description.hidden) {
+      const status = description.toolStatus?.toLowerCase();
+      const terminal = status === "completed" || status === "failed";
+      if (!terminal) {
+        if (!suppressed) {
+          suppressed = new Set();
+          reducerState.suppressedToolIds.set(key, suppressed);
+        }
+        suppressed.add(description.toolCallId);
+      } else if (suppressed) {
+        suppressed.delete(description.toolCallId);
+        if (suppressed.size === 0) {
+          reducerState.suppressedToolIds.delete(key);
+        }
+      }
+      const index = list.findIndex(
+        (item) =>
+          item.kind === "tool" &&
+          item.toolCallId === description.toolCallId,
+      );
+      if (index >= 0) {
+        list.splice(index, 1);
+        reducerState.shellIndexes.delete(key);
+        listChanged = true;
+      }
+      if (!listChanged) return previous;
+      next.set(key, list);
+      return next;
+    }
+    if (suppressed?.has(description.toolCallId)) {
+      const status = description.toolStatus?.toLowerCase();
+      if (status === "completed" || status === "failed") {
+        suppressed.delete(description.toolCallId);
+        if (suppressed.size === 0) {
+          reducerState.suppressedToolIds.delete(key);
+        }
+      }
+      if (!listChanged) return previous;
+      next.set(key, list);
+      return next;
     }
   }
 
@@ -285,7 +346,7 @@ export function reduceAgentUpdate(
     sourceEventId: sourceEventId ?? undefined,
     streaming: markStreaming,
   });
-  trimLiveList(list, key, shellIndexes, retention);
+  trimLiveList(list, key, reducerState.shellIndexes, retention);
   next.set(key, list);
   return next;
 }
@@ -301,7 +362,7 @@ export function hydrateLiveFromDiskUpdates(
   if (!updates.length || !sessionId) return [];
 
   let map = new Map<string, TimelineItem[]>();
-  const shellIndexes: ShellIndexes = new Map();
+  const reducerState = createTimelineReducerState();
   let seq = 0;
 
   for (const raw of updates) {
@@ -319,7 +380,7 @@ export function hydrateLiveFromDiskUpdates(
         ts,
       );
       if (entry) {
-        map = reduceShellUpdate(map, entry, shellIndexes, "history");
+        map = reduceShellUpdate(map, entry, reducerState, "history");
         seq += 1;
         continue;
       }
@@ -338,7 +399,7 @@ export function hydrateLiveFromDiskUpdates(
         sourceEventId,
         streaming: false,
       },
-      shellIndexes,
+      reducerState,
       "history",
     );
   }
@@ -420,9 +481,10 @@ export function shellEntryFromDiskUpdate(
 export function reduceShellUpdate(
   previous: Map<string, TimelineItem[]>,
   raw: ShellEntry,
-  shellIndexes: ShellIndexes,
+  reducerState: TimelineReducerState,
   retention: TimelineRetention = "live",
 ): Map<string, TimelineItem[]> {
+  const shellIndexes = reducerState.shellIndexes;
   const handleId = raw.handleId;
   const sessionId = raw.sessionId ?? null;
   const toolCallId = raw.toolCallId;

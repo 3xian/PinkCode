@@ -78,6 +78,15 @@ fn remaining(used: f64) -> f64 {
     (100.0 - used).clamp(0.0, 100.0)
 }
 
+fn is_grok_build_product(product: &str) -> bool {
+    let n = product.to_ascii_lowercase().replace('-', "_");
+    n == "grokbuild"
+        || n == "grok_build"
+        || n == "product_grok_build"
+        || n.contains("grok_build")
+        || n.contains("grokbuild")
+}
+
 /// Fetch current period usage (weekly for SuperGrok / Grok Build accounts).
 pub fn fetch_week_usage() -> WeekUsage {
     let fetched_at = now_unix_secs().to_string();
@@ -189,9 +198,10 @@ fn parse_billing(resp: ureq::Response) -> Result<WeekUsage, String> {
         })
         .collect();
 
+    // API product id is often `PRODUCT_GROK_BUILD`; older shapes use `GrokBuild`.
     let build_used = products
         .iter()
-        .find(|p| p.product.eq_ignore_ascii_case("GrokBuild"))
+        .find(|p| is_grok_build_product(&p.product))
         .map(|p| p.usage_percent);
 
     let period = config.current_period;
@@ -232,6 +242,15 @@ mod tests {
         assert_eq!(remaining(85.0), 15.0);
         assert_eq!(remaining(120.0), 0.0);
         assert_eq!(remaining(-5.0), 100.0);
+    }
+
+    #[test]
+    fn grok_build_product_ids() {
+        assert!(is_grok_build_product("GrokBuild"));
+        assert!(is_grok_build_product("PRODUCT_GROK_BUILD"));
+        assert!(is_grok_build_product("product_grok_build"));
+        assert!(!is_grok_build_product("Grok"));
+        assert!(!is_grok_build_product("Chat"));
     }
 
     /// Optional live check: `cargo test live_week_usage -- --ignored`

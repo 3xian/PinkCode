@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AvailableCommand,
   ManagedAgentInfo,
   SessionMode,
+  TimelineItem,
 } from "../types";
 import { SESSION_MODE_OPTIONS } from "../types";
+import { usePromptHistoryBrowse } from "../hooks/usePromptHistoryBrowse";
 import {
   GROK_BUILTIN_SLASH_COMMANDS,
   mergeSlashCommands,
@@ -13,6 +15,7 @@ import {
   applySessionModeToPrompt,
   cycleSessionMode,
 } from "../utils/sessionMode";
+import { HistoryMenu } from "./HistoryMenu";
 import { PromptChipSelect } from "./PromptChipSelect";
 
 interface Props {
@@ -27,6 +30,13 @@ interface Props {
   onSend: (text: string) => void;
   /** Agent-advertised slash commands (ACP available_commands_update). */
   availableCommands?: AvailableCommand[];
+  /**
+   * Current session timeline — Up on empty composer opens history
+   * (Grok Build-style list overlay).
+   */
+  timelineItems?: TimelineItem[];
+  /** Reset history browse / local sent when the active session changes. */
+  sessionId?: string | null;
 }
 
 export function PromptBar({
@@ -36,6 +46,8 @@ export function PromptBar({
   onSessionModeChange,
   onSend,
   availableCommands = [],
+  timelineItems = [],
+  sessionId = null,
 }: Props) {
   const [text, setText] = useState("");
   const [menuIndex, setMenuIndex] = useState(0);
@@ -62,6 +74,38 @@ export function PromptBar({
     SESSION_MODE_OPTIONS.find((o) => o.value === sessionMode) ??
     SESSION_MODE_OPTIONS[0]!;
 
+  const focusEnd = useCallback((value: string) => {
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      const pos = value.length;
+      el.selectionStart = pos;
+      el.selectionEnd = pos;
+    });
+  }, []);
+
+  const onHistoryExclusive = useCallback(() => {
+    suppressMenuRef.current = true;
+    setMenuOpen(false);
+  }, []);
+
+  const onSessionReset = useCallback(() => {
+    setMenuOpen(false);
+    suppressMenuRef.current = false;
+  }, []);
+
+  // Session switch: hook owns history + composer text; we only reset slash chrome.
+  const history = usePromptHistoryBrowse({
+    sessionId,
+    timelineItems,
+    text,
+    setText,
+    focusEnd,
+    onHistoryExclusive,
+    onSessionReset,
+  });
+
   /** Agent overrides builtins by name; builtins fill gaps. */
   const commandCatalog = useMemo(
     () => mergeSlashCommands(availableCommands, GROK_BUILTIN_SLASH_COMMANDS),
@@ -83,20 +127,18 @@ export function PromptBar({
       .slice(0, 40);
   }, [slashQuery, commandCatalog]);
 
-  // menuOpen is the sole open flag; suppressMenuRef only blocks re-open until
-  // the user types again (cleared in onChange / when leaving slash mode).
+  // While browsing history, keep slash menu closed (Grok history intercept).
   const showMenu =
+    !history.active &&
     menuOpen &&
     Boolean(!stopping && !busy) &&
     Boolean(slashQuery) &&
     filteredCommands.length > 0;
 
-  // Reset highlight when filter changes
   useEffect(() => {
     setMenuIndex(0);
   }, [slashQuery?.query, filteredCommands.length]);
 
-  // Leave slash mode entirely when the leading `/…` form is gone.
   useEffect(() => {
     if (!slashQuery) {
       setMenuOpen(false);
@@ -104,7 +146,6 @@ export function PromptBar({
     }
   }, [slashQuery]);
 
-  // Scroll active item into view
   useEffect(() => {
     if (!showMenu) return;
     const el = menuRef.current?.querySelector<HTMLElement>(
@@ -116,17 +157,11 @@ export function PromptBar({
   function applyCommand(cmd: AvailableCommand) {
     const needsInput = Boolean(cmd.inputHint);
     const next = needsInput ? `/${cmd.name} ` : `/${cmd.name}`;
+    history.detach();
     suppressMenuRef.current = true;
     setMenuOpen(false);
     setText(next);
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      const pos = next.length;
-      el.selectionStart = pos;
-      el.selectionEnd = pos;
-    });
+    focusEnd(next);
   }
 
   function sendIfReady() {
@@ -134,6 +169,9 @@ export function PromptBar({
     if (!trimmed || stopping || busy) return;
     // First non-local message auto-connects ACP in App.handleSend.
     const payload = applySessionModeToPrompt(sessionMode, trimmed);
+    // Record wire text (matches timeline user cards after mode prefix).
+    history.recordSent(payload);
+    history.detach();
     onSend(payload);
     setText("");
     setMenuOpen(false);
@@ -144,7 +182,6 @@ export function PromptBar({
   function isCompleteCommand(cmd: AvailableCommand): boolean {
     const trimmed = text.trimEnd();
     if (cmd.inputHint) {
-      // Applied form is "/name " (trailing space) or user already typed args.
       return (
         trimmed === `/${cmd.name}` ||
         trimmed.startsWith(`/${cmd.name} `) ||
@@ -157,6 +194,15 @@ export function PromptBar({
   return (
     <div className="prompt-bar">
       <div className="prompt-composer">
+        {history.active && history.selected != null && (
+          <HistoryMenu
+            entries={history.entries}
+            selected={history.selected}
+            listRef={history.listRef}
+            onSelect={history.select}
+            onAccept={history.accept}
+          />
+        )}
         {showMenu && (
           <div
             className="slash-menu"
@@ -178,7 +224,6 @@ export function PromptBar({
                 className={`slash-menu-item${i === menuIndex ? " active" : ""}`}
                 onMouseEnter={() => setMenuIndex(i)}
                 onMouseDown={(e) => {
-                  // Prevent textarea blur before click applies
                   e.preventDefault();
                   applyCommand(cmd);
                 }}
@@ -206,15 +251,15 @@ export function PromptBar({
                   ? "Agent is working… enter adds this message to the queue"
                   : sessionMode === "plan"
                     ? "Plan mode · next free-text send becomes /plan … · shift+tab to cycle"
-                    : "Message the agent… / for commands · enter to send · shift+tab mode · ctrl+enter newline"
-              : "Message the agent… first send connects · /usage /context work offline"
+                    : "Message the agent… / for commands · ↑ history · enter send · shift+tab mode"
+              : "Message the agent… first send connects · ↑ history when empty"
           }
           value={text}
           disabled={stopping || busy}
           onChange={(e) => {
             const next = e.target.value;
-            // User is typing → lift suppress; only auto-open while completing
-            // the command name (no args yet). After "/cmd " keep the menu closed.
+            // Typing while browsing detaches (keep populated text).
+            if (history.active) history.detach();
             suppressMenuRef.current = false;
             setText(next);
             const q = parseSlashQuery(next);
@@ -224,7 +269,7 @@ export function PromptBar({
           onKeyDown={(e) => {
             if (e.nativeEvent.isComposing) return;
 
-            // Shift+Tab: Grok session mode cycle — keep focus in the composer.
+            // Shift+Tab: Grok session mode cycle.
             if (e.key === "Tab" && e.shiftKey) {
               e.preventDefault();
               e.stopPropagation();
@@ -237,6 +282,9 @@ export function PromptBar({
               });
               return;
             }
+
+            // History panel first (modal over slash, matching Grok).
+            if (history.handleKey(e)) return;
 
             if (showMenu) {
               if (e.key === "ArrowDown") {
@@ -265,24 +313,20 @@ export function PromptBar({
               }
               if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
                 const cmd = filteredCommands[menuIndex];
-                // Bare `/` with empty query: do not auto-pick the first command.
                 if (slashQuery && !slashQuery.query) {
-                  // Fall through to send ("/") or no-op if empty after trim.
+                  // Bare `/` — fall through to send.
                 } else if (cmd && slashQuery && !slashQuery.hasArgs) {
                   if (isCompleteCommand(cmd)) {
-                    // Full command already in the box → send, don't re-insert.
                     e.preventDefault();
                     suppressMenuRef.current = true;
                     setMenuOpen(false);
                     sendIfReady();
                     return;
                   }
-                  // Incomplete prefix → insert selected command.
                   e.preventDefault();
                   applyCommand(cmd);
                   return;
                 }
-                // hasArgs: fall through to send
               }
             }
 
@@ -290,6 +334,7 @@ export function PromptBar({
 
             if (e.ctrlKey || e.metaKey) {
               e.preventDefault();
+              history.detach();
               const el = e.currentTarget;
               const start = el.selectionStart ?? text.length;
               const end = el.selectionEnd ?? text.length;
@@ -328,7 +373,7 @@ export function PromptBar({
             className="btn primary prompt-send"
             type="button"
             disabled={!canSend}
-            title="enter to send · ctrl+enter for newline · shift+tab mode"
+            title="enter to send · ↑ empty for history · ctrl+enter newline · shift+tab mode"
             onClick={sendIfReady}
           >
             {running || awaiting ? "Queue" : "Send"}
@@ -361,13 +406,11 @@ function parseSlashQuery(
   text: string,
 ): { query: string; hasArgs: boolean } | null {
   if (!text.startsWith("/")) return null;
-  // Only autocomplete on a single-line leading slash command
   if (text.includes("\n")) return null;
   const body = text.slice(1);
   const space = body.search(/\s/);
   if (space === -1) {
     return { query: body, hasArgs: false };
   }
-  // After a space, treat as "has args" — Enter should send rather than insert.
   return { query: body.slice(0, space), hasArgs: true };
 }

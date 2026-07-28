@@ -92,6 +92,9 @@ pub struct CompletedTurnUsage<'a> {
     pub prompt_id: Option<&'a str>,
     pub total_tokens: u64,
     pub fresh_tokens: u64,
+    /// Server billable cost in USD ticks (`1e10` ticks = $1). Absent when
+    /// scrubbed/missing on the wire (see Grok Build `PromptUsage`).
+    pub cost_usd_ticks: u64,
     pub incomplete: bool,
 }
 
@@ -108,6 +111,24 @@ pub fn completed_turn_usage(message: &Value) -> Option<CompletedTurnUsage<'_>> {
     let output = u64_field(usage, &["outputTokens", "output_tokens"]);
     let cached = u64_field(usage, &["cachedReadTokens", "cached_read_tokens"]);
     let total = u64_field(usage, &["totalTokens", "total_tokens"]);
+    // Prefer trusted cost only: incomplete / partial bills are scrubbed in
+    // Grok Build wire surfaces (absence ≠ free).
+    let incomplete = usage
+        .get("usageIsIncomplete")
+        .or_else(|| usage.get("usage_is_incomplete"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let cost_is_partial = usage
+        .get("costIsPartial")
+        .or_else(|| usage.get("cost_is_partial"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let raw_cost = i64_field(usage, &["costUsdTicks", "cost_usd_ticks"]);
+    let cost_usd_ticks = if incomplete || cost_is_partial || raw_cost <= 0 {
+        0
+    } else {
+        raw_cost as u64
+    };
     Some(CompletedTurnUsage {
         prompt_id: update
             .get("prompt_id")
@@ -123,11 +144,8 @@ pub fn completed_turn_usage(message: &Value) -> Option<CompletedTurnUsage<'_>> {
         } else {
             total
         },
-        incomplete: usage
-            .get("usageIsIncomplete")
-            .or_else(|| usage.get("usage_is_incomplete"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
+        cost_usd_ticks,
+        incomplete,
     })
 }
 
@@ -221,6 +239,17 @@ fn u64_field(value: &Value, keys: &[&str]) -> u64 {
         .unwrap_or(0)
 }
 
+fn i64_field(value: &Value, keys: &[&str]) -> i64 {
+    keys.iter()
+        .find_map(|key| {
+            value.get(*key).and_then(|v| {
+                v.as_i64()
+                    .or_else(|| v.as_u64().and_then(|n| i64::try_from(n).ok()))
+            })
+        })
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,7 +274,61 @@ mod tests {
         assert_eq!(usage.prompt_id, Some("prompt-1"));
         assert_eq!(usage.total_tokens, 125);
         assert_eq!(usage.fresh_tokens, 85);
+        assert_eq!(usage.cost_usd_ticks, 0);
         assert!(!usage.incomplete);
+    }
+
+    #[test]
+    fn parses_cost_usd_ticks_when_complete() {
+        let message = json!({
+            "params": { "update": {
+                "sessionUpdate": "turn_completed",
+                "prompt_id": "prompt-2",
+                "usage": {
+                    "inputTokens": 100,
+                    "outputTokens": 10,
+                    "totalTokens": 110,
+                    "costUsdTicks": 75_192_000
+                }
+            }}
+        });
+        let usage = completed_turn_usage(&message).expect("turn usage");
+        assert_eq!(usage.cost_usd_ticks, 75_192_000);
+    }
+
+    #[test]
+    fn scrubs_cost_when_usage_incomplete_or_partial() {
+        let incomplete = json!({
+            "params": { "update": {
+                "sessionUpdate": "turn_completed",
+                "usage": {
+                    "totalTokens": 10,
+                    "costUsdTicks": 99,
+                    "usageIsIncomplete": true
+                }
+            }}
+        });
+        assert_eq!(
+            completed_turn_usage(&incomplete)
+                .expect("turn")
+                .cost_usd_ticks,
+            0
+        );
+
+        let partial = json!({
+            "params": { "update": {
+                "sessionUpdate": "turn_completed",
+                "usage": {
+                    "totalTokens": 10,
+                    "costUsdTicks": 99,
+                    "costIsPartial": true
+                }
+            }}
+        });
+        assert_eq!(
+            completed_turn_usage(&partial).expect("turn").cost_usd_ticks,
+            0
+        );
     }
 
     #[test]

@@ -11,6 +11,9 @@
   box-shadow: none;
   flex-shrink: 0;
   user-select: none;
+  /* Stack above .session-list so chart tips aren't covered by Tasks / + New. */
+  position: relative;
+  z-index: 5;
 }
 
 .status-card-row {
@@ -18,14 +21,18 @@
   align-items: center; /* vertically center battery next to chart */
   gap: 10px;
   min-width: 0;
+  /* Let chart tooltips paint above the battery (sibling stacking). */
+  isolation: isolate;
 }
 
 .status-card-row .week-battery {
   align-self: center;
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
 }
 
-/* 7-day token usage sparkline — no border / chrome */
+/* 7-day token usage bar chart — no border / chrome */
 .token-chart {
   display: flex;
   flex-direction: column;
@@ -38,6 +45,9 @@
   background: transparent;
   box-shadow: none;
   user-select: none;
+  /* Above week-battery so hover tip covers battery % text. */
+  position: relative;
+  z-index: 2;
 }
 
 .token-chart-top {
@@ -79,46 +89,27 @@
   overflow: visible;
 }
 
-/* Perfect circles — not SVG, so not squashed by preserveAspectRatio=none */
-.token-chart-dots {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
+.token-chart-bar {
+  opacity: 0.82;
+  transition: opacity 0.12s ease;
 }
 
-.token-chart-dot {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  margin: -4px 0 0 -4px;
-  border-radius: 50%;
-  /* Fully opaque fill so the line never shows through as a “hollow” ring */
-  background: var(--title-selected);
-  border: 1.5px solid var(--bg);
-  box-shadow: 0 0 0 2px rgb(var(--title-selected-rgb) / 0.3);
+.token-chart-bar-active {
   opacity: 1;
-  transition:
-    transform 0.12s ease,
-    box-shadow 0.12s ease;
 }
 
-.token-chart-dot-active {
-  transform: scale(1.35);
-  box-shadow: 0 0 0 3px rgb(var(--title-selected-rgb) / 0.45);
-}
-
-/* Proximity tooltip: date / tokens / turns near the hovered point */
+/* Tooltip: date / tokens / turns near the hovered bar.
+   pointer-events: none so it never steals clicks from Tasks / + New underneath. */
 .token-chart-tip {
   position: absolute;
-  z-index: 2;
-  /* Default: above the point */
+  z-index: 20;
+  /* Default: above the bar */
   transform: translate(-50%, calc(-100% - 10px));
   pointer-events: none;
   padding: 5px 8px;
   border: 1px solid color-mix(in srgb, var(--title-selected) 35%, var(--border));
   border-radius: 6px;
-  background: color-mix(in srgb, var(--bg-elevated) 96%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 98%, transparent);
   box-shadow: var(--shadow-md);
   white-space: nowrap;
   font-size: 10px;
@@ -127,7 +118,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Point is high — place tip below so it stays under the top edge */
+/* Bar is high — place tip below so it stays under the top edge */
 .token-chart-tip-below {
   transform: translate(-50%, 12px);
 }

@@ -8,6 +8,11 @@ import {
 } from "react";
 import type { TokenUsageSeries, WeekUsage } from "../types";
 import {
+  dayChartValues,
+  dayWeeklyLimitPercent,
+  formatDayWeeklyLimitLine,
+} from "../utils/dayUsage";
+import {
   formatResetCountdown,
   formatTimeUntil,
   formatTokens,
@@ -35,11 +40,9 @@ export function StatsBar({
   );
 }
 
-/** viewBox size — HTML dots use % so they stay circles under preserveAspectRatio=none. */
+/** viewBox size for the 7-day token bar chart. */
 const CHART_VB_W = 280;
 const CHART_VB_H = 48;
-/** Max distance (in plot %) from a point to show its tooltip. */
-const HOVER_PROXIMITY_PCT = 12;
 
 function TokenUsageChart({
   series,
@@ -50,8 +53,9 @@ function TokenUsageChart({
 }) {
   const chart = useMemo(() => {
     if (!series || series.days.length === 0) return null;
-    return buildSmoothChart(series.days.map((d) => d.tokens));
-  }, [series]);
+    // Bar heights follow weekly-limit % (cost-weighted), not raw tokens.
+    return buildBarChart(dayChartValues(series, weekUsage));
+  }, [series, weekUsage]);
 
   const plotRef = useRef<HTMLDivElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -66,24 +70,20 @@ function TokenUsageChart({
       if (!el) return;
       const rect = el.getBoundingClientRect();
       if (rect.width <= 0) return;
-      const mx = ((e.clientX - rect.left) / rect.width) * 100;
-      const my = ((e.clientY - rect.top) / rect.height) * 100;
+      const mx = ((e.clientX - rect.left) / rect.width) * CHART_VB_W;
 
       let best = -1;
-      let bestDist = Infinity;
-      for (let i = 0; i < chart.points.length; i++) {
-        const p = chart.points[i];
-        const px = (p.x / CHART_VB_W) * 100;
-        const py = (p.y / CHART_VB_H) * 100;
-        const dx = mx - px;
-        const dy = my - py;
-        const d = Math.hypot(dx, dy);
-        if (d < bestDist) {
-          bestDist = d;
+      for (let i = 0; i < chart.bars.length; i++) {
+        const b = chart.bars[i];
+        // Include half the gap on each side so hover feels continuous.
+        const left = b.x - chart.gap / 2;
+        const right = b.x + b.width + chart.gap / 2;
+        if (mx >= left && mx <= right) {
           best = i;
+          break;
         }
       }
-      setHoverIdx(best >= 0 && bestDist <= HOVER_PROXIMITY_PCT ? best : null);
+      setHoverIdx(best >= 0 ? best : null);
     },
     [chart, series],
   );
@@ -110,14 +110,16 @@ function TokenUsageChart({
 
   const days = series.days;
   const hoverDay = hoverIdx != null ? days[hoverIdx] : null;
-  const hoverPt = hoverIdx != null && chart ? chart.points[hoverIdx] : null;
-  const hoverTopPct = hoverPt ? (hoverPt.y / CHART_VB_H) * 100 : 0;
-  // Tip is taller than half the plot; flip below when the point is high.
-  const tipBelow = hoverPt != null && hoverTopPct < 52;
-  const hoverUsageLine =
+  const hoverBar = hoverIdx != null && chart ? chart.bars[hoverIdx] : null;
+  const hoverTopPct = hoverBar ? (hoverBar.y / CHART_VB_H) * 100 : 0;
+  // Tip is taller than half the plot; flip below when the bar is high.
+  const tipBelow = hoverBar != null && hoverTopPct < 52;
+  const hoverPct =
     hoverDay != null
-      ? dayUsageEstimateLine(hoverDay.tokens, series, weekUsage)
+      ? dayWeeklyLimitPercent(hoverDay, series, weekUsage)
       : null;
+  const hoverUsageLine =
+    hoverPct != null ? formatDayWeeklyLimitLine(hoverPct) : null;
 
   return (
     <div className="token-chart">
@@ -140,47 +142,34 @@ function TokenUsageChart({
           aria-label="Token usage over the last 7 days"
         >
           <defs>
-            <linearGradient id="tokenStroke" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="var(--accent)" />
-              <stop offset="100%" stopColor="var(--title-selected)" />
+            <linearGradient id="tokenBarFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--title-selected)" />
+              <stop offset="100%" stopColor="var(--accent)" />
             </linearGradient>
           </defs>
-          {chart && (
-            <path
-              d={chart.line}
-              fill="none"
-              stroke="url(#tokenStroke)"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
+          {chart?.bars.map((b, i) => (
+            <rect
+              key={days[i]?.date ?? i}
+              className={
+                "token-chart-bar" +
+                (hoverIdx === i ? " token-chart-bar-active" : "")
+              }
+              x={b.x}
+              y={b.y}
+              width={b.width}
+              height={b.height}
+              rx={Math.min(2, b.width / 4)}
+              fill="url(#tokenBarFill)"
             />
-          )}
+          ))}
         </svg>
-        {chart && (
-          <div className="token-chart-dots" aria-hidden>
-            {chart.points.map((p, i) => (
-              <span
-                key={days[i]?.date ?? i}
-                className={
-                  "token-chart-dot" +
-                  (hoverIdx === i ? " token-chart-dot-active" : "")
-                }
-                style={{
-                  left: `${(p.x / CHART_VB_W) * 100}%`,
-                  top: `${(p.y / CHART_VB_H) * 100}%`,
-                }}
-              />
-            ))}
-          </div>
-        )}
-        {hoverDay && hoverPt && (
+        {hoverDay && hoverBar && (
           <div
             className={
               "token-chart-tip" + (tipBelow ? " token-chart-tip-below" : "")
             }
             style={{
-              left: `${(hoverPt.x / CHART_VB_W) * 100}%`,
+              left: `${((hoverBar.x + hoverBar.width / 2) / CHART_VB_W) * 100}%`,
               top: `${hoverTopPct}%`,
             }}
             role="tooltip"
@@ -206,54 +195,35 @@ function TokenUsageChart({
   );
 }
 
-/** Build smooth cubic path (Catmull-Rom → Bezier) for a 280×48 chart. */
-function buildSmoothChart(values: number[]): {
-  line: string;
-  area: string;
-  points: { x: number; y: number }[];
+/** Build vertical bars for a 280×48 chart. */
+function buildBarChart(values: number[]): {
+  bars: { x: number; y: number; width: number; height: number }[];
+  gap: number;
 } {
-  const w = 280;
-  const h = 48;
-  // Extra pad so larger dots / halos are not clipped at the edges.
-  const padX = 10;
-  const padY = 10;
+  const w = CHART_VB_W;
+  const h = CHART_VB_H;
+  const padX = 4;
+  const padY = 2;
   const n = values.length;
   const max = Math.max(1, ...values);
-  const span = Math.max(1, n - 1);
+  const plotW = w - padX * 2;
+  const plotH = h - padY * 2;
+  // ~22% of slot as gap keeps bars readable at 7 days.
+  const gap = n > 1 ? (plotW / n) * 0.22 : 0;
+  const barW = n > 0 ? (plotW - gap * (n - 1)) / n : plotW;
 
-  const points = values.map((v, i) => {
-    const x = padX + ((w - padX * 2) * i) / span;
-    const y = h - padY - ((h - padY * 2) * v) / max;
-    return { x, y };
+  const bars = values.map((v, i) => {
+    // Tiny stub for zero days so empty slots remain visible/hoverable.
+    const height =
+      v > 0
+        ? Math.max(2, (plotH * v) / max)
+        : Math.max(1.5, plotH * 0.04);
+    const x = padX + i * (barW + gap);
+    const y = h - padY - height;
+    return { x, y, width: barW, height };
   });
 
-  if (points.length === 1) {
-    const p = points[0];
-    return {
-      line: `M ${p.x} ${p.y}`,
-      area: `M ${p.x} ${h - padY} L ${p.x} ${p.y} L ${p.x} ${h - padY} Z`,
-      points,
-    };
-  }
-
-  let line = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[Math.max(0, i - 1)];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[Math.min(points.length - 1, i + 2)];
-    const c1x = p1.x + (p2.x - p0.x) / 6;
-    const c1y = p1.y + (p2.y - p0.y) / 6;
-    const c2x = p2.x - (p3.x - p1.x) / 6;
-    const c2y = p2.y - (p3.y - p1.y) / 6;
-    line += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
-  }
-
-  const first = points[0];
-  const last = points[points.length - 1];
-  const area = `${line} L ${last.x.toFixed(2)} ${(h - padY).toFixed(2)} L ${first.x.toFixed(2)} ${(h - padY).toFixed(2)} Z`;
-
-  return { line, area, points };
+  return { bars, gap };
 }
 
 function shortDay(iso?: string): string {
@@ -444,30 +414,6 @@ function fmtPct(n: number): string {
   if (!Number.isFinite(n)) return "—";
   const r = Math.round(n * 10) / 10;
   return Number.isInteger(r) ? `${r}%` : `${r.toFixed(1)}%`;
-}
-
-/**
- * Rough day share of the billing period (local tokens only):
- * (dayTokens / seriesTotal) * credit_usage_percent → "~12% usage".
- * Leading ~ marks this as an estimate, not official Grok day accounting.
- */
-function dayUsageEstimateLine(
-  dayTokens: number,
-  series: TokenUsageSeries,
-  weekUsage: WeekUsage | null,
-): string | null {
-  if (!weekUsage || weekUsage.error) return null;
-  const creditUsagePercent = weekUsage.usedPercent;
-  if (!Number.isFinite(creditUsagePercent) || creditUsagePercent <= 0) {
-    return null;
-  }
-  const total =
-    series.totalTokens > 0
-      ? series.totalTokens
-      : series.days.reduce((s, d) => s + d.tokens, 0);
-  if (!(total > 0) || !Number.isFinite(dayTokens) || dayTokens < 0) return null;
-  const pct = (dayTokens / total) * creditUsagePercent;
-  return `~${fmtPct(pct)} usage`;
 }
 
 

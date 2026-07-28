@@ -316,6 +316,8 @@ export function SessionDetailView({
         onSessionModeChange={onSessionModeChange}
         onSend={onSendPrompt}
         availableCommands={availableCommands}
+        timelineItems={timelineItems}
+        sessionId={card?.id ?? null}
       />
     </section>
   );

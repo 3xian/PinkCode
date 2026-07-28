@@ -88,6 +88,8 @@ export interface TokenDayPoint {
   date: string;
   tokens: number;
   turns: number;
+  /** Trusted billable cost that day (`costUsdTicks` sum; 1e10 ticks = $1). */
+  costUsdTicks: number;
 }
 
 /** Trailing window of token usage from session `updates.jsonl`. */
@@ -95,6 +97,8 @@ export interface TokenUsageSeries {
   days: TokenDayPoint[];
   totalTokens: number;
   totalTurns: number;
+  /** Sum of trusted costUsdTicks over the window. */
+  totalCostUsdTicks: number;
   windowDays: number;
 }
 

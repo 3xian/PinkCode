@@ -841,7 +841,7 @@ fn token_usage_series_uncached(window_days: u32) -> Result<TokenUsageSeries> {
     let start_index = today_index.saturating_sub((days as u64).saturating_sub(1));
     let start_secs = start_index * day_secs;
 
-    let mut by_day: HashMap<u64, (u64, u64)> = HashMap::new(); // day_index -> (tokens, turns)
+    let mut by_day: HashMap<u64, DayAgg> = HashMap::new();
 
     let root = sessions_root();
     if root.exists() {
@@ -883,15 +883,18 @@ fn token_usage_series_uncached(window_days: u32) -> Result<TokenUsageSeries> {
     let mut points = Vec::with_capacity(days);
     let mut total_tokens = 0u64;
     let mut total_turns = 0u64;
+    let mut total_cost_usd_ticks = 0u64;
     for i in 0..days as u64 {
         let day_index = start_index + i;
-        let (tokens, turns) = by_day.get(&day_index).copied().unwrap_or((0, 0));
-        total_tokens = total_tokens.saturating_add(tokens);
-        total_turns = total_turns.saturating_add(turns);
+        let agg = by_day.get(&day_index).copied().unwrap_or_default();
+        total_tokens = total_tokens.saturating_add(agg.tokens);
+        total_turns = total_turns.saturating_add(agg.turns);
+        total_cost_usd_ticks = total_cost_usd_ticks.saturating_add(agg.cost_usd_ticks);
         points.push(TokenDayPoint {
             date: day_index_to_ymd(day_index),
-            tokens,
-            turns,
+            tokens: agg.tokens,
+            turns: agg.turns,
+            cost_usd_ticks: agg.cost_usd_ticks,
         });
     }
 
@@ -899,6 +902,7 @@ fn token_usage_series_uncached(window_days: u32) -> Result<TokenUsageSeries> {
         days: points,
         total_tokens,
         total_turns,
+        total_cost_usd_ticks,
         window_days: days as u32,
     })
 }
@@ -1017,10 +1021,17 @@ fn utc_ymd_hms_to_unix(y: i32, mo: u32, d: u32, h: u32, mi: u32, sec: u32) -> u6
 /// Cap per-file scan: full-file reads of multi‑MB `updates.jsonl` freeze startup.
 const TOKEN_JSONL_MAX_BYTES: u64 = 1_500_000;
 
+#[derive(Clone, Copy, Default)]
+struct DayAgg {
+    tokens: u64,
+    turns: u64,
+    cost_usd_ticks: u64,
+}
+
 fn accumulate_turn_usage_from_jsonl(
     path: &Path,
     start_secs: u64,
-    by_day: &mut HashMap<u64, (u64, u64)>,
+    by_day: &mut HashMap<u64, DayAgg>,
 ) -> Result<()> {
     let mut file = fs::File::open(path)?;
     let len = file.metadata()?.len();
@@ -1056,7 +1067,9 @@ fn accumulate_turn_usage_from_jsonl(
             continue;
         };
         let tokens = turn.fresh_tokens;
-        if tokens == 0 {
+        let cost = turn.cost_usd_ticks;
+        // Skip empty turns (no tokens and no trusted cost).
+        if tokens == 0 && cost == 0 {
             continue;
         }
         let ts = extract_update_unix_secs(&msg).unwrap_or(0);
@@ -1064,9 +1077,10 @@ fn accumulate_turn_usage_from_jsonl(
             continue;
         }
         let day_index = ts / 86_400;
-        let entry = by_day.entry(day_index).or_insert((0, 0));
-        entry.0 = entry.0.saturating_add(tokens);
-        entry.1 = entry.1.saturating_add(1);
+        let entry = by_day.entry(day_index).or_default();
+        entry.tokens = entry.tokens.saturating_add(tokens);
+        entry.turns = entry.turns.saturating_add(1);
+        entry.cost_usd_ticks = entry.cost_usd_ticks.saturating_add(cost);
     }
     Ok(())
 }

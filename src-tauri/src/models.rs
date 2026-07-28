@@ -121,6 +121,9 @@ pub struct TokenDayPoint {
     pub tokens: u64,
     /// Number of completed turns contributing to `tokens`.
     pub turns: u64,
+    /// Trusted billable cost that day (`costUsdTicks` sum; 1e10 ticks = $1).
+    /// Zero when turns lacked trustworthy cost on the wire.
+    pub cost_usd_ticks: u64,
 }
 
 /// Last N days of token usage aggregated from Grok session turn completions.
@@ -130,5 +133,7 @@ pub struct TokenUsageSeries {
     pub days: Vec<TokenDayPoint>,
     pub total_tokens: u64,
     pub total_turns: u64,
+    /// Sum of trusted `cost_usd_ticks` over the window.
+    pub total_cost_usd_ticks: u64,
     pub window_days: u32,
 }

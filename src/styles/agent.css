@@ -695,6 +695,106 @@ button.user-question-option:hover:not(:disabled),
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
+/* Prompt history overlay (Grok Build: empty ↑ opens "history" list) */
+.history-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 4px;
+  max-height: 260px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-md);
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.history-menu-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px 4px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.history-menu-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--text-muted);
+}
+
+.history-menu-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-menu-list {
+  overflow-y: auto;
+  max-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-menu-item {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 6px;
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-menu-item:last-child {
+  border-bottom: none;
+}
+
+.history-menu-item:hover,
+.history-menu-item.active {
+  background: var(--accent-dim);
+}
+
+.history-menu-item.active {
+  font-weight: 600;
+}
+
+.history-menu-arrow {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  line-height: 1.2;
+}
+
+.history-menu-text {
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.history-menu-footer {
+  padding: 5px 10px 6px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
 /* Slash command autocomplete (Grok Build / ACP available_commands) */
 .slash-menu {
   position: absolute;

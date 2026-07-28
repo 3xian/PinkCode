@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   frontend:
     runs-on: ubuntu-latest
@@ -14,7 +18,8 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+          cache-dependency-path: package-lock.json
+      - run: npm ci --prefer-offline --no-audit --no-fund
       # Frontend only here — full `npm run check` also runs Rust (needs toolchain).
       - run: npm run check:frontend
 
@@ -22,16 +27,17 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      # Same entrypoint as local `npm run check:rust` / `npm run check`.
-      - run: npm run check:rust
+          # PR caches are scoped to that PR and cannot help main or another PR.
+          # Restore main's cache everywhere, but only pay the upload cost on main.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Keep the same commands as scripts/check-rust.mjs without installing the
+      # unrelated frontend dependency tree in this job.
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml

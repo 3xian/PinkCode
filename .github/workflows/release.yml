@@ -66,7 +66,6 @@ jobs:
   # Matrix pack jobs only consume this output (do not regenerate notes).
   prepare-notes:
     name: Prepare release notes
-    needs: verify
     runs-on: ubuntu-latest
     # generate-notes API requires contents:write (read-only GITHUB_TOKEN → 403).
     permissions:
@@ -135,9 +134,11 @@ jobs:
         with:
           workspaces: src-tauri
           # Release runs are tag-scoped, so a target cache saved for vX cannot
-          # be restored by vY. Keep the Cargo registry/git cache, but avoid
-          # spending ~30-40s uploading an unusable target directory per tag.
+          # be restored by vY. Restore Cargo registry/git data when available,
+          # but never upload a tag-scoped cache: even with target caching
+          # disabled, the post step spent ~40s saving registry data on Windows.
           cache-targets: false
+          save-if: false
 
       - name: Install dependencies
         # setup-node already restores ~/.npm. Avoid npm's unrelated audit/fund

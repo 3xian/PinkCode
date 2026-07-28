@@ -9,6 +9,23 @@
 :root {
   color-scheme: light;
 
+  /* ── Official Rosé Pine Dawn palette ───────────────────────── */
+  --rp-base: #faf4ed;
+  --rp-surface: #fffaf3;
+  --rp-overlay: #f2e9e1;
+  --rp-muted: #9893a5;
+  --rp-subtle: #797593;
+  --rp-text: #575279;
+  --rp-love: #b4637a;
+  --rp-gold: #ea9d34;
+  --rp-rose: #d7827e;
+  --rp-pine: #286983;
+  --rp-foam: #56949f;
+  --rp-iris: #907aa9;
+  --rp-hl-low: #f4ede8;
+  --rp-hl-med: #dfdad9;
+  --rp-hl-high: #cecacd;
+
   /* ── Role RGB (for alpha) ─────────────────────────────────── */
   --rp-base-rgb: 250 244 237;
   --rp-surface-rgb: 255 250 243;
@@ -18,7 +35,7 @@
   --rp-hl-high-rgb: 206 202 205;
   --rp-muted-rgb: 152 147 165;
   --rp-subtle-rgb: 121 117 147;
-  --rp-text-rgb: 70 66 97;
+  --rp-text-rgb: 87 82 121;
   --rp-love-rgb: 180 99 122;
   --rp-gold-rgb: 234 157 52;
   --rp-rose-rgb: 215 130 126;
@@ -27,67 +44,75 @@
   --rp-iris-rgb: 144 122 169;
 
   /* ── Surfaces ─────────────────────────────────────────────── */
-  --bg: #faf4ed; /* base */
-  --bg-elevated: #fffaf3; /* surface */
-  --bg-panel: #fffaf3;
-  --bg-hover: #f2e9e1; /* overlay */
-  --hl-low: #f4ede8; /* highlightLow */
-  --border: #dfdad9; /* highlightMed */
-  --border-strong: #cecacd; /* highlightHigh */
+  --bg: var(--rp-base);
+  --bg-elevated: var(--rp-surface);
+  --bg-panel: var(--rp-surface);
+  --bg-hover: var(--rp-overlay);
+  --hl-low: var(--rp-hl-low);
+  --border: var(--rp-hl-med);
+  --border-strong: var(--rp-hl-high);
 
   /* ── Type ─────────────────────────────────────────────────── */
-  --text: #464261;
+  --text: var(--rp-text);
   --text-rgb: var(--rp-text-rgb);
-  --text-muted: #797593; /* subtle */
-  --muted: #9893a5;
+  --text-muted: var(--rp-subtle);
+  --muted: var(--rp-muted);
 
   /* ── Semantic ─────────────────────────────────────────────── */
-  --accent: #d7827e; /* rose */
+  --accent: var(--rp-rose);
   --accent-rgb: var(--rp-rose-rgb);
   --accent-dim: rgb(var(--accent-rgb) / 0.14);
-  --on-accent: #faf4ed; /* base on solid rose fills */
-  --title-selected: #907aa9; /* iris */
+  --action-primary: var(--rp-pine);
+  --action-primary-rgb: var(--rp-pine-rgb);
+  --on-action-primary: var(--rp-surface);
+  --title-selected: var(--rp-iris);
   --title-selected-rgb: var(--rp-iris-rgb);
-  --live: #56949f; /* foam */
+  --live: var(--rp-foam);
   --live-rgb: var(--rp-foam-rgb);
   --live-dim: rgb(var(--live-rgb) / 0.15);
-  --danger: #b4637a; /* love */
+  --danger: var(--rp-love);
   --danger-rgb: var(--rp-love-rgb);
   --danger-dim: rgb(var(--danger-rgb) / 0.14);
-  --warn: #ea9d34; /* gold */
+  --warn: var(--rp-gold);
   --warn-rgb: var(--rp-gold-rgb);
   --warn-dim: rgb(var(--warn-rgb) / 0.14);
-  --link: #56949f; /* foam */
-  --link-hover: #907aa9; /* iris */
-  --pine: #286983;
+  --pine: var(--rp-pine);
   --pine-rgb: var(--rp-pine-rgb);
-  --add: #56949f; /* foam */
-  --del: #b4637a; /* love */
+  --link: var(--pine);
+  --link-hover: color-mix(in srgb, var(--pine) 78%, var(--text));
+  --info: var(--live);
+  --add: var(--pine);
+  --modified: var(--accent);
+  --modified-text: color-mix(in srgb, var(--modified) 35%, var(--text));
+  --warning-text: color-mix(in srgb, var(--warn) 25%, var(--text));
+  --danger-text: color-mix(in srgb, var(--danger) 50%, var(--text));
+  --info-text: color-mix(in srgb, var(--info) 35%, var(--text));
+  --del: var(--rp-love);
 
-  /* ── Timeline kinds (Rosé Pine Dawn roles; tool ≠ accent/rose) ─ */
-  --kind-user: #907aa9; /* iris */
+  /* ── Timeline kinds (edge / wash accents; body text stays Text) ─ */
+  --kind-user: var(--rp-iris);
   --kind-user-dim: rgb(var(--rp-iris-rgb) / 0.18);
-  --kind-agent: #56949f; /* foam */
+  --kind-agent: var(--rp-foam);
   --kind-agent-dim: rgb(var(--rp-foam-rgb) / 0.16);
-  --kind-thought: #9893a5; /* muted */
+  --kind-thought: var(--rp-muted);
   --kind-thought-dim: rgb(var(--rp-muted-rgb) / 0.16);
-  --kind-tool: #286983; /* pine */
-  --kind-tool-dim: rgb(var(--rp-pine-rgb) / 0.14);
-  --kind-shell: #286983; /* pine — terminal */
+  --kind-tool: var(--rp-rose);
+  --kind-tool-dim: rgb(var(--rp-rose-rgb) / 0.14);
+  --kind-shell: var(--rp-pine);
   --kind-shell-dim: rgb(var(--rp-pine-rgb) / 0.12);
-  --kind-event: #ea9d34; /* gold */
-  --kind-event-dim: rgb(var(--rp-gold-rgb) / 0.16);
-  --kind-plan: #907aa9; /* iris */
+  --kind-event: var(--rp-subtle);
+  --kind-event-dim: rgb(var(--rp-subtle-rgb) / 0.14);
+  --kind-plan: var(--rp-iris);
   --kind-plan-dim: rgb(var(--rp-iris-rgb) / 0.16);
-  --kind-unknown: #9893a5;
+  --kind-unknown: var(--rp-muted);
   --kind-unknown-dim: rgb(var(--rp-muted-rgb) / 0.12);
   /* Per-kind RGB for timeline washes / accent bars (must match above) */
   --kind-user-rgb: var(--rp-iris-rgb);
   --kind-agent-rgb: var(--rp-foam-rgb);
   --kind-thought-rgb: var(--rp-muted-rgb);
-  --kind-tool-rgb: var(--rp-pine-rgb);
+  --kind-tool-rgb: var(--rp-rose-rgb);
   --kind-shell-rgb: var(--rp-pine-rgb);
-  --kind-event-rgb: var(--rp-gold-rgb);
+  --kind-event-rgb: var(--rp-subtle-rgb);
   --kind-plan-rgb: var(--rp-iris-rgb);
   --kind-unknown-rgb: var(--rp-muted-rgb);
 
@@ -111,28 +136,23 @@
     0 -1px 0 var(--bg-elevated);
   --battery-fill: linear-gradient(
     180deg,
-    var(--accent) 0%,
-    var(--title-selected) 40%,
-    var(--text-muted) 75%,
-    var(--border-strong) 100%
+    var(--live) 0%,
+    var(--pine) 100%
   );
   --battery-fill-mid: linear-gradient(
     180deg,
-    var(--title-selected) 0%,
-    var(--text-muted) 55%,
-    var(--border-strong) 100%
+    color-mix(in srgb, var(--live) 72%, var(--pine)) 0%,
+    var(--pine) 100%
   );
   --battery-fill-low: linear-gradient(
     180deg,
-    var(--accent) 0%,
-    var(--danger) 55%,
-    var(--muted) 100%
+    color-mix(in srgb, var(--warn) 78%, var(--bg-elevated)) 0%,
+    var(--warn) 100%
   );
   --battery-fill-critical: linear-gradient(
     180deg,
-    var(--danger) 0%,
-    var(--accent) 45%,
-    var(--muted) 100%
+    color-mix(in srgb, var(--danger) 76%, var(--bg-elevated)) 0%,
+    var(--danger) 100%
   );
   --battery-sheen: linear-gradient(
     180deg,

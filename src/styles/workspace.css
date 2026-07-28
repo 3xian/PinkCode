@@ -544,20 +544,20 @@
   font-size: 10px;
   font-weight: 700;
   text-align: center;
-  color: var(--warn);
+  color: var(--warning-text);
 }
 
 .git-badge.kind-added,
 .git-badge.kind-untracked {
-  color: var(--live);
+  color: var(--add);
 }
 
 .git-badge.kind-deleted {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .git-badge.kind-modified {
-  color: var(--warn);
+  color: var(--modified-text);
 }
 
 .git-path {

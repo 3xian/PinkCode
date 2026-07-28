@@ -318,7 +318,7 @@
   background: var(--battery-sheen), var(--battery-fill);
   box-shadow:
     inset 0 1px 0 rgb(var(--spec-rgb) / 0.45),
-    0 0 14px rgb(var(--title-selected-rgb) / 0.3);
+    0 0 14px rgb(var(--pine-rgb) / 0.24);
 }
 
 .usage-battery-fill-sheen {
@@ -376,10 +376,16 @@
 
 .week-battery.level-low .usage-battery-fill {
   background: var(--battery-sheen), var(--battery-fill-low);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--spec-rgb) / 0.45),
+    0 0 14px rgb(var(--warn-rgb) / 0.24);
 }
 
 .week-battery.level-critical .usage-battery-fill {
   background: var(--battery-sheen), var(--battery-fill-critical);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--spec-rgb) / 0.45),
+    0 0 14px rgb(var(--danger-rgb) / 0.24);
 }
 
 .week-battery.level-critical .usage-battery-shell {
@@ -482,14 +488,14 @@
 }
 
 .btn.primary {
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--action-primary);
+  color: var(--on-action-primary);
   border-color: transparent;
 }
 
 .btn.primary:hover:not(:disabled) {
   filter: brightness(1.08);
-  background: var(--accent);
+  background: var(--action-primary);
 }
 
 .btn.danger-btn {
@@ -512,5 +518,5 @@
 
 .error-banner {
   background: var(--danger-dim);
-  color: var(--danger);
+  color: var(--text);
 }

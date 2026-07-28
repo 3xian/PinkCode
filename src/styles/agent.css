@@ -39,16 +39,16 @@
 }
 
 .shell-status.completed {
-  color: var(--live);
+  color: var(--info-text);
 }
 
 .shell-status.failed {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .shell-status.in_progress,
 .shell-status.pending {
-  color: var(--warn);
+  color: var(--warning-text);
 }
 
 .exit-code {
@@ -57,11 +57,11 @@
 }
 
 .exit-code.ok {
-  color: var(--live);
+  color: var(--info-text);
 }
 
 .exit-code.fail {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .shell-cmd {
@@ -127,17 +127,17 @@
 }
 
 .risk-badge.risk-high {
-  color: var(--danger);
+  color: var(--danger-text);
   background: var(--danger-dim);
 }
 
 .risk-badge.risk-medium {
-  color: var(--warn);
+  color: var(--warning-text);
   background: var(--warn-dim);
 }
 
 .risk-badge.risk-low {
-  color: var(--live);
+  color: var(--info-text);
   background: var(--live-dim);
 }
 
@@ -368,8 +368,9 @@
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
-  color: var(--on-accent);
-  background: var(--accent);
+  color: var(--text);
+  background: var(--accent-dim);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
   line-height: 1;
 }
 
@@ -647,11 +648,11 @@ button.user-question-option:hover:not(:disabled),
 }
 
 .queue-text-btn.accent {
-  color: var(--accent);
+  color: var(--action-primary);
 }
 
 .queue-text-btn.danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .queue-icon-btn:disabled,
@@ -825,9 +826,9 @@ button.user-question-option:hover:not(:disabled),
 .prompt-chip.accent-yolo {
   --chip-accent: var(--warn);
   --chip-border: color-mix(in srgb, var(--warn) 45%, transparent);
-  --chip-bg: var(--kind-event-dim);
+  --chip-bg: var(--warn-dim);
   --chip-glow: color-mix(in srgb, var(--warn) 16%, transparent);
-  --chip-fg: var(--warn);
+  --chip-fg: var(--text);
 }
 
 .prompt-chip.accent-danger {
@@ -835,7 +836,7 @@ button.user-question-option:hover:not(:disabled),
   --chip-border: color-mix(in srgb, var(--danger) 40%, transparent);
   --chip-bg: var(--danger-dim);
   --chip-glow: color-mix(in srgb, var(--danger) 12%, transparent);
-  --chip-fg: var(--accent);
+  --chip-fg: var(--text);
 }
 
 .prompt-chip-label {

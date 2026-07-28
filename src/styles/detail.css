@@ -241,13 +241,13 @@
 }
 
 .timeline-filter-chip {
-  --chip-fg: var(--text-muted);
+  --chip-accent: var(--text-muted);
   --chip-bg: transparent;
   --chip-bg-active: var(--kind-plan-dim);
   --chip-fg-active: var(--text);
   border: none;
   background: var(--chip-bg);
-  color: var(--chip-fg);
+  color: var(--text);
   font-size: 11px;
   padding: 4px 10px;
   border-radius: 999px;
@@ -260,8 +260,8 @@
 }
 
 .timeline-filter-chip:hover {
-  background: color-mix(in srgb, var(--chip-fg) 14%, transparent);
-  color: var(--chip-fg);
+  background: color-mix(in srgb, var(--chip-accent) 14%, transparent);
+  color: var(--text);
 }
 
 .timeline-filter-chip.active {
@@ -288,47 +288,47 @@
 
 /* Kind-colored filter chips (match timeline cards); no border */
 .timeline-filter-chip.filter-user {
-  --chip-fg: var(--kind-user);
+  --chip-accent: var(--kind-user);
   --chip-bg-active: color-mix(in srgb, var(--kind-user) 38%, transparent);
   --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-agent {
-  --chip-fg: var(--kind-agent);
+  --chip-accent: var(--kind-agent);
   --chip-bg-active: color-mix(in srgb, var(--kind-agent) 36%, transparent);
   --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-thought {
-  --chip-fg: var(--kind-thought);
+  --chip-accent: var(--kind-thought);
   --chip-bg-active: color-mix(in srgb, var(--kind-thought) 34%, transparent);
   --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-tool {
-  --chip-fg: var(--kind-tool);
+  --chip-accent: var(--kind-tool);
   --chip-bg-active: color-mix(in srgb, var(--kind-tool) 38%, transparent);
   --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-shell {
-  --chip-fg: var(--kind-shell);
+  --chip-accent: var(--kind-shell);
   --chip-bg-active: color-mix(in srgb, var(--kind-shell) 36%, transparent);
   --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-event {
-  --chip-fg: var(--kind-event);
+  --chip-accent: var(--kind-event);
   --chip-bg-active: color-mix(in srgb, var(--kind-event) 38%, transparent);
   --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-plan {
-  --chip-fg: var(--kind-plan);
+  --chip-accent: var(--kind-plan);
   --chip-bg-active: color-mix(in srgb, var(--kind-plan) 38%, transparent);
   --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-unknown {
-  --chip-fg: var(--kind-unknown);
+  --chip-accent: var(--kind-unknown);
   --chip-bg-active: color-mix(in srgb, var(--kind-unknown) 32%, transparent);
   --chip-fg-active: var(--text);
 }
 .timeline-filter-chip.filter-all {
-  --chip-fg: var(--text-muted);
+  --chip-accent: var(--text-muted);
   --chip-bg-active: var(--kind-plan-dim);
   --chip-fg-active: var(--text);
 }
@@ -580,7 +580,7 @@
 }
 
 .tl-copy-btn.is-copied {
-  color: var(--live);
+  color: var(--info-text);
   opacity: 1;
 }
 

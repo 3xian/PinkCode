@@ -180,7 +180,8 @@ export function SessionDetailView({
         onResolve={onResolvePermission}
       />
 
-      <div className="detail-header">
+      {/* Single drag region for macOS Overlay — do not spray onto children. */}
+      <div className="detail-header" data-tauri-drag-region>
         <div className="detail-header-main">
           <h1 title={card.title || undefined}>{card.title}</h1>
           <div className="detail-sub">
@@ -603,11 +604,13 @@ const LiveItemRow = memo(function LiveItemRow({
   const isConversationBody = item.kind === "user" || item.kind === "agent";
   const copyAriaLabel =
     item.kind === "user" ? "Copy user message" : "Copy agent output";
+  // Thought is identified by the kind icon — don't repeat the word "Thought".
+  // Only show a title while streaming with no body yet.
   const displayTitle =
     item.kind === "thought"
-      ? item.streaming
+      ? item.streaming && !item.detail?.trim()
         ? "Thinking…"
-        : "Thought"
+        : null
       : item.title;
 
   const copyDetail = useCallback(async () => {
@@ -629,7 +632,7 @@ const LiveItemRow = memo(function LiveItemRow({
         <ShellCard shell={item.shell} />
       ) : (
         <>
-          {isConversationBody ? null : toolPath ? (
+          {isConversationBody || !displayTitle ? null : toolPath ? (
             <FilePathLink
               path={toolPath}
               onOpen={onOpenFile}
@@ -672,10 +675,6 @@ const LiveItemRow = memo(function LiveItemRow({
                     }
                     title={copied ? "Copied" : copyAriaLabel}
                     aria-label={copied ? "Copied" : copyAriaLabel}
-                    onMouseDown={(e) => {
-                      /* Don't take focus on click — otherwise the button stays open */
-                      e.preventDefault();
-                    }}
                     onClick={(e) => {
                       e.stopPropagation();
                       void copyDetail();

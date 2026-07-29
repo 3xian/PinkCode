@@ -119,6 +119,10 @@
   --kind-event-rgb: var(--rp-subtle-rgb);
   --kind-unknown-rgb: var(--rp-muted-rgb);
 
+  /* ── Composer stack (queue / turn-status / input card) ─────── */
+  --composer-max: 720px;
+  --composer-inline-pad: 18px;
+
   /* ── Elevation (text-tinted, not pure black) ───────────────── */
   --shadow-sm: 0 2px 8px rgb(var(--text-rgb) / 0.08);
   --shadow-md: 0 6px 18px rgb(var(--text-rgb) / 0.1);

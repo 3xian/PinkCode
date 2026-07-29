@@ -17,6 +17,7 @@ import {
   spawnAgent,
   stopAgent,
 } from "./api";
+import { MacosTitlebarBrand } from "./components/MacosTitlebarBrand";
 import { NewTaskModal } from "./components/NewTaskModal";
 import { SessionDetailView } from "./components/SessionDetail";
 import { SessionList } from "./components/SessionList";
@@ -160,7 +161,12 @@ function App() {
     },
     [projectCwd],
   );
-  const { pendingUpdate, dismissUpdate } = useAppUpdate();
+  const {
+    pendingUpdate,
+    dismissUpdate,
+    checkForUpdate,
+    updateCheckStatus,
+  } = useAppUpdate();
 
   const refreshList = useCallback(async () => {
     // Skip heavy list work while the window is hidden (drag/minimize storms).
@@ -866,6 +872,10 @@ function App() {
         }
       >
         <aside className="left-rail">
+          <MacosTitlebarBrand
+            onCheckUpdate={checkForUpdate}
+            checkStatus={updateCheckStatus}
+          />
           <StatsBar
             tokenSeries={tokenSeries}
             weekUsage={weekUsage}

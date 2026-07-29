@@ -1,0 +1,132 @@
+/**
+ * macOS-only Overlay chrome (component returns null on other platforms).
+ * Stack: traffic-light clearance → brand block below (logo + name + version).
+ */
+.macos-titlebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 100%;
+  position: relative;
+  z-index: 6;
+  user-select: none;
+  cursor: default;
+}
+
+/* Empty strip for native traffic lights (Overlay titlebar). */
+.macos-titlebar-traffic {
+  height: 36px;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+/* Brand mark sits under the lights — not beside them. Click → update check. */
+.macos-titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  width: calc(100% - 20px);
+  margin: 0 10px 2px;
+  padding: 8px 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.macos-titlebar-brand:hover {
+  background: color-mix(in srgb, var(--bg-hover) 70%, transparent);
+}
+
+.macos-titlebar-brand:active:not(:disabled) {
+  background: color-mix(in srgb, var(--bg-hover) 90%, transparent);
+}
+
+.macos-titlebar-brand:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.macos-titlebar-brand:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--title-selected) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.macos-titlebar-logo {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.macos-titlebar-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.macos-titlebar-name {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  /* Match detail title gradient: rose → iris → foam */
+  background: linear-gradient(
+    90deg,
+    var(--accent) 0%,
+    var(--title-selected) 55%,
+    var(--live) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+}
+
+.macos-titlebar-version {
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.macos-titlebar-brand.is-up-to-date .macos-titlebar-version {
+  color: var(--live);
+}
+
+.macos-titlebar-brand.is-error .macos-titlebar-version {
+  color: var(--danger);
+}
+
+.macos-titlebar-brand.is-checking .macos-titlebar-version {
+  color: var(--text-muted);
+}
+
+/* Status card sits under the brand block on macOS */
+html.platform-macos-desktop .left-rail .status-card {
+  margin-top: 6px;
+}
+
+/* Middle column title chrome: drag affordance on macOS Overlay */
+html.platform-macos-desktop .detail-header {
+  cursor: default;
+  user-select: none;
+}
+
+html.platform-macos-desktop .detail-header h1 {
+  user-select: none;
+}

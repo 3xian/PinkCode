@@ -538,8 +538,12 @@ button.user-question-option:hover:not(:disabled),
 /* Server-authoritative prompt queue, directly above the composer. */
 .prompt-queue {
   flex-shrink: 0;
-  /* Align with `.prompt-bar` / `.turn-status` (18px) for one vertical stack */
-  margin: 0 18px;
+  /* Same max width + side pad as `.prompt-bar` / `.turn-status` */
+  width: calc(100% - 2 * var(--composer-inline-pad));
+  max-width: var(--composer-max);
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
   border: 1px solid var(--border);
   border-bottom: none;
   background: color-mix(in srgb, var(--bg-elevated) 88%, var(--accent-dim));
@@ -667,32 +671,23 @@ button.user-question-option:hover:not(:disabled),
 
 /* Prompt bar — single composer card: textarea + bottom toolbar */
 .prompt-bar {
-  /* Match the Timeline content inset; the composer is the only raised layer. */
+  /* Composer is the only raised layer; outer wash is transparent.
+     Always cap width (not only when the right rail is collapsed). */
   position: relative;
-  padding: 10px 18px 12px;
-  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px var(--composer-inline-pad) 12px;
+  background: transparent;
   flex-shrink: 0;
-}
-
-/* Let the content above the composer fade into its background instead of
-   ending at a hard divider. Hidden when turn-status is stacked above so
-   there is no frosted band between status and input. */
-.prompt-bar::before {
-  content: "";
-  position: absolute;
-  z-index: 1;
-  top: -20px;
-  right: 0;
-  left: 0;
-  height: 20px;
-  pointer-events: none;
-  background: linear-gradient(to bottom, transparent, var(--bg));
 }
 
 .prompt-composer {
   position: relative;
   display: flex;
   flex-direction: column;
+  width: 100%;
+  max-width: var(--composer-max);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   box-shadow: var(--inset-spec);

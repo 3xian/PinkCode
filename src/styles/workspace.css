@@ -35,6 +35,7 @@
 .left-rail {
   background: var(--bg-elevated);
   min-width: 0;
+  position: relative;
 }
 
 .session-list {

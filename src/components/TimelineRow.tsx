@@ -128,26 +128,8 @@ function KindIcon({ kind }: { kind: string }) {
   );
 }
 
-/** Empty gutter so continue rows align with the first row's body. */
-function KindGutter({
-  kind,
-  showIcon,
-}: {
-  kind: string;
-  showIcon: boolean;
-}) {
-  if (showIcon) return <KindIcon kind={kind} />;
-  return (
-    <div
-      className="tl-kind tl-kind-spacer"
-      aria-hidden
-      title={KIND_LABELS[kind] ?? kind}
-    />
-  );
-}
-
 /**
- * Shared chrome for Timeline rows: clock, kind icon, body slot.
+ * Shared chrome for Timeline rows: kind + clock on one meta line, full-width body.
  */
 export function TimelineRowChrome({
   kind,
@@ -162,15 +144,20 @@ export function TimelineRowChrome({
 }) {
   const showIcon = !isStackContinue(stackClass);
   const clock = formatClockTime(ts);
+  const hasMeta = showIcon || (Boolean(clock) && ts != null);
 
   return (
     <div className={`tl-item kind-${kind} ${stackClass}`.trim()}>
-      {clock && ts != null && (
-        <time className="tl-time" dateTime={new Date(ts).toISOString()}>
-          {clock}
-        </time>
+      {hasMeta && (
+        <div className="tl-meta">
+          {showIcon ? <KindIcon kind={kind} /> : null}
+          {clock && ts != null ? (
+            <time className="tl-time" dateTime={new Date(ts).toISOString()}>
+              {clock}
+            </time>
+          ) : null}
+        </div>
       )}
-      <KindGutter kind={kind} showIcon={showIcon} />
       <div className="tl-body">{children}</div>
     </div>
   );

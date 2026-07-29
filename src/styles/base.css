@@ -74,6 +74,8 @@ button,
 input {
   font: inherit;
   color: inherit;
+  /* Avoid body line-height leaking into flex-centered controls. */
+  line-height: inherit;
 }
 
 code,

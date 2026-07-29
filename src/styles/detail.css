@@ -14,7 +14,7 @@
 }
 
 .detail-header h1 {
-  margin: 6px 0 4px;
+  margin: 0 0 4px;
   font-size: 20px;
   font-weight: 650;
   line-height: 1.3;
@@ -42,7 +42,6 @@
   word-break: break-word;
 }
 
-.detail-status-row,
 .detail-sub {
   display: flex;
   flex-wrap: wrap;
@@ -50,17 +49,6 @@
   align-items: center;
   min-width: 0;
   max-width: 100%;
-}
-
-.detail-stop-btn {
-  margin-left: auto;
-  padding: 2px 10px;
-  font-size: 12px;
-  line-height: 1.4;
-  min-height: 0;
-}
-
-.detail-sub {
   color: var(--text-muted);
   font-size: 12px;
 }
@@ -73,28 +61,62 @@
   white-space: nowrap;
 }
 
-/* Status row tags share one quiet chrome (PID / model / agent). */
-.pill,
-.pill.live,
-.pill.idle,
-.pill.muted-pill {
+/* Live parent → child subagents + bg tasks (Grok max depth 1). */
+.subagent-task-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  max-width: 100%;
+}
+
+.subagent-task-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  max-width: 100%;
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 11px;
-  line-height: 1.4;
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
-  color: var(--text-muted);
+  line-height: 1.35;
+  border: 1px solid color-mix(in srgb, var(--kind-subagent) 35%, var(--border));
+  background: var(--kind-subagent-dim);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* Errors / awaiting only — same geometry, semantic tint */
-.pill.danger {
-  color: var(--danger);
-  background: var(--danger-dim);
-  border-color: rgb(var(--danger-rgb) / 0.28);
+.subagent-task-chip.task-chip {
+  border-color: color-mix(in srgb, var(--kind-task) 40%, var(--border));
+  background: var(--kind-task-dim);
+}
+
+.subagent-task-chip.is-monitor {
+  border-color: color-mix(in srgb, var(--kind-shell) 40%, var(--border));
+  background: var(--kind-shell-dim);
+}
+
+.subagent-task-chip-mark {
+  color: var(--kind-subagent);
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.subagent-task-chip.task-chip .subagent-task-chip-mark {
+  color: var(--kind-task);
+}
+
+.subagent-task-chip.is-monitor .subagent-task-chip-mark {
+  color: var(--kind-shell);
+}
+
+.subagent-task-chip-meta {
+  color: var(--text-muted);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .metric-grid {
@@ -249,13 +271,18 @@
   background: var(--chip-bg);
   color: var(--text);
   font-size: 11px;
-  padding: 4px 10px;
+  font-weight: 600;
+  padding: 0 9px;
+  min-height: 22px;
+  box-sizing: border-box;
   border-radius: 999px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  line-height: 1.2;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
 }
 
@@ -312,6 +339,16 @@
   --chip-bg-active: color-mix(in srgb, var(--kind-shell) 36%, transparent);
   --chip-fg-active: var(--text);
 }
+.timeline-filter-chip.filter-subagent {
+  --chip-accent: var(--kind-subagent);
+  --chip-bg-active: color-mix(in srgb, var(--kind-subagent) 36%, transparent);
+  --chip-fg-active: var(--text);
+}
+.timeline-filter-chip.filter-task {
+  --chip-accent: var(--kind-task);
+  --chip-bg-active: color-mix(in srgb, var(--kind-task) 36%, transparent);
+  --chip-fg-active: var(--text);
+}
 .timeline-filter-chip.filter-event {
   --chip-accent: var(--kind-event);
   --chip-bg-active: color-mix(in srgb, var(--kind-event) 38%, transparent);
@@ -350,7 +387,7 @@
 
 .tl-item.kind-shell .shell-out {
   margin: 0;
-  padding: 4px 0 0;
+  padding: 6px 0 0;
   background: transparent;
   border: none;
 }
@@ -384,7 +421,8 @@
 
 /*
  * Timeline — separator stream (not cards).
- * Dense rows on panel bg; hairline between kind-groups; same-kind runs flow.
+ * Readable row rhythm on panel bg; hairline between kind-groups;
+ * same-kind runs stay connected but not cramped.
  * Kind identity: icon color (+ title tint), no left accent bar.
  */
 .timeline {
@@ -396,12 +434,16 @@
 
 .tl-item {
   --tl-kind: var(--kind-unknown);
+  /* Equal vertical rhythm: group edges share the same inset both sides. */
+  --tl-pad-y: 10px;
+  --tl-pad-group: 14px;
+  --tl-pad-stack: 8px;
 
   display: grid;
-  grid-template-columns: 18px 1fr;
-  column-gap: 8px;
+  grid-template-columns: 20px 1fr;
+  column-gap: 10px;
   row-gap: 0;
-  padding: 5px 4px 5px 2px;
+  padding: var(--tl-pad-y) 6px var(--tl-pad-y) 4px;
   margin: 0;
   border: none;
   border-radius: 0;
@@ -413,46 +455,40 @@
   box-shadow: none;
 }
 
-/* New kind-group: top hairline separator (skip first row) */
+/*
+ * Kind-group edges: matching top/bottom padding so a single short User/Agent
+ * line is vertically balanced (no extra margin-top that only fattened the top).
+ */
 .tl-item:not(.tl-stack-continue) {
-  padding-top: 8px;
-  margin-top: 2px;
+  padding-top: var(--tl-pad-group);
   border-top: 1px solid var(--border);
 }
 
 .tl-item:not(.tl-stack-continue):first-child {
-  margin-top: 0;
-  padding-top: 4px;
+  padding-top: var(--tl-pad-group);
   border-top: none;
 }
 
-/*
- * Filtering must not visually merge entries that were separated by other
- * activity in the full stream. Give each surviving kind-group enough space
- * to read as a distinct moment while preserving compact same-kind runs.
- */
-.timeline.is-filtered .tl-item:not(.tl-stack-continue) {
-  margin-top: 8px;
-}
-
-.timeline.is-filtered .tl-item:not(.tl-stack-continue):first-child {
-  margin-top: 0;
-}
-
-/* Group end: a little breathing room before the next separator */
 .tl-item:not(.tl-stack-has-next) {
-  padding-bottom: 8px;
+  padding-bottom: var(--tl-pad-group);
 }
 
-/* Same-kind continue: no separator, tighter */
+/* Same-kind run: equal inset on both faces of the join */
 .tl-item.tl-stack-continue {
-  padding-top: 3px;
-  margin-top: 0;
+  padding-top: var(--tl-pad-stack);
   border-top: none;
 }
 
 .tl-item.tl-stack-has-next {
-  padding-bottom: 3px;
+  padding-bottom: var(--tl-pad-stack);
+}
+
+/*
+ * Filtering must not visually merge entries that were separated by other
+ * activity in the full stream. Grow both edges equally.
+ */
+.timeline.is-filtered .tl-item {
+  --tl-pad-group: 18px;
 }
 
 /* Kind glyph only — no badge fill */
@@ -496,7 +532,8 @@
 
 .tl-time {
   position: absolute;
-  top: 5px;
+  /* Align with content: same inset as row padding-top */
+  top: var(--tl-pad-y);
   right: 2px;
   z-index: 2;
   font-family: inherit;
@@ -513,15 +550,15 @@
 }
 
 .tl-item.tl-stack-continue .tl-time {
-  top: 3px;
+  top: var(--tl-pad-stack);
 }
 
 .tl-item:not(.tl-stack-continue) .tl-time {
-  top: 9px;
+  top: var(--tl-pad-group);
 }
 
 .tl-item:not(.tl-stack-continue):first-child .tl-time {
-  top: 5px;
+  top: var(--tl-pad-group);
 }
 
 .tl-title {
@@ -531,16 +568,16 @@
   /* Clear absolute HH:mm:ss clock; detail below uses full width */
   padding-right: 3.25rem;
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .tl-detail {
-  margin-top: 2px;
+  margin-top: 4px;
   color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 12.5px;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.55;
   /* Body text may use the full row width (under the clock’s x-band). */
   padding-right: 0;
 }
@@ -550,54 +587,96 @@
 .tl-conversation-body {
   margin-top: 0;
   color: var(--text);
-  font-size: 13px;
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 
-/* Copy: always visible, bottom-right of agent body */
+/* Copy: float just above the body (outside), no content/time cover */
 .tl-detail.has-copy {
   position: relative;
-  padding-bottom: 22px;
+}
+
+/* Lift the whole row while hovering so the pop paints over neighbors */
+.tl-item:has(.tl-detail.has-copy:hover) {
+  z-index: 4;
 }
 
 .tl-detail-footer {
   position: absolute;
-  right: 0;
-  bottom: 0;
+  left: 50%;
+  /* Fully outside: sit above the body edge, centered */
+  bottom: 100%;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   margin: 0;
-  padding: 0;
+  /* Padding bridges body → button so hover isn't lost in the gap */
+  padding: 0 0 4px;
   pointer-events: none;
+  z-index: 2;
+  transform: translateX(-50%);
 }
 
 .tl-copy-btn {
   appearance: none;
   flex-shrink: 0;
   margin: 0;
-  padding: 2px 0 0 8px;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--pine) 42%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--pine) 14%, var(--bg-elevated));
+  color: color-mix(in srgb, var(--pine) 55%, var(--text));
   font: inherit;
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.02em;
   line-height: 1.3;
   cursor: pointer;
-  opacity: 0.85;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow:
+    0 1px 2px rgb(var(--rp-text-rgb) / 0.06),
+    0 2px 8px rgb(var(--pine-rgb) / 0.12);
+  transition: color 0.12s ease, opacity 0.12s ease, border-color 0.12s ease,
+    background 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+  transform: translateY(3px);
+}
+
+/*
+ * Visibility is hover-only (click must not change dwell).
+ * Keyboard: :focus-visible on the button itself, not :focus-within on the row
+ * (mouse click focus would otherwise pin the button open).
+ */
+.tl-detail.has-copy:hover .tl-detail-footer {
   pointer-events: auto;
-  transition: color 0.12s ease, opacity 0.12s ease;
+}
+
+.tl-detail.has-copy:hover .tl-copy-btn,
+.tl-copy-btn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.tl-copy-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--pine) 50%, transparent);
+  outline-offset: 2px;
 }
 
 .tl-copy-btn:hover {
   color: var(--text);
   opacity: 1;
+  border-color: color-mix(in srgb, var(--pine) 65%, var(--border));
+  background: color-mix(in srgb, var(--pine) 22%, var(--bg-elevated));
+  box-shadow:
+    0 1px 2px rgb(var(--rp-text-rgb) / 0.08),
+    0 3px 10px rgb(var(--pine-rgb) / 0.18);
 }
 
+/* Color/label flash only while still hovered — never extends dwell */
 .tl-copy-btn.is-copied {
-  color: var(--info-text);
-  opacity: 1;
+  color: color-mix(in srgb, var(--info) 40%, var(--text));
+  border-color: color-mix(in srgb, var(--info) 50%, var(--border));
+  background: color-mix(in srgb, var(--info) 18%, var(--bg-elevated));
 }
 
 /* Markdown inside live / timeline detail */
@@ -615,18 +694,18 @@
 }
 
 .tl-detail .md p {
-  margin: 0.28em 0;
+  margin: 0.45em 0;
 }
 
 .tl-detail .md h1,
 .tl-detail .md h2,
 .tl-detail .md h3,
 .tl-detail .md h4 {
-  margin: 0.45em 0 0.25em;
+  margin: 0.65em 0 0.35em;
   font-size: 13px;
   font-weight: 650;
   color: var(--text);
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .tl-detail .md h1 {
@@ -639,21 +718,21 @@
 
 .tl-detail .md ul,
 .tl-detail .md ol {
-  margin: 0.35em 0;
-  padding-left: 1.35em;
+  margin: 0.5em 0;
+  padding-left: 1.4em;
 }
 
 .tl-detail .md li {
-  margin: 0.15em 0;
+  margin: 0.25em 0;
 }
 
 .tl-detail .md li > p {
-  margin: 0.15em 0;
+  margin: 0.2em 0;
 }
 
 .tl-detail .md blockquote {
-  margin: 0.4em 0;
-  padding: 2px 0 2px 10px;
+  margin: 0.55em 0;
+  padding: 4px 0 4px 12px;
   border-left: 2px solid var(--border-strong);
   color: var(--text-muted);
 }
@@ -689,8 +768,8 @@
 }
 
 .tl-detail .md .md-pre {
-  margin: 0.45em 0;
-  padding: 8px 10px;
+  margin: 0.6em 0;
+  padding: 10px 12px;
   border-radius: 0;
   background: var(--hl-low);
   border: 1px solid var(--border);
@@ -793,6 +872,26 @@
 
 .tl-item.kind-shell .muted {
   color: var(--text-muted);
+}
+
+.tl-item.kind-subagent {
+  --tl-kind: var(--kind-subagent);
+}
+
+.tl-item.kind-subagent .tl-title {
+  color: color-mix(in srgb, var(--kind-subagent) 40%, var(--text));
+  font-weight: 650;
+}
+
+.tl-item.kind-task {
+  --tl-kind: var(--kind-task);
+}
+
+.tl-item.kind-task .tl-title {
+  color: color-mix(in srgb, var(--kind-task) 42%, var(--text));
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .tl-item.kind-event {

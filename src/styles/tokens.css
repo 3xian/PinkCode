@@ -100,6 +100,10 @@
   --kind-tool-dim: rgb(var(--rp-rose-rgb) / 0.14);
   --kind-shell: var(--rp-pine);
   --kind-shell-dim: rgb(var(--rp-pine-rgb) / 0.12);
+  --kind-subagent: var(--rp-iris);
+  --kind-subagent-dim: rgb(var(--rp-iris-rgb) / 0.14);
+  --kind-task: var(--rp-gold);
+  --kind-task-dim: rgb(var(--rp-gold-rgb) / 0.14);
   --kind-event: var(--rp-subtle);
   --kind-event-dim: rgb(var(--rp-subtle-rgb) / 0.14);
   --kind-unknown: var(--rp-muted);
@@ -110,6 +114,8 @@
   --kind-thought-rgb: var(--rp-muted-rgb);
   --kind-tool-rgb: var(--rp-rose-rgb);
   --kind-shell-rgb: var(--rp-pine-rgb);
+  --kind-subagent-rgb: var(--rp-iris-rgb);
+  --kind-task-rgb: var(--rp-gold-rgb);
   --kind-event-rgb: var(--rp-subtle-rgb);
   --kind-unknown-rgb: var(--rp-muted-rgb);
 

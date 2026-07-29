@@ -15,8 +15,3 @@
 - [ ] Real-time status — branch, upstream, ahead/behind, staged, and unstaged
 - [ ] Inline file diff viewer
 - [ ] Interactive hunk selection for commits
-
-## Subagents and tasks
-
-- [ ] Subagent hierarchy — parent/child relationships, depth, and fork budget
-- [ ] Background-task status — TaskTool, WaitTasksTool, and KillTaskTool

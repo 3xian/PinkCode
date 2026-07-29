@@ -11,6 +11,15 @@ import {
   formatTurnCompletedTitle,
   mergeToolCardParts,
 } from "../utils/format";
+import {
+  formatBgTaskDetail,
+  formatBgTaskTitle,
+  formatSubagentDetail,
+  formatSubagentTitle,
+  lifecycleMirrorKey,
+  mergeBgTaskPayload,
+  mergeSubagentPayload,
+} from "../utils/subagentTasks";
 
 export type UpdateDescription = ReturnType<typeof describeUpdate>;
 export type ShellIndexes = Map<string, Map<string, number>>;
@@ -169,6 +178,23 @@ export function enrichTurnCompletedDescription(
   };
 }
 
+/** Insert or replace a timeline card; trim only on first insert. */
+function upsertTimelineItem(
+  list: TimelineItem[],
+  index: number,
+  card: TimelineItem,
+  sessionKey: string,
+  reducerState: TimelineReducerState,
+  retention: TimelineRetention,
+): void {
+  if (index >= 0) {
+    list[index] = { ...list[index], ...card };
+  } else {
+    list.push(card);
+    trimLiveList(list, sessionKey, reducerState.shellIndexes, retention);
+  }
+}
+
 export function reduceAgentUpdate(
   previous: Map<string, TimelineItem[]>,
   input: {
@@ -308,6 +334,70 @@ export function reduceAgentUpdate(
       next.set(key, list);
       return next;
     }
+  }
+
+  // Subagent / bg-task cards merge by stable mergeKey (child session / task id).
+  if (description.kind === "subagent" && description.mergeKey && description.subagent) {
+    const mergeKey = description.mergeKey;
+    const index = list.findIndex(
+      (item) =>
+        item.kind === "subagent" && item.subagent?.childSessionId === mergeKey,
+    );
+    const prev = index >= 0 ? list[index] : null;
+    const merged = mergeSubagentPayload(prev?.subagent, description.subagent);
+    upsertTimelineItem(
+      list,
+      index,
+      {
+        id: `subagent-${mergeKey}`,
+        handleId,
+        sessionId: sessionId ?? null,
+        kind: "subagent",
+        title: formatSubagentTitle(merged),
+        detail: formatSubagentDetail(merged),
+        toolStatus: merged.status,
+        ts: now,
+        sourceEventId: sourceEventId ?? prev?.sourceEventId,
+        streaming: markStreaming,
+        subagent: merged,
+      },
+      key,
+      reducerState,
+      retention,
+    );
+    next.set(key, list);
+    return next;
+  }
+
+  if (description.kind === "task" && description.mergeKey && description.task) {
+    const mergeKey = description.mergeKey;
+    const index = list.findIndex(
+      (item) => item.kind === "task" && item.task?.taskId === mergeKey,
+    );
+    const prev = index >= 0 ? list[index] : null;
+    const merged = mergeBgTaskPayload(prev?.task, description.task);
+    upsertTimelineItem(
+      list,
+      index,
+      {
+        id: `task-${mergeKey}`,
+        handleId,
+        sessionId: sessionId ?? null,
+        kind: "task",
+        title: formatBgTaskTitle(merged),
+        detail: formatBgTaskDetail(merged),
+        toolStatus: merged.status,
+        ts: now,
+        sourceEventId: sourceEventId ?? prev?.sourceEventId,
+        streaming: markStreaming,
+        task: merged,
+      },
+      key,
+      reducerState,
+      retention,
+    );
+    next.set(key, list);
+    return next;
   }
 
   if (description.kind === "plan") {
@@ -641,6 +731,8 @@ function timelineMirrorKey(item: TimelineItem): string | null {
   if (item.kind === "shell" && item.shell?.toolCallId) {
     return `shell:${item.shell.toolCallId}`;
   }
+  const lifecycle = lifecycleMirrorKey(item);
+  if (lifecycle) return lifecycle;
   if (item.sourceEventId) return `event:${item.sourceEventId}`;
   return null;
 }

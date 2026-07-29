@@ -132,6 +132,20 @@ describe("describeUpdate Grok Build scrollback parity", () => {
     expect(
       describeUpdate({
         sessionUpdate: "tool_call",
+        toolCallId: "call-wait",
+        title: "wait_commands_or_subagents",
+      }).hidden,
+    ).toBe(true);
+    expect(
+      describeUpdate({
+        sessionUpdate: "tool_call",
+        toolCallId: "call-kill",
+        title: "kill_command_or_subagent",
+      }).hidden,
+    ).toBe(true);
+    expect(
+      describeUpdate({
+        sessionUpdate: "tool_call",
         toolCallId: "call-read",
         title: "Read `src/main.ts`",
       }).hidden,

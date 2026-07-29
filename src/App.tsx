@@ -826,6 +826,22 @@ function App() {
     return out;
   }, [managedList]);
 
+  /** sessionId → pid for left-rail status ribbon (prefer managed process). */
+  const managedPids = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const m of managedList) {
+      if (
+        m.sessionId &&
+        m.pid != null &&
+        m.status !== "stopped" &&
+        m.status !== "error"
+      ) {
+        out[m.sessionId] = m.pid;
+      }
+    }
+    return out;
+  }, [managedList]);
+
   return (
     <div className="app-shell">
       {(error || lastError) && (
@@ -864,6 +880,7 @@ function App() {
               setSelectedId(id);
             }}
             managedStatuses={managedStatuses}
+            managedPids={managedPids}
             onNewTask={() => setModalOpen(true)}
           />
         </aside>

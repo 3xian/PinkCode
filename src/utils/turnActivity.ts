@@ -241,6 +241,49 @@ export function inferActivityFromTimeline(
         : null;
     }
 
+    // Grok Build WaitingReason::Subagent — blocked on a child agent.
+    if (item.kind === "subagent" && item.subagent) {
+      const st = item.subagent.status;
+      if (st === "running" || isActiveToolStatus(st, source)) {
+        const desc = item.subagent.description?.trim() || "subagent";
+        return activity({
+          kind: "waiting",
+          label: "Waiting on subagent…",
+          detail: desc,
+          tone: "wait",
+          phaseKey: `subagent:${item.subagent.childSessionId || item.id}`,
+          source,
+        });
+      }
+      return source === "managed"
+        ? waiting(source, `waiting-after-subagent:${item.id}`)
+        : null;
+    }
+
+    // Background bash/monitor (TaskTool family status surface).
+    if (item.kind === "task" && item.task) {
+      const st = item.task.status;
+      if (st === "running" || isActiveToolStatus(st, source)) {
+        const subject =
+          item.task.description?.trim() ||
+          item.task.command?.trim() ||
+          "background task";
+        return activity({
+          kind: "waiting",
+          label: item.task.isMonitor
+            ? "Waiting on monitor…"
+            : "Waiting on background task…",
+          detail: subject,
+          tone: "wait",
+          phaseKey: `task:${item.task.taskId || item.id}`,
+          source,
+        });
+      }
+      return source === "managed"
+        ? waiting(source, `waiting-after-task:${item.id}`)
+        : null;
+    }
+
     if (item.kind === "tool") {
       const st = item.toolStatus;
       const base =

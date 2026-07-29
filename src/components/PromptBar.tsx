@@ -37,6 +37,11 @@ interface Props {
   timelineItems?: TimelineItem[];
   /** Reset history browse / local sent when the active session changes. */
   sessionId?: string | null;
+  /** Current model id (e.g. grok-4.5), shown left of Send. */
+  modelId?: string | null;
+  /** Show Stop when the managed agent process can be terminated. */
+  canStop?: boolean;
+  onStop?: () => void;
 }
 
 export function PromptBar({
@@ -48,6 +53,9 @@ export function PromptBar({
   availableCommands = [],
   timelineItems = [],
   sessionId = null,
+  modelId = null,
+  canStop = false,
+  onStop,
 }: Props) {
   const [text, setText] = useState("");
   const [menuIndex, setMenuIndex] = useState(0);
@@ -369,15 +377,33 @@ export function PromptBar({
               onChange={onSessionModeChange}
             />
           </div>
-          <button
-            className="btn primary prompt-send"
-            type="button"
-            disabled={!canSend}
-            title="enter to send · ↑ empty for history · ctrl+enter newline · shift+tab mode"
-            onClick={sendIfReady}
-          >
-            {running || awaiting ? "Queue" : "Send"}
-          </button>
+          <div className="prompt-send-group">
+            {modelId && (
+              <span className="prompt-model" title={modelId}>
+                {modelId}
+              </span>
+            )}
+            {canStop && onStop && (
+              <button
+                className="btn danger-btn prompt-stop"
+                type="button"
+                disabled={busy || stopping}
+                title="Stop the agent process for this task"
+                onClick={onStop}
+              >
+                Stop
+              </button>
+            )}
+            <button
+              className="btn primary prompt-send"
+              type="button"
+              disabled={!canSend}
+              title="enter to send · ↑ empty for history · ctrl+enter newline · shift+tab mode"
+              onClick={sendIfReady}
+            >
+              {running || awaiting ? "Queue" : "Send"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -11,6 +11,10 @@ import type {
 import type { LocalSlashItem } from "../utils/localSlash";
 import { describeUpdate, extractUpdateTsMs } from "../utils/format";
 import {
+  describeLifecycleNotification,
+  isLifecycleNotificationMethod,
+} from "../utils/subagentTasks";
+import {
   LOCAL_HANDLE_ID,
   createTimelineReducerState,
   hydrateLiveFromDiskUpdates,
@@ -307,10 +311,35 @@ export function useAgentEvents(
           reduceShellUpdate(prev, e.payload, timelineReducerState),
         );
       });
+      // Subagent + background-task lifecycle (x.ai/session_notification,
+      // x.ai/task_backgrounded, x.ai/task_completed). TaskTool/Wait/Kill
+      // scrollback is suppressed; these notifications own the cards.
+      const u7 = await listen<AgentUpdateEvent>("agent-notification", (e) => {
+        if (cancelled) return;
+        const { handleId, sessionId, method, params } = e.payload;
+        if (!isLifecycleNotificationMethod(method)) return;
+        const desc = describeLifecycleNotification(method, params);
+        if (!desc) return;
+        const now = Date.now();
+        scheduleLive((prev) =>
+          reduceAgentUpdate(
+            prev,
+            {
+              handleId,
+              sessionId,
+              description: desc,
+              now,
+              nextId: () => `${now}-${seq.current++}`,
+              sourceEventId: e.payload.eventId,
+            },
+            timelineReducerState,
+          ),
+        );
+      });
       if (!cancelled) {
-        unsubs.push(u1, uMode, u2, u3, u4, u5, u6);
+        unsubs.push(u1, uMode, u2, u3, u4, u5, u6, u7);
       } else {
-        [u1, uMode, u2, u3, u4, u5, u6].forEach((u) => u());
+        [u1, uMode, u2, u3, u4, u5, u6, u7].forEach((u) => u());
       }
     }
 

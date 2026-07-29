@@ -7,6 +7,8 @@ const KIND_LABELS: Record<string, string> = {
   thought: "Thought",
   tool: "Tool",
   shell: "Shell",
+  subagent: "Subagent",
+  task: "Task",
   event: "Event",
   unknown: "Other",
 };
@@ -82,6 +84,24 @@ function KindIcon({ kind }: { kind: string }) {
         <svg {...common}>
           <rect x="2" y="3" width="12" height="10" rx="1.5" />
           <path d="M5 6.5 7 8l-2 1.5M8.5 10.5H11" />
+        </svg>
+      );
+      break;
+    case "subagent":
+      glyph = (
+        <svg {...common}>
+          <circle cx="5" cy="5" r="2" />
+          <circle cx="11" cy="5" r="2" />
+          <circle cx="8" cy="11" r="2" />
+          <path d="M5 7v1.5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V7" />
+        </svg>
+      );
+      break;
+    case "task":
+      glyph = (
+        <svg {...common}>
+          <rect x="3" y="3" width="10" height="10" rx="1.5" />
+          <path d="M5.5 8h5M5.5 5.5h3" />
         </svg>
       );
       break;

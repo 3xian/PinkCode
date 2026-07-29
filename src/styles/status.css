@@ -436,24 +436,26 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Shared control chrome — size & type match every .btn in the app */
+/* Shared control chrome — one size for every .btn in the app */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   border: 1px solid transparent;
   background: var(--bg-elevated);
   border-radius: 999px;
-  padding: 4px 10px;
-  min-height: 26px;
+  /* Vertical size from min-height; line-height 1 keeps caps centered in the flex box. */
+  padding: 0 9px;
+  min-height: 22px;
   box-sizing: border-box;
   cursor: pointer;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  line-height: 1.25;
-  letter-spacing: 0.01em;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text);
   white-space: nowrap;
 }

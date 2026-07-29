@@ -26,6 +26,10 @@ import {
   formatTokens,
   shortPath,
 } from "../utils/format";
+import {
+  listActiveBgTasks,
+  listActiveSubagents,
+} from "../utils/subagentTasks";
 import type { ResolvePermissionFn } from "../utils/permissionPayload";
 import type { PromptQueueController } from "../hooks/usePromptQueueController";
 import { extractToolPath } from "../utils/paths";
@@ -75,6 +79,8 @@ const TIMELINE_FILTER_LABELS: Record<string, string> = {
   thought: "Thought",
   tool: "Tool",
   shell: "Shell",
+  subagent: "Subagent",
+  task: "Task",
   event: "Event",
   unknown: "Other",
 };
@@ -86,6 +92,8 @@ const TIMELINE_FILTER_ORDER: TimelineFilterKind[] = [
   "thought",
   "tool",
   "shell",
+  "subagent",
+  "task",
   "event",
   "unknown",
 ];
@@ -158,17 +166,11 @@ export function SessionDetailView({
 
   const { card } = detail;
   const pct = contextPct(card.contextTokensUsed, card.contextWindowTokens);
-  const isManagedLive =
-    managed &&
-    managed.status !== "stopped" &&
-    managed.status !== "error";
   const canStop =
     Boolean(onStopAgent) &&
     managed &&
     managed.status !== "stopped" &&
     managed.status !== "stopping";
-  const awaiting =
-    managed?.status === "awaitingPermission" || permissions.length > 0;
 
   return (
     <section className="detail-panel">
@@ -180,43 +182,6 @@ export function SessionDetailView({
 
       <div className="detail-header">
         <div className="detail-header-main">
-          <div className="detail-status-row">
-            <span
-              className={`pill ${
-                awaiting
-                  ? "danger"
-                  : isManagedLive || card.isActive
-                    ? "live"
-                    : "idle"
-              }`}
-            >
-              {awaiting
-                ? `◆ AWAITING PERMISSION (${permissions.length || managed?.pendingPermissionCount || 0})`
-                : isManagedLive
-                  ? `● ${managed.status.toUpperCase()}${managed.pid ? ` · pid ${managed.pid}` : ""}`
-                  : card.isActive
-                    ? `● LIVE · pid ${card.activePid}`
-                    : "○ idle"}
-            </span>
-            {card.modelId && <span className="pill muted-pill">{card.modelId}</span>}
-            {card.agentName && (
-              <span className="pill muted-pill">{card.agentName}</span>
-            )}
-            {card.errorCount > 0 && (
-              <span className="pill danger">{card.errorCount} errors</span>
-            )}
-            {canStop && (
-              <button
-                type="button"
-                className="btn danger-btn detail-stop-btn"
-                disabled={controlBusy}
-                title="Stop the agent process for this task"
-                onClick={onStopAgent}
-              >
-                Stop
-              </button>
-            )}
-          </div>
           <h1 title={card.title || undefined}>{card.title}</h1>
           <div className="detail-sub">
             <span title={card.cwd}>{shortPath(card.cwd, 64)}</span>
@@ -226,10 +191,8 @@ export function SessionDetailView({
             <span>
               updated {formatRelative(card.lastActiveAt ?? card.updatedAt)}
             </span>
-            <span className="mono" title={card.id}>
-              {card.id.slice(0, 13)}…
-            </span>
           </div>
+          <SubagentTaskStrip items={timelineItems} />
         </div>
 
         <div className="metric-grid">
@@ -318,6 +281,9 @@ export function SessionDetailView({
         availableCommands={availableCommands}
         timelineItems={timelineItems}
         sessionId={card?.id ?? null}
+        modelId={managed?.modelId ?? card.modelId ?? null}
+        canStop={Boolean(canStop)}
+        onStop={onStopAgent}
       />
     </section>
   );
@@ -546,6 +512,59 @@ function TimelinePanel({
 }
 
 /**
+ * Live chips for running child subagents + background tasks.
+ * Mirrors Grok Build's tasks-pane summary without a second full pane.
+ */
+function SubagentTaskStrip({ items }: { items: TimelineItem[] }) {
+  const subs = useMemo(() => listActiveSubagents(items), [items]);
+  const tasks = useMemo(() => listActiveBgTasks(items), [items]);
+  if (subs.length === 0 && tasks.length === 0) return null;
+
+  return (
+    <div className="subagent-task-strip" aria-label="Active subagents and tasks">
+      {subs.map((s) => (
+        <span
+          key={s.childSessionId}
+          className="subagent-task-chip subagent-chip"
+          title={[
+            s.description,
+            s.subagentType,
+            s.model,
+            s.childSessionId,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        >
+          <span className="subagent-task-chip-mark" aria-hidden>
+            ◆
+          </span>
+          {s.description || s.subagentType}
+          <span className="subagent-task-chip-meta">
+            {s.subagentType}
+            {s.activityLabel ? ` · ${s.activityLabel}` : ""}
+          </span>
+        </span>
+      ))}
+      {tasks.map((t) => (
+        <span
+          key={t.taskId}
+          className={`subagent-task-chip task-chip${
+            t.isMonitor ? " is-monitor" : ""
+          }`}
+          title={[t.command, t.taskId, t.cwd].filter(Boolean).join(" · ")}
+        >
+          <span className="subagent-task-chip-mark" aria-hidden>
+            ▣
+          </span>
+          {t.isMonitor ? "Monitor" : "Task"}:{" "}
+          {t.description?.trim() || t.command || t.taskId}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
  * One Timeline row. Memoized so streaming updates to the tail card do not
  * re-parse Markdown / re-layout every prior item.
  */
@@ -577,9 +596,13 @@ const LiveItemRow = memo(function LiveItemRow({
       ? extractToolPath(item.detail, item.title)
       : null;
 
-  const canCopyAgent =
-    item.kind === "agent" && Boolean(item.detail?.trim()) && !item.streaming;
+  const canCopy =
+    (item.kind === "agent" || item.kind === "user") &&
+    Boolean(item.detail?.trim()) &&
+    !item.streaming;
   const isConversationBody = item.kind === "user" || item.kind === "agent";
+  const copyAriaLabel =
+    item.kind === "user" ? "Copy user message" : "Copy agent output";
   const displayTitle =
     item.kind === "thought"
       ? item.streaming
@@ -587,14 +610,14 @@ const LiveItemRow = memo(function LiveItemRow({
         : "Thought"
       : item.title;
 
-  const copyAgentOutput = useCallback(async () => {
+  const copyDetail = useCallback(async () => {
     const text = item.detail?.trim();
     if (!text) return;
     try {
       await writeClipboard(text);
       setCopied(true);
       if (copyTimer.current != null) window.clearTimeout(copyTimer.current);
-      copyTimer.current = window.setTimeout(() => setCopied(false), 1500);
+      copyTimer.current = window.setTimeout(() => setCopied(false), 600);
     } catch {
       setCopied(false);
     }
@@ -622,7 +645,7 @@ const LiveItemRow = memo(function LiveItemRow({
               className={
                 "tl-detail" +
                 (isConversationBody ? " tl-conversation-body" : "") +
-                (canCopyAgent ? " has-copy" : "")
+                (canCopy ? " has-copy" : "")
               }
             >
               {useMarkdown ? (
@@ -640,18 +663,22 @@ const LiveItemRow = memo(function LiveItemRow({
               ) : (
                 item.detail
               )}
-              {canCopyAgent && (
+              {canCopy && (
                 <div className="tl-detail-footer">
                   <button
                     type="button"
                     className={
                       "tl-copy-btn" + (copied ? " is-copied" : "")
                     }
-                    title={copied ? "Copied" : "Copy agent output"}
-                    aria-label={copied ? "Copied" : "Copy agent output"}
+                    title={copied ? "Copied" : copyAriaLabel}
+                    aria-label={copied ? "Copied" : copyAriaLabel}
+                    onMouseDown={(e) => {
+                      /* Don't take focus on click — otherwise the button stays open */
+                      e.preventDefault();
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      void copyAgentOutput();
+                      void copyDetail();
                     }}
                   >
                     {copied ? "Copied" : "Copy"}

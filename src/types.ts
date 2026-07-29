@@ -132,6 +132,8 @@ export type TimelineFilterKind =
   | "thought"
   | "tool"
   | "shell"
+  | "subagent"
+  | "task"
   | "event"
   | "unknown";
 
@@ -358,6 +360,63 @@ export interface TimelineShellPayload {
   exitCode?: number | null;
 }
 
+/** Grok Build hard limit: subagents cannot spawn subagents. */
+export const SUBAGENT_MAX_DEPTH = 1;
+
+export type SubagentLifecycleStatus =
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type BgTaskLifecycleStatus = "running" | "done" | "failed";
+
+/** Parent→child subagent card (`kind === "subagent"`). Max nesting depth is 1. */
+export interface TimelineSubagentPayload {
+  subagentId: string;
+  childSessionId: string;
+  parentSessionId?: string | null;
+  description: string;
+  subagentType: string;
+  persona?: string | null;
+  role?: string | null;
+  model?: string | null;
+  capabilityMode?: string | null;
+  isBackground: boolean;
+  depth: number;
+  maxDepth: number;
+  status: SubagentLifecycleStatus;
+  activityLabel?: string | null;
+  error?: string | null;
+  durationMs?: number | null;
+  toolCalls?: number | null;
+  turns?: number | null;
+  tokensUsed?: number | null;
+}
+
+/** Sparse lifecycle update — only set fields should replace previous values. */
+export type SubagentLifecyclePatch = Partial<TimelineSubagentPayload> & {
+  childSessionId: string;
+};
+
+/** Background bash/monitor task card (`kind === "task"`). */
+export interface TimelineBgTaskPayload {
+  taskId: string;
+  toolCallId?: string | null;
+  command: string;
+  description?: string | null;
+  cwd?: string | null;
+  isMonitor: boolean;
+  status: BgTaskLifecycleStatus;
+  exitCode?: number | null;
+  error?: string | null;
+}
+
+/** Sparse lifecycle update — only set fields should replace previous values. */
+export type BgTaskLifecyclePatch = Partial<TimelineBgTaskPayload> & {
+  taskId: string;
+};
+
 export interface TimelineItem {
   id: string;
   handleId: string;
@@ -381,6 +440,10 @@ export interface TimelineItem {
   toolStatus?: string;
   /** Present when kind is `"shell"`. */
   shell?: TimelineShellPayload;
+  /** Present when kind is `"subagent"`. */
+  subagent?: TimelineSubagentPayload;
+  /** Present when kind is `"task"`. */
+  task?: TimelineBgTaskPayload;
 }
 
 export interface AgentUpdateEvent {

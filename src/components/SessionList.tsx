@@ -25,6 +25,8 @@ interface Props {
    * including `starting`). Sort + card chrome derive from this alone.
    */
   managedStatuses?: Record<string, ManagedStatus>;
+  /** sessionId → live process pid (managed agent, else active_sessions). */
+  managedPids?: Record<string, number>;
   onNewTask?: () => void;
 }
 
@@ -35,6 +37,7 @@ export function SessionList({
   onQuery,
   onSelect,
   managedStatuses,
+  managedPids,
   onNewTask,
 }: Props) {
   const visible = useMemo(() => {
@@ -71,7 +74,7 @@ export function SessionList({
               type="button"
               onClick={onNewTask}
             >
-              + New
+              New
             </button>
           )}
         </div>
@@ -96,6 +99,7 @@ export function SessionList({
           // Live PID in active_sessions.json, not attached here — "open", not mid-turn.
           const openElsewhere = s.isActive && !attached;
           const state = resolveCardState(managedStatus, openElsewhere);
+          const pid = managedPids?.[s.id] ?? s.activePid ?? null;
           const cardClass = [
             "session-card",
             selectedId === s.id ? "selected" : "",
@@ -127,6 +131,11 @@ export function SessionList({
               {state !== "idle" && (
                 <div className="card-status">
                   <span className="card-status-text">{stateLabel(state)}</span>
+                  {pid != null && (
+                    <span className="card-status-pid" title={`pid ${pid}`}>
+                      pid {pid}
+                    </span>
+                  )}
                 </div>
               )}
               <div className="card-body">

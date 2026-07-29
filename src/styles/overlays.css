@@ -61,9 +61,10 @@
 }
 
 .btn.icon-btn {
-  padding: 4px;
-  min-width: 26px;
-  width: 26px;
+  padding: 0;
+  min-width: 22px;
+  width: 22px;
+  min-height: 22px;
 }
 
 .btn.icon-btn .icon {

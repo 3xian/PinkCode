@@ -1,4 +1,12 @@
-import type { AvailableCommand } from "../types";
+import type {
+  AvailableCommand,
+  BgTaskLifecyclePatch,
+  SubagentLifecyclePatch,
+} from "../types";
+import {
+  describeLifecycleNotification,
+  isBgPlumbingTool,
+} from "./subagentTasks";
 import { extractToolMeta, formatToolCardParts } from "./toolTitle";
 
 export type { ToolCardParts } from "./toolTitle";
@@ -360,6 +368,10 @@ export function isGrokScrollbackSuppressedTool(
   ) {
     return true;
   }
+  // WaitTasks / KillTask / TaskOutput — status lives on Subagent / BgTask UI.
+  if (isBgPlumbingTool(inner)) {
+    return true;
+  }
   if (
     identifiers.some(
       (value) => value === "update_goal" || value.startsWith("Goal:"),
@@ -406,6 +418,15 @@ export function describeUpdate(update: unknown): {
    * applies wall-clock elapsed since the last user card (Grok Build "Worked for …").
    */
   turnStopReason?: string;
+  /**
+   * Stable card identity for subagent/task lifecycle (childSessionId / taskId).
+   * Not an ACP toolCallId.
+   */
+  mergeKey?: string;
+  /** Sparse patch for `kind === "subagent"` lifecycle cards. */
+  subagent?: SubagentLifecyclePatch;
+  /** Sparse patch for `kind === "task"` background-task cards. */
+  task?: BgTaskLifecyclePatch;
 } {
   if (!update || typeof update !== "object") {
     return { kind: "unknown", title: String(update) };
@@ -566,6 +587,17 @@ export function describeUpdate(update: unknown): {
         title: "available_commands_update",
         availableCommands: commands,
       };
+    }
+    // Subagent / bg-task lifecycle on session/update or disk hydrate.
+    // Same parser as agent-notification; bare update object is enough.
+    case "subagent_spawned":
+    case "subagent_progress":
+    case "subagent_finished":
+    case "task_backgrounded":
+    case "task_completed": {
+      const lifecycle = describeLifecycleNotification(null, inner);
+      if (lifecycle) return lifecycle;
+      return { kind: "event", title: sessionUpdate };
     }
     default: {
       const type = (u.type as string) || sessionUpdate;

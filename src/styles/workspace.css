@@ -574,10 +574,10 @@
 }
 
 .btn.tiny {
-  padding: 1px 5px;
-  font-size: 12px;
-  min-height: 0;
-  line-height: 1.2;
+  padding: 0 6px;
+  min-height: 20px;
+  font-size: 11px;
+  line-height: 1;
 }
 
 .empty-hint.small {
@@ -675,7 +675,7 @@
   text-align: left;
   border: 1px solid var(--border); /* Highlight Med */
   background: var(--bg-elevated); /* Surface */
-  border-radius: 10px;
+  border-radius: 6px;
   padding: 0;
   overflow: hidden;
   cursor: pointer;
@@ -703,6 +703,7 @@
   z-index: 0;
   display: flex;
   align-items: center;
+  gap: 8px;
   min-height: 16px;
   padding: 1px 10px;
   overflow: hidden;
@@ -730,6 +731,24 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Live process id — right edge of the status ribbon. */
+.card-status-pid {
+  position: relative;
+  z-index: 1;
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  color: color-mix(in srgb, var(--card-status-fg) 72%, var(--muted));
+  user-select: none;
+  white-space: nowrap;
 }
 
 /* Running / Starting: traveling sheen on the ribbon */

@@ -95,12 +95,6 @@
   padding: 4px 0 0;
 }
 
-.shell-collapse-btn {
-  font-size: 11px;
-  padding: 2px 8px;
-  min-height: 0;
-}
-
 /* Streaming text: plain mono until settle → Markdown (avoids per-chunk parse). */
 .tl-stream-plain {
   margin: 0;
@@ -637,8 +631,18 @@ button.user-question-option:hover:not(:disabled),
 }
 
 .queue-text-btn {
-  padding: 3px 5px;
-  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  min-height: 22px;
+  box-sizing: border-box;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 999px;
 }
 
 .queue-icon-btn:hover:not(:disabled),
@@ -952,11 +956,13 @@ button.user-question-option:hover:not(:disabled),
 .prompt-chip-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
   min-width: 0;
   max-width: 168px;
+  min-height: 22px;
+  box-sizing: border-box;
   margin: 0;
-  padding: 4px 8px 4px 7px;
+  padding: 0 9px;
   border: 1px solid var(--chip-border);
   border-radius: 999px;
   background:
@@ -967,8 +973,12 @@ button.user-question-option:hover:not(:disabled),
     0 0 0 0 var(--chip-glow);
   color: var(--chip-fg);
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
   outline: none;
   transition:
@@ -1065,8 +1075,10 @@ button.user-question-option:hover:not(:disabled),
 }
 
 .prompt-chip-option-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .prompt-chip-option-hint {
@@ -1075,9 +1087,35 @@ button.user-question-option:hover:not(:disabled),
   line-height: 1.3;
 }
 
+.prompt-send-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.prompt-model {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.prompt-stop {
+  flex-shrink: 0;
+  min-width: 56px;
+}
+
 .prompt-send {
   flex-shrink: 0;
-  min-width: 72px;
+  min-width: 64px;
 }
 
 .stream-timeline .tl-item {

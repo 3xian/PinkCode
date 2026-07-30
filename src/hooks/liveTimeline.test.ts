@@ -9,11 +9,54 @@ import {
   mergeTimelineItems,
   reduceAgentUpdate,
   reduceShellUpdate,
+  settleLifecycleItems,
   settleStreamingItems,
 } from "./liveTimeline";
 import type { TimelineItem } from "../types";
 
 describe("live timeline reducer", () => {
+  it("settles running lifecycle cards when a managed handle closes", () => {
+    const map = new Map<string, TimelineItem[]>([
+      [
+        "session",
+        [
+          {
+            id: "sub",
+            handleId: "handle",
+            kind: "subagent",
+            title: "running",
+            ts: 1,
+            subagent: {
+              subagentId: "sa",
+              childSessionId: "child",
+              description: "work",
+              subagentType: "explore",
+              isBackground: true,
+              depth: 1,
+              status: "running",
+            },
+          },
+          {
+            id: "task",
+            handleId: "handle",
+            kind: "task",
+            title: "running",
+            ts: 2,
+            task: {
+              taskId: "task",
+              command: "npm test",
+              isMonitor: false,
+              status: "running",
+            },
+          },
+        ],
+      ],
+    ]);
+    const settled = settleLifecycleItems(map, "handle").get("session")!;
+    expect(settled[0].subagent?.status).toBe("finished");
+    expect(settled[1].task?.status).toBe("stopped");
+  });
+
   it("hydrates disk live items via shared reducers and coalesces chunks", () => {
     const updates = [
       {

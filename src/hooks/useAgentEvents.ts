@@ -15,11 +15,13 @@ import {
   describeLifecycleNotification,
   describePendingInteractionNotification,
   isLifecycleNotificationMethod,
-  lifecycleFromListSubagents,
-  lifecycleFromListTasks,
   type LifecycleDescription,
   type PendingInteractionKind,
 } from "../utils/subagentTasks";
+import {
+  projectNestedLifecycleItems,
+  reconcileLifecycleSnapshots,
+} from "../utils/lifecycleState";
 import {
   LOCAL_HANDLE_ID,
   createTimelineReducerState,
@@ -30,6 +32,7 @@ import {
   reduceShellUpdate,
   sameManagedAgent,
   settleStreamingItems,
+  settleLifecycleItems,
   shouldDropUpdate,
 } from "./liveTimeline";
 
@@ -49,13 +52,19 @@ function isLiveManagedStatus(status: ManagedAgentInfo["status"]): boolean {
   );
 }
 
-function isResetManagedStatus(status: ManagedAgentInfo["status"]): boolean {
+function shouldResetLifecycleRefill(
+  status: ManagedAgentInfo["status"],
+): boolean {
   return (
     status === "stopped" ||
     status === "error" ||
     status === "starting" ||
     status === "stopping"
   );
+}
+
+function isTerminalManagedStatus(status: ManagedAgentInfo["status"]): boolean {
+  return status === "stopped" || status === "error";
 }
 
 export interface AgentEventsOptions {
@@ -116,6 +125,11 @@ export function useAgentEvents(
       if (!prev.has(handleId)) return prev;
       const next = new Map(prev);
       next.delete(handleId);
+      return next;
+    });
+    setLiveBySession((prev) => {
+      const next = settleLifecycleItems(prev, handleId);
+      if (next !== prev) liveRef.current = next;
       return next;
     });
     setPermissions((prev) => {
@@ -218,12 +232,19 @@ export function useAgentEvents(
     (
       handleId: string,
       sessionId: string | null | undefined,
-      descriptions: LifecycleDescription[],
+      source:
+        | LifecycleDescription[]
+        | ((currentItems: TimelineItem[]) => LifecycleDescription[]),
     ) => {
-      if (!descriptions.length) return;
       const now = Date.now();
       const listReducerState = createTimelineReducerState();
       setLiveBySession((prev) => {
+        const key = sessionId || handleId;
+        const descriptions =
+          typeof source === "function"
+            ? source(prev.get(key) ?? [])
+            : source;
+        if (!descriptions.length) return prev;
         let map = prev;
         for (const description of descriptions) {
           map = reduceAgentUpdate(
@@ -259,13 +280,16 @@ export function useAgentEvents(
           listSubagents(info.handleId).catch(() => null),
           listTasks(info.handleId).catch(() => null),
         ]);
-        const descs = [
-          ...lifecycleFromListSubagents(subs ?? undefined),
-          ...lifecycleFromListTasks(tasks ?? undefined),
-        ];
-        if (descs.length) {
-          applyLifecycleDescriptions(info.handleId, info.sessionId, descs);
-        }
+        applyLifecycleDescriptions(
+          info.handleId,
+          info.sessionId,
+          (currentItems) =>
+            reconcileLifecycleSnapshots(
+              currentItems,
+              subs ?? undefined,
+              tasks ?? undefined,
+            ),
+        );
       } catch {
         // Non-fatal: live notifications remain the primary path.
       }
@@ -507,9 +531,14 @@ export function useAgentEvents(
     const bySession = liveBySession.get(selectedSessionId) ?? [];
     const handle = managedForSession?.handleId;
     const byHandle = handle ? (liveBySession.get(handle) ?? []) : [];
-    return byHandle.length
+    const rootItems = byHandle.length
       ? mergeTimelineItems(byHandle, bySession)
       : bySession;
+    return projectNestedLifecycleItems(
+      selectedSessionId,
+      rootItems,
+      liveBySession,
+    );
   }, [selectedSessionId, liveBySession, managedForSession]);
 
   /** Agent-advertised slash commands for the selected session (may be empty). */
@@ -562,8 +591,15 @@ export function useAgentEvents(
   // Attach / reconnect: refill lifecycle cards once per live handle.
   useEffect(() => {
     for (const m of managedList) {
-      if (isResetManagedStatus(m.status)) {
+      if (shouldResetLifecycleRefill(m.status)) {
         lifecycleRefilledHandles.current.delete(m.handleId);
+        if (isTerminalManagedStatus(m.status)) {
+          setLiveBySession((prev) => {
+            const next = settleLifecycleItems(prev, m.handleId);
+            if (next !== prev) liveRef.current = next;
+            return next;
+          });
+        }
         continue;
       }
       if (isLiveManagedStatus(m.status)) {

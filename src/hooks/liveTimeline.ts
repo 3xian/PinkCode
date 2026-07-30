@@ -81,6 +81,53 @@ export function settleStreamingItems(
   return changed ? next : map;
 }
 
+/** Settle running lifecycle cards when their managed ACP handle closes. */
+export function settleLifecycleItems(
+  map: Map<string, TimelineItem[]>,
+  handleId: string,
+): Map<string, TimelineItem[]> {
+  let changed = false;
+  const next = new Map(map);
+  for (const [key, list] of map) {
+    let listChanged = false;
+    const settled = list.map((item) => {
+      if (item.handleId !== handleId) return item;
+      if (item.kind === "subagent" && item.subagent?.status === "running") {
+        listChanged = true;
+        const subagent = {
+          ...item.subagent,
+          status: "finished" as const,
+          activityLabel: null,
+        };
+        return {
+          ...item,
+          subagent,
+          toolStatus: subagent.status,
+          title: formatSubagentTitle(subagent),
+          detail: formatSubagentDetail(subagent),
+        };
+      }
+      if (item.kind === "task" && item.task?.status === "running") {
+        listChanged = true;
+        const task = { ...item.task, status: "stopped" as const };
+        return {
+          ...item,
+          task,
+          toolStatus: task.status,
+          title: formatBgTaskTitle(task),
+          detail: formatBgTaskDetail(task),
+        };
+      }
+      return item;
+    });
+    if (listChanged) {
+      next.set(key, settled);
+      changed = true;
+    }
+  }
+  return changed ? next : map;
+}
+
 /** Enforce the per-session memory bound and invalidate derived shell indexes. */
 export function trimLiveList(
   list: TimelineItem[],

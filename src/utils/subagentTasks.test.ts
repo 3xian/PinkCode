@@ -1,20 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { describeUpdate, isGrokScrollbackSuppressedTool } from "./format";
 import {
-  SUBAGENT_MAX_DEPTH,
+  SUBAGENT_ROOT_DEPTH,
   describeLifecycleNotification,
-  describeListedSubagent,
-  describeListedTask,
   describePendingInteractionNotification,
   formatSubagentTitle,
   isBgPlumbingTool,
-  lifecycleFromListSubagents,
-  lifecycleFromListTasks,
   lifecycleMirrorKey,
   listActiveBgTasks,
   listActiveSubagents,
   mergeSubagentPayload,
 } from "./subagentTasks";
+import {
+  describeListedSubagent,
+  describeListedTask,
+  lifecycleFromListSubagents,
+  lifecycleFromListTasks,
+  projectNestedLifecycleItems,
+  reconcileLifecycleSnapshots,
+} from "./lifecycleState";
 import type { TimelineItem, TimelineSubagentPayload } from "../types";
 import {
   createTimelineReducerState,
@@ -30,8 +34,7 @@ function baseSub(over: Partial<TimelineSubagentPayload> = {}): TimelineSubagentP
     description: "scan src/",
     subagentType: "explore",
     isBackground: true,
-    depth: SUBAGENT_MAX_DEPTH,
-    maxDepth: SUBAGENT_MAX_DEPTH,
+    depth: SUBAGENT_ROOT_DEPTH,
     status: "running",
     ...over,
   };
@@ -97,7 +100,7 @@ describe("bg plumbing tool suppression (Grok Build parity)", () => {
 });
 
 describe("subagent lifecycle notifications", () => {
-  it("parses subagent_spawned with hierarchy depth 1", () => {
+  it("parses a root subagent and accepts explicit depth metadata", () => {
     const desc = describeLifecycleNotification("x.ai/session_notification", {
       sessionId: "parent-1",
       update: {
@@ -118,15 +121,24 @@ describe("subagent lifecycle notifications", () => {
       childSessionId: "child-1",
       parentSessionId: "parent-1",
       subagentType: "explore",
-      depth: SUBAGENT_MAX_DEPTH,
-      maxDepth: SUBAGENT_MAX_DEPTH,
+      depth: SUBAGENT_ROOT_DEPTH,
       status: "running",
     });
     // No toolCallId abuse
     expect(
       (desc as { toolCallId?: string }).toolCallId,
     ).toBeUndefined();
-    expect(desc!.detail).toContain("depth 1/1");
+    expect(desc!.detail).toContain("depth 1");
+
+    const nested = describeLifecycleNotification("x.ai/session_notification", {
+      update: {
+        sessionUpdate: "subagent_spawned",
+        child_session_id: "grandchild-1",
+        parent_session_id: "child-1",
+        depth: 2,
+      },
+    });
+    expect(nested?.subagent).toMatchObject({ depth: 2 });
   });
 
   it("honors is_background: false on spawn", () => {
@@ -647,14 +659,22 @@ describe("list_running / task/list parsers", () => {
     expect(d?.subagent?.activityLabel).toBe("Using read_file, grep");
   });
 
-  it("skips completed tasks and maps outstanding ones", () => {
-    expect(
-      describeListedTask({
-        task_id: "done-1",
-        command: "echo hi",
-        completed: true,
-      }),
-    ).toBeNull();
+  it("maps complete task snapshots to their exact terminal status", () => {
+    const done = describeListedTask({
+      task_id: "done-1",
+      command: "echo hi",
+      completed: true,
+      exit_code: 0,
+    });
+    expect(done?.task?.status).toBe("done");
+
+    const failed = describeListedTask({
+      task_id: "failed-1",
+      command: "exit 2",
+      completed: true,
+      exit_code: 2,
+    });
+    expect(failed?.task?.status).toBe("failed");
 
     const d = describeListedTask({
       task_id: "run-1",
@@ -670,7 +690,7 @@ describe("list_running / task/list parsers", () => {
     expect(d?.task?.command).toBe("npm test");
   });
 
-  it("lifecycleFromList* filters empty/completed", () => {
+  it("lifecycleFromList* filters unrelated completed history", () => {
     expect(
       lifecycleFromListSubagents({
         subagents: [{ subagentId: "a", childSessionId: "c1", description: "x" }],
@@ -682,8 +702,183 @@ describe("list_running / task/list parsers", () => {
           { task_id: "t1", command: "ls", completed: false },
           { task_id: "t2", command: "x", completed: true },
         ],
-      }),
+      }, new Set()),
     ).toHaveLength(1);
+  });
+
+  it("settles cards absent from successful active-only snapshots", () => {
+    const previous: TimelineItem[] = [
+      {
+        id: "sub-old",
+        handleId: "h",
+        kind: "subagent",
+        title: "sub",
+        ts: 1,
+        subagent: baseSub({ childSessionId: "child-old" }),
+      },
+      {
+        id: "task-old",
+        handleId: "h",
+        kind: "task",
+        title: "task",
+        ts: 2,
+        task: {
+          taskId: "task-old",
+          command: "npm test",
+          isMonitor: false,
+          status: "running",
+        },
+      },
+    ];
+    const reconciled = reconcileLifecycleSnapshots(
+      previous,
+      { subagents: [] },
+      { tasks: [] },
+    );
+    expect(reconciled.map((item) => item.subagent?.status).filter(Boolean)).toEqual([
+      "finished",
+    ]);
+    expect(reconciled.map((item) => item.task?.status).filter(Boolean)).toEqual(["stopped"]);
+  });
+
+  it("does not settle a lifecycle kind when its snapshot request failed", () => {
+    const previous: TimelineItem[] = [
+      {
+        id: "sub-old",
+        handleId: "h",
+        kind: "subagent",
+        title: "sub",
+        ts: 1,
+        subagent: baseSub(),
+      },
+    ];
+    expect(reconcileLifecycleSnapshots(previous, undefined, { tasks: [] })).toEqual(
+      [],
+    );
+  });
+
+  it("preserves a precise terminal state received before reconciliation", () => {
+    const current: TimelineItem[] = [
+      {
+        id: "sub-done",
+        handleId: "h",
+        kind: "subagent",
+        title: "done",
+        ts: 1,
+        subagent: baseSub({ status: "completed" }),
+      },
+      {
+        id: "task-done",
+        handleId: "h",
+        kind: "task",
+        title: "done",
+        ts: 2,
+        task: {
+          taskId: "task-done",
+          command: "npm test",
+          isMonitor: false,
+          status: "done",
+          exitCode: 0,
+        },
+      },
+    ];
+    expect(
+      reconcileLifecycleSnapshots(
+        current,
+        { subagents: [] },
+        {
+          tasks: [
+            {
+              task_id: "task-done",
+              command: "npm test",
+              completed: true,
+              exit_code: 0,
+            },
+          ],
+        },
+      ),
+    ).toEqual([]);
+  });
+
+  it("uses a completed task snapshot to replace a currently running card", () => {
+    const current: TimelineItem[] = [
+      {
+        id: "task-running",
+        handleId: "h",
+        kind: "task",
+        title: "running",
+        ts: 1,
+        task: {
+          taskId: "task-1",
+          command: "npm test",
+          isMonitor: false,
+          status: "running",
+        },
+      },
+    ];
+    const reconciled = reconcileLifecycleSnapshots(current, undefined, {
+      tasks: [
+        {
+          task_id: "task-1",
+          command: "npm test",
+          completed: true,
+          exit_code: 0,
+        },
+      ],
+    });
+    expect(reconciled).toHaveLength(1);
+    expect(reconciled[0].task?.status).toBe("done");
+    expect(reconciled[0].task?.exitCode).toBe(0);
+  });
+});
+
+describe("nested lifecycle projection", () => {
+  it("flattens descendant lifecycle cards and infers observed depth", () => {
+    const rootSub: TimelineItem = {
+      id: "root-sub",
+      handleId: "h",
+      sessionId: "root",
+      kind: "subagent",
+      title: "child",
+      ts: 1,
+      subagent: baseSub({
+        childSessionId: "child",
+        parentSessionId: "root",
+      }),
+    };
+    const grandchild: TimelineItem = {
+      id: "grandchild",
+      handleId: "h",
+      sessionId: "child",
+      kind: "subagent",
+      title: "grandchild",
+      ts: 2,
+      subagent: baseSub({
+        subagentId: "sa-2",
+        childSessionId: "grandchild",
+        parentSessionId: "child",
+      }),
+    };
+    const childText: TimelineItem = {
+      id: "child-text",
+      handleId: "h",
+      sessionId: "child",
+      kind: "agent",
+      title: "internal output",
+      ts: 3,
+    };
+    const map = new Map<string, TimelineItem[]>([
+      ["root", [rootSub]],
+      ["child", [grandchild, childText]],
+    ]);
+
+    const projected = projectNestedLifecycleItems("root", [rootSub], map);
+    expect(projected.map((item) => item.id)).toEqual([
+      "root-sub",
+      "grandchild",
+    ]);
+    expect(projected[0].subagent).toMatchObject({ depth: 1 });
+    expect(projected[1].subagent).toMatchObject({ depth: 2 });
   });
 });
 

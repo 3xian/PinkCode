@@ -3,7 +3,7 @@
   <img src="docs/logo.png" alt="PinkCode" width="128" />
 </p>
 
-<h1 align="center">PinkCode - Grok Build GUI</h1>
+<h1 align="center">PinkCode - Grok Desktop GUI</h1>
 
 <p align="center">
   <strong>Effortless Parallel Tasks & Crystal-Clear Usage Visuals.</strong>

@@ -390,18 +390,19 @@ export interface TimelineShellPayload {
   exitCode?: number | null;
 }
 
-/** Grok Build hard limit: subagents cannot spawn subagents. */
-export const SUBAGENT_MAX_DEPTH = 1;
+/** First child level when an event has no explicit topology metadata. */
+export const SUBAGENT_ROOT_DEPTH = 1;
 
 export type SubagentLifecycleStatus =
   | "running"
   | "completed"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "finished";
 
-export type BgTaskLifecycleStatus = "running" | "done" | "failed";
+export type BgTaskLifecycleStatus = "running" | "done" | "failed" | "stopped";
 
-/** Parent→child subagent card (`kind === "subagent"`). Max nesting depth is 1. */
+/** Parent→child subagent card (`kind === "subagent"`), at any nesting depth. */
 export interface TimelineSubagentPayload {
   subagentId: string;
   childSessionId: string;
@@ -414,7 +415,6 @@ export interface TimelineSubagentPayload {
   capabilityMode?: string | null;
   isBackground: boolean;
   depth: number;
-  maxDepth: number;
   status: SubagentLifecycleStatus;
   activityLabel?: string | null;
   error?: string | null;

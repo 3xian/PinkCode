@@ -61,7 +61,7 @@
   white-space: nowrap;
 }
 
-/* Live parent → child subagents + bg tasks (Grok max depth 1). */
+/* Live descendant subagents + bg tasks (arbitrary configured nesting depth). */
 .subagent-task-strip {
   display: flex;
   flex-wrap: wrap;

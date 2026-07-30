@@ -576,6 +576,8 @@ pub struct SubagentInfo {
     #[serde(default)]
     pub child_session_id: Option<String>,
     #[serde(default)]
+    pub parent_session_id: Option<String>,
+    #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
     pub subagent_type: Option<String>,
@@ -583,6 +585,16 @@ pub struct SubagentInfo {
     pub status: Option<String>,
     #[serde(default)]
     pub activity_label: Option<String>,
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
+    #[serde(default)]
+    pub tool_call_count: Option<u32>,
+    #[serde(default)]
+    pub turn_count: Option<u32>,
+    #[serde(default)]
+    pub tokens_used: Option<u64>,
+    #[serde(default)]
+    pub tools_used: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -620,14 +632,23 @@ pub struct ListTasksParams {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
 pub struct BgTaskInfo {
     #[serde(default)]
     pub task_id: Option<String>,
     #[serde(default)]
     pub command: Option<String>,
     #[serde(default)]
-    pub status: Option<String>,
+    pub display_command: Option<String>,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub completed: Option<bool>,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub exit_code: Option<i32>,
+    #[serde(default)]
+    pub signal: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
 }
@@ -660,6 +681,55 @@ impl<T> ExtMethodEnvelope<T> {
         }
         self.result
             .ok_or_else(|| "ext method response missing result".into())
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_contract_tests {
+    use super::{ListSubagentsResult, ListTasksResult};
+
+    #[test]
+    fn subagent_list_preserves_camel_case_topology_and_metrics() {
+        let parsed: ListSubagentsResult = serde_json::from_value(serde_json::json!({
+            "subagents": [{
+                "subagentId": "sa-1",
+                "parentSessionId": "parent",
+                "childSessionId": "child",
+                "description": "scan",
+                "subagentType": "explore",
+                "durationMs": 1200,
+                "toolCallCount": 3,
+                "turnCount": 2,
+                "tokensUsed": 400,
+                "toolsUsed": ["read_file"]
+            }]
+        }))
+        .expect("subagent snapshot should deserialize");
+        let value = serde_json::to_value(parsed).expect("subagent snapshot should serialize");
+        assert_eq!(value["subagents"][0]["parentSessionId"], "parent");
+        assert_eq!(value["subagents"][0]["toolCallCount"], 3);
+    }
+
+    #[test]
+    fn task_list_preserves_upstream_snake_case_snapshot_fields() {
+        let parsed: ListTasksResult = serde_json::from_value(serde_json::json!({
+            "tasks": [{
+                "task_id": "task-1",
+                "command": "wrapped",
+                "display_command": "npm test",
+                "cwd": "D:/code/PinkCode",
+                "completed": false,
+                "kind": "bash",
+                "exit_code": null,
+                "signal": null,
+                "description": "tests"
+            }]
+        }))
+        .expect("task snapshot should deserialize");
+        let value = serde_json::to_value(parsed).expect("task snapshot should serialize");
+        assert_eq!(value["tasks"][0]["task_id"], "task-1");
+        assert_eq!(value["tasks"][0]["display_command"], "npm test");
+        assert_eq!(value["tasks"][0]["completed"], false);
     }
 }
 

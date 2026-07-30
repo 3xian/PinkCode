@@ -8,8 +8,6 @@
  * - WaitTasks / KillTask / TaskOutput are bg plumbing — suppressed; status
  *   lives on Subagent / BgTask cards.
  * - Background shell/monitor: `x.ai/task_backgrounded` + `x.ai/task_completed`.
- * - Nesting: only top-level sessions spawn children (max depth = 1).
- *
  * Parsers emit sparse patches (omit unchanged fields). The timeline reducer
  * merges onto the previous card — no sentinel defaults in the reducer.
  */
@@ -17,20 +15,16 @@
 import type {
   BgTaskLifecyclePatch,
   BgTaskLifecycleStatus,
-  ListedSubagent,
-  ListedTask,
-  ListSubagentsResult,
-  ListTasksResult,
   SubagentLifecyclePatch,
   SubagentLifecycleStatus,
   TimelineBgTaskPayload,
   TimelineItem,
   TimelineSubagentPayload,
 } from "../types";
-import { SUBAGENT_MAX_DEPTH } from "../types";
+import { SUBAGENT_ROOT_DEPTH } from "../types";
 import { extractToolMeta } from "./toolTitle";
 
-export { SUBAGENT_MAX_DEPTH };
+export { SUBAGENT_ROOT_DEPTH };
 
 /** Description shape for liveTimeline.reduceAgentUpdate (lifecycle cards). */
 export interface LifecycleDescription {
@@ -197,6 +191,8 @@ export function formatSubagentTitle(p: TimelineSubagentPayload): string {
       return `Subagent failed${elapsed ? ` in ${elapsed}` : ""}: ${quote}`;
     case "cancelled":
       return `Subagent cancelled${elapsed ? ` in ${elapsed}` : ""}: ${quote}`;
+    case "finished":
+      return `Subagent finished${elapsed ? ` in ${elapsed}` : ""}: ${quote}`;
     default:
       return `Subagent started: ${quote}`;
   }
@@ -211,7 +207,7 @@ export function formatSubagentDetail(
   if (p.capabilityMode) bits.push(p.capabilityMode);
   if (p.persona) bits.push(`persona ${p.persona}`);
   if (p.role) bits.push(`role ${p.role}`);
-  bits.push(`depth ${p.depth}/${p.maxDepth}`);
+  bits.push(`depth ${p.depth}`);
   if (p.activityLabel && p.status === "running") {
     bits.push(p.activityLabel);
   }
@@ -241,6 +237,8 @@ export function formatBgTaskTitle(p: TimelineBgTaskPayload): string {
       return `${label} done: ${subject}`;
     case "failed":
       return `${label} failed: ${subject}`;
+    case "stopped":
+      return `${label} stopped: ${subject}`;
     default:
       return `${label}: ${subject}`;
   }
@@ -275,8 +273,7 @@ export function defaultSubagent(
     model: patch.model ?? null,
     capabilityMode: patch.capabilityMode ?? null,
     isBackground: patch.isBackground ?? true,
-    depth: patch.depth ?? SUBAGENT_MAX_DEPTH,
-    maxDepth: patch.maxDepth ?? SUBAGENT_MAX_DEPTH,
+    depth: patch.depth ?? SUBAGENT_ROOT_DEPTH,
     status: patch.status ?? "running",
     activityLabel: patch.activityLabel ?? null,
     error: patch.error ?? null,
@@ -355,7 +352,9 @@ export function sparseBgTask(
  * Lifecycle description for the reducer. Title/detail are a best-effort preview
  * (spawn/finish with full fields); the reducer always reformats after merge.
  */
-function subagentDesc(patch: SubagentLifecyclePatch): LifecycleDescription {
+export function describeSubagentPatch(
+  patch: SubagentLifecyclePatch,
+): LifecycleDescription {
   const preview = mergeSubagentPayload(undefined, patch);
   return {
     kind: "subagent",
@@ -366,7 +365,9 @@ function subagentDesc(patch: SubagentLifecyclePatch): LifecycleDescription {
   };
 }
 
-function taskDesc(patch: BgTaskLifecyclePatch): LifecycleDescription {
+export function describeTaskPatch(
+  patch: BgTaskLifecyclePatch,
+): LifecycleDescription {
   const preview = mergeBgTaskPayload(undefined, patch);
   return {
     kind: "task",
@@ -414,7 +415,7 @@ export function describeLifecycleNotification(
       monitorDescription ?? str(update, "description") ?? undefined;
     const isMonitor =
       Boolean(monitorDescription) || command.startsWith("[monitor] ");
-    return taskDesc(
+    return describeTaskPatch(
       sparseBgTask(taskId, {
         toolCallId: str(update, "tool_call_id", "toolCallId") ?? null,
         command: isMonitor ? command.replace(/^\[monitor\]\s*/, "") : command,
@@ -445,7 +446,7 @@ export function describeLifecycleNotification(
       Boolean(monDesc) ||
       (command != null && command.startsWith("[monitor] "));
     // Sparse finish: omit absent fields so merge keeps task_backgrounded values.
-    return taskDesc(
+    return describeTaskPatch(
       sparseBgTask(taskId, {
         toolCallId: str(snapshot, "tool_call_id", "toolCallId"),
         command:
@@ -490,7 +491,7 @@ export function describeLifecycleNotification(
     const description = str(update, "description") ?? "subagent";
     const isBackground =
       bool(update, "is_background", "isBackground") ?? true;
-    return subagentDesc(
+    return describeSubagentPatch(
       sparseSubagent(childSessionId, {
         subagentId,
         parentSessionId:
@@ -504,8 +505,9 @@ export function describeLifecycleNotification(
         capabilityMode:
           str(update, "capability_mode", "capabilityMode") ?? null,
         isBackground,
-        depth: SUBAGENT_MAX_DEPTH,
-        maxDepth: SUBAGENT_MAX_DEPTH,
+        depth:
+          num(update, "depth", "subagent_depth", "subagentDepth") ??
+          SUBAGENT_ROOT_DEPTH,
         status: "running",
       }),
     );
@@ -529,7 +531,7 @@ export function describeLifecycleNotification(
     const activityLabel =
       str(update, "activity_label", "activityLabel") ??
       (toolsUsed.length ? `Using ${toolsUsed.join(", ")}` : undefined);
-    return subagentDesc(
+    return describeSubagentPatch(
       sparseSubagent(childSessionId, {
         subagentId: str(update, "subagent_id", "subagentId"),
         parentSessionId: str(update, "parent_session_id", "parentSessionId"),
@@ -559,7 +561,7 @@ export function describeLifecycleNotification(
       "subagentId",
     );
     if (!childSessionId) return null;
-    return subagentDesc(
+    return describeSubagentPatch(
       sparseSubagent(childSessionId, {
         subagentId: str(update, "subagent_id", "subagentId"),
         parentSessionId: str(update, "parent_session_id", "parentSessionId"),
@@ -625,93 +627,6 @@ export function lifecycleMirrorKey(item: TimelineItem): string | null {
     return `task:${item.task.taskId}`;
   }
   return null;
-}
-
-// ── list_running / task/list → lifecycle cards (attach / reconnect) ─────────
-
-/**
- * Map one `x.ai/subagent/list_running` entry into a lifecycle card description.
- * Wire DTO is camelCase (`SubagentLiveSnapshotDto`).
- */
-export function describeListedSubagent(
-  row: ListedSubagent,
-): LifecycleDescription | null {
-  const childSessionId = row.childSessionId ?? row.subagentId;
-  if (!childSessionId) return null;
-  const subagentId = row.subagentId ?? childSessionId;
-  const tools = (row.toolsUsed ?? []).filter(Boolean).slice(0, 3);
-  return subagentDesc(
-    sparseSubagent(childSessionId, {
-      subagentId,
-      parentSessionId: row.parentSessionId ?? null,
-      description: row.description ?? "subagent",
-      subagentType: row.subagentType ?? "general-purpose",
-      status: "running",
-      durationMs: row.durationMs,
-      toolCalls: row.toolCallCount,
-      turns: row.turnCount,
-      tokensUsed: row.tokensUsed,
-      activityLabel: tools.length ? `Using ${tools.join(", ")}` : undefined,
-    }),
-  );
-}
-
-/**
- * Map one `x.ai/task/list` TaskSnapshot into a bg-task card.
- * Snapshot fields are snake_case; skip already-completed tasks.
- */
-export function describeListedTask(
-  row: ListedTask,
-): LifecycleDescription | null {
-  if (row.completed) return null;
-  const taskId = row.task_id;
-  if (!taskId) return null;
-  const command = row.display_command ?? row.command ?? "";
-  const kind = row.kind ?? "bash";
-  const monDesc = row.description;
-  const isMonitor =
-    kind === "monitor" ||
-    Boolean(monDesc && command.startsWith("[monitor] "));
-  const exitCode = row.exit_code ?? null;
-  return taskDesc(
-    sparseBgTask(taskId, {
-      command: isMonitor
-        ? command.replace(/^\[monitor\]\s*/, "")
-        : command,
-      description: monDesc ?? null,
-      cwd: row.cwd ?? null,
-      isMonitor,
-      status: normalizeBgStatus(null, exitCode),
-      exitCode,
-      error: row.signal ?? null,
-    }),
-  );
-}
-
-/** list_running result (envelope already unwrapped by host) → lifecycle cards. */
-export function lifecycleFromListSubagents(
-  result: ListSubagentsResult | null | undefined,
-): LifecycleDescription[] {
-  if (!result?.subagents?.length) return [];
-  const out: LifecycleDescription[] = [];
-  for (const item of result.subagents) {
-    const d = describeListedSubagent(item);
-    if (d) out.push(d);
-  }
-  return out;
-}
-
-/** task/list result → outstanding lifecycle cards. */
-export function lifecycleFromListTasks(
-  result: ListTasksResult | null | undefined,
-): LifecycleDescription[] {
-  if (!result?.tasks?.length) return [];
-  const out: LifecycleDescription[] = [];
-  for (const item of result.tasks) {
-    const d = describeListedTask(item);
-    if (d) out.push(d);
-  }
-  return out;
 }
 
 // ── pending_interaction / interaction_resolved ─────────────────────────────

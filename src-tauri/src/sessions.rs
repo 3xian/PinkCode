@@ -1,8 +1,11 @@
 use crate::models::{
     ActiveSession, DashboardStats, HunkPage, HunkRecord, SessionCard, SessionDetail, SessionStatus,
-    SessionUpdatePage, TokenDayPoint, TokenUsageSeries,
+    SessionTokenUsageInfo, SessionUpdatePage, TokenDayPoint, TokenUsageSeries,
 };
-use crate::session_usage::{completed_turn_usage, session_token_usage, SessionTokenUsage};
+use crate::session_usage::{
+    completed_turn_usage, persist_session_usage_cache, session_token_usage,
+    session_token_usage_snapshot, SessionTokenUsage,
+};
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -212,8 +215,12 @@ fn load_session_metadata(dir: &Path) -> Option<(Value, Option<Value>)> {
         }
     };
 
+    Some((summary, load_session_signals(dir)))
+}
+
+fn load_session_signals(dir: &Path) -> Option<Value> {
     let signals_path = dir.join("signals.json");
-    let signals = match load_json_value(&signals_path) {
+    match load_json_value(&signals_path) {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(
@@ -223,8 +230,7 @@ fn load_session_metadata(dir: &Path) -> Option<(Value, Option<Value>)> {
             );
             None
         }
-    };
-    Some((summary, signals))
+    }
 }
 
 fn summary_is_hidden(summary: &Value) -> bool {
@@ -275,6 +281,7 @@ fn build_card(
     signals: Option<&Value>,
     active: Option<&ActiveSession>,
     token_usage: SessionTokenUsage,
+    token_usage_pending: bool,
 ) -> SessionCard {
     let title = str_field(summary, &["generated_title", "session_summary", "title"])
         .filter(|s| !s.trim().is_empty())
@@ -328,6 +335,7 @@ fn build_card(
         total_tokens: token_usage.total_tokens,
         token_usage_incomplete: token_usage.incomplete,
         token_usage_available: token_usage.available,
+        token_usage_pending,
         tool_call_count: signals
             .map(|s| u64_field(s, &["toolCallCount"]))
             .unwrap_or(0),
@@ -461,28 +469,21 @@ pub fn resolve_in_session(session_id: &str, path: &str) -> std::result::Result<P
     Ok(canon)
 }
 
-pub fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>> {
-    let root = sessions_root();
-    if !root.exists() {
-        return Ok(Vec::new());
-    }
+struct SessionCandidate {
+    id: String,
+    dir: PathBuf,
+    cwd: String,
+    active: bool,
+    modified: SystemTime,
+}
 
-    let active = read_active_sessions().unwrap_or_default();
-    let active_map: HashMap<String, ActiveSession> = active
-        .into_iter()
-        .map(|a| (a.session_id.clone(), a))
-        .collect();
-
-    struct Candidate {
-        id: String,
-        dir: PathBuf,
-        cwd: String,
-        active: bool,
-        modified: SystemTime,
-    }
+fn collect_session_candidates(
+    root: &Path,
+    active_map: &HashMap<String, ActiveSession>,
+) -> Result<Vec<SessionCandidate>> {
     let mut candidates = Vec::new();
 
-    for group in fs::read_dir(&root)? {
+    for group in fs::read_dir(root)? {
         let group = group?;
         if !group.file_type()?.is_dir() {
             continue;
@@ -512,7 +513,7 @@ pub fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>> {
             let Ok(metadata) = fs::metadata(&summary_path) else {
                 continue;
             };
-            candidates.push(Candidate {
+            candidates.push(SessionCandidate {
                 active: active_map.contains_key(&id),
                 id,
                 dir,
@@ -530,36 +531,10 @@ pub fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>> {
             .cmp(&a.active)
             .then_with(|| b.modified.cmp(&a.modified))
     });
+    Ok(candidates)
+}
 
-    let mut cards = Vec::new();
-    for candidate in candidates {
-        let Some((summary, signals)) = load_session_metadata(&candidate.dir) else {
-            continue;
-        };
-        if summary_is_hidden(&summary) {
-            continue;
-        }
-        let card = build_card(
-            &candidate.id,
-            &candidate.cwd,
-            &summary,
-            signals.as_ref(),
-            active_map.get(&candidate.id),
-            session_token_usage(&candidate.dir.join("updates.jsonl")),
-        );
-        // Drop empty system-temp sessions (ACP tests, handshake probes, etc.).
-        if crate::session_noise::is_noise_session(&card) {
-            continue;
-        }
-        session_dir_cache()
-            .lock()
-            .insert(candidate.id, (candidate.dir, candidate.cwd));
-        cards.push(card);
-        if limit.is_some_and(|n| cards.len() >= n) {
-            break;
-        }
-    }
-
+fn sort_session_cards(cards: &mut [SessionCard]) {
     cards.sort_by(|a, b| {
         // Active first, then by parsed activity time. RFC3339 strings with
         // different offsets/fraction widths are not chronologically sortable.
@@ -579,8 +554,173 @@ pub fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>> {
             b_ts.cmp(&a_ts)
         })
     });
+}
+
+fn active_session_map() -> HashMap<String, ActiveSession> {
+    read_active_sessions()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|active| (active.session_id.clone(), active))
+        .collect()
+}
+
+fn summary_matches_query(id: &str, cwd: &str, summary: &Value, query: &str) -> bool {
+    id.to_lowercase().contains(query)
+        || cwd.to_lowercase().contains(query)
+        || str_field(summary, &["generated_title", "session_summary", "title"])
+            .is_some_and(|title| title.to_lowercase().contains(query))
+        || str_field(summary, &["head_branch"])
+            .is_some_and(|branch| branch.to_lowercase().contains(query))
+}
+
+pub fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>> {
+    let root = sessions_root();
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+    let active_map = active_session_map();
+    let candidates = collect_session_candidates(&root, &active_map)?;
+
+    let mut cards = Vec::new();
+    for candidate in candidates {
+        let Some((summary, signals)) = load_session_metadata(&candidate.dir) else {
+            continue;
+        };
+        if summary_is_hidden(&summary) {
+            continue;
+        }
+        let updates_path = candidate.dir.join("updates.jsonl");
+        let (token_usage, token_usage_pending) = session_token_usage_snapshot(&updates_path);
+        let card = build_card(
+            &candidate.id,
+            &candidate.cwd,
+            &summary,
+            signals.as_ref(),
+            active_map.get(&candidate.id),
+            token_usage,
+            token_usage_pending,
+        );
+        // Drop empty system-temp sessions (ACP tests, handshake probes, etc.).
+        if crate::session_noise::is_noise_session(&card) {
+            continue;
+        }
+        session_dir_cache()
+            .lock()
+            .insert(candidate.id, (candidate.dir, candidate.cwd));
+        cards.push(card);
+        if limit.is_some_and(|n| cards.len() >= n) {
+            break;
+        }
+    }
+
+    sort_session_cards(&mut cards);
 
     Ok(cards)
+}
+
+pub fn search_sessions(query: &str, limit: Option<usize>) -> Result<Vec<SessionCard>> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return list_sessions(limit);
+    }
+    let root = sessions_root();
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+    let max = limit.unwrap_or(100);
+    let active_map = active_session_map();
+    let candidates = collect_session_candidates(&root, &active_map)?;
+    let mut cards = Vec::new();
+
+    for candidate in candidates {
+        let summary_path = candidate.dir.join("summary.json");
+        let summary = match load_json_value(&summary_path) {
+            Ok(Some(value)) => value,
+            Ok(None) => continue,
+            Err(error) => {
+                tracing::warn!(
+                    path = %summary_path.display(),
+                    error = %error,
+                    "skipping invalid session summary during search"
+                );
+                continue;
+            }
+        };
+        if summary_is_hidden(&summary) {
+            continue;
+        }
+        if !summary_matches_query(&candidate.id, &candidate.cwd, &summary, &query) {
+            continue;
+        }
+
+        let signals = load_session_signals(&candidate.dir);
+        let (token_usage, token_usage_pending) =
+            session_token_usage_snapshot(&candidate.dir.join("updates.jsonl"));
+        let card = build_card(
+            &candidate.id,
+            &candidate.cwd,
+            &summary,
+            signals.as_ref(),
+            active_map.get(&candidate.id),
+            token_usage,
+            token_usage_pending,
+        );
+        if crate::session_noise::is_noise_session(&card) {
+            continue;
+        }
+        session_dir_cache()
+            .lock()
+            .insert(candidate.id, (candidate.dir, candidate.cwd));
+        cards.push(card);
+        if cards.len() >= max {
+            break;
+        }
+    }
+
+    sort_session_cards(&mut cards);
+    Ok(cards)
+}
+
+pub fn get_session_card(session_id: &str) -> Result<SessionCard> {
+    let (dir, cwd) = find_session_dir(session_id)?;
+    let summary = load_json_value(&dir.join("summary.json"))?
+        .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
+    let signals = load_json_value(&dir.join("signals.json"))?;
+    let active = read_active_sessions()
+        .unwrap_or_default()
+        .into_iter()
+        .find(|item| item.session_id == session_id);
+    let (token_usage, token_usage_pending) =
+        session_token_usage_snapshot(&dir.join("updates.jsonl"));
+    Ok(build_card(
+        session_id,
+        &cwd,
+        &summary,
+        signals.as_ref(),
+        active.as_ref(),
+        token_usage,
+        token_usage_pending,
+    ))
+}
+
+pub fn session_token_usages(session_ids: &[String]) -> Vec<SessionTokenUsageInfo> {
+    let mut results = Vec::with_capacity(session_ids.len());
+    for session_id in session_ids {
+        let Ok((dir, _)) = find_session_dir(session_id) else {
+            continue;
+        };
+        let usage = session_token_usage(&dir.join("updates.jsonl"));
+        results.push(SessionTokenUsageInfo {
+            session_id: session_id.clone(),
+            total_tokens: usage.total_tokens,
+            incomplete: usage.incomplete,
+            available: usage.available,
+        });
+    }
+    if !results.is_empty() {
+        persist_session_usage_cache();
+    }
+    results
 }
 
 fn read_jsonl_tail(path: &Path, max_lines: usize) -> Result<Vec<Value>> {
@@ -769,7 +909,9 @@ pub fn get_session_detail(session_id: &str) -> Result<SessionDetail> {
         signals.as_ref(),
         active.as_ref(),
         session_token_usage(&dir.join("updates.jsonl")),
+        false,
     );
+    persist_session_usage_cache();
 
     // Keep the first paint fast. The UI can request a deeper tail when the
     // user asks for older Timeline entries and preserves that depth on refresh.
@@ -1149,6 +1291,38 @@ mod tests {
         ));
         assert!(!summary_is_hidden(
             &serde_json::json!({"sessionKind": "interactive"})
+        ));
+    }
+
+    #[test]
+    fn summary_search_matches_only_index_metadata() {
+        let summary = serde_json::json!({
+            "generated_title": "Repair task startup",
+            "head_branch": "codex/task-index"
+        });
+        assert!(summary_matches_query(
+            "session-123",
+            r"D:\code\PinkCode",
+            &summary,
+            "startup"
+        ));
+        assert!(summary_matches_query(
+            "session-123",
+            r"D:\code\PinkCode",
+            &summary,
+            "task-index"
+        ));
+        assert!(summary_matches_query(
+            "session-123",
+            r"D:\code\PinkCode",
+            &summary,
+            "pinkcode"
+        ));
+        assert!(!summary_matches_query(
+            "session-123",
+            r"D:\code\PinkCode",
+            &summary,
+            "tokens"
         ));
     }
 

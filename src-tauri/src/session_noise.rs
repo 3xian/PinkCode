@@ -147,6 +147,7 @@ mod tests {
             total_tokens: 0,
             token_usage_incomplete: false,
             token_usage_available: false,
+            token_usage_pending: false,
             tool_call_count: 0,
             turn_count: 0,
             tools_used: vec![],

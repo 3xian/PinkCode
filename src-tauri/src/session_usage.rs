@@ -1,20 +1,21 @@
 //! Durable per-session token accounting from Grok's `updates.jsonl` logs.
 
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 #[cfg(not(unix))]
 use std::{
     hash::{Hash, Hasher},
     io::Read,
 };
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct SessionTokenUsage {
     pub total_tokens: u64,
     pub incomplete: bool,
@@ -22,17 +23,17 @@ pub struct SessionTokenUsage {
     pub available: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct UsageCacheEntry {
     identity: FileIdentity,
-    modified: Option<SystemTime>,
+    modified_nanos: Option<u64>,
     len: u64,
     scan_offset: u64,
     prompt_ids: HashSet<String>,
     usage: SessionTokenUsage,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct FileIdentity {
     #[cfg(unix)]
     device: u64,
@@ -40,6 +41,12 @@ struct FileIdentity {
     inode: u64,
     #[cfg(not(unix))]
     prefix_fingerprint: Option<u64>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct UsageCacheFile {
+    version: u32,
+    entries: HashMap<PathBuf, UsageCacheEntry>,
 }
 
 impl FileIdentity {
@@ -85,8 +92,73 @@ fn file_identity(_path: &Path, metadata: &fs::Metadata) -> FileIdentity {
 
 fn usage_cache() -> &'static Mutex<HashMap<PathBuf, UsageCacheEntry>> {
     static CACHE: OnceLock<Mutex<HashMap<PathBuf, UsageCacheEntry>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+    CACHE.get_or_init(|| Mutex::new(load_persisted_usage_cache()))
 }
+
+/// Serialize durable-log scans so two Tauri blocking commands cannot commit
+/// snapshots out of order. Cache-only reads remain independent and fast.
+fn usage_scan_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+#[cfg(not(test))]
+fn usage_persist_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+#[cfg(not(test))]
+fn usage_cache_path() -> PathBuf {
+    crate::config::pinkcode_home().join("session_usage.json")
+}
+
+#[cfg(not(test))]
+fn load_persisted_usage_cache() -> HashMap<PathBuf, UsageCacheEntry> {
+    let Ok(raw) = fs::read_to_string(usage_cache_path()) else {
+        return HashMap::new();
+    };
+    let Ok(file) = serde_json::from_str::<UsageCacheFile>(&raw) else {
+        return HashMap::new();
+    };
+    if file.version == 1 {
+        file.entries
+    } else {
+        HashMap::new()
+    }
+}
+
+#[cfg(test)]
+fn load_persisted_usage_cache() -> HashMap<PathBuf, UsageCacheEntry> {
+    HashMap::new()
+}
+
+fn modified_nanos(metadata: &fs::Metadata) -> Option<u64> {
+    metadata
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_nanos()).ok())
+}
+
+/// Persist the in-memory incremental ledger after a batch or detail scan.
+#[cfg(not(test))]
+pub fn persist_session_usage_cache() {
+    let _persist_guard = usage_persist_lock().lock();
+    let mut entries = usage_cache().lock().clone();
+    entries.retain(|path, _| path.exists());
+    let file = UsageCacheFile {
+        version: 1,
+        entries,
+    };
+    if let Err(error) = crate::fs_atomic::write_json_atomic(&usage_cache_path(), &file) {
+        tracing::warn!(error = %error, "failed to persist session usage cache");
+    }
+}
+
+#[cfg(test)]
+pub fn persist_session_usage_cache() {}
 
 pub struct CompletedTurnUsage<'a> {
     pub prompt_id: Option<&'a str>,
@@ -152,15 +224,16 @@ pub fn completed_turn_usage(message: &Value) -> Option<CompletedTurnUsage<'_>> {
 /// Read a session's complete token ledger, incrementally when its append-only
 /// update log grows. Rebuild from zero if the file is replaced or truncated.
 pub fn session_token_usage(path: &Path) -> SessionTokenUsage {
+    let _scan_guard = usage_scan_lock().lock();
     let Ok(metadata) = fs::metadata(path) else {
         return SessionTokenUsage::default();
     };
-    let modified = metadata.modified().ok();
+    let modified_nanos = modified_nanos(&metadata);
     let len = metadata.len();
     let identity = file_identity(path, &metadata);
     let cached = usage_cache().lock().get(path).cloned();
     if let Some(entry) = cached.as_ref() {
-        if entry.modified == modified && entry.len == len {
+        if entry.modified_nanos == modified_nanos && entry.len == len && entry.scan_offset >= len {
             return entry.usage.clone();
         }
     }
@@ -176,7 +249,7 @@ pub fn session_token_usage(path: &Path) -> SessionTokenUsage {
     } else {
         UsageCacheEntry {
             identity: identity.clone(),
-            modified: None,
+            modified_nanos: None,
             len: 0,
             scan_offset: 0,
             prompt_ids: HashSet::new(),
@@ -225,12 +298,40 @@ pub fn session_token_usage(path: &Path) -> SessionTokenUsage {
         entry.usage.total_tokens = entry.usage.total_tokens.saturating_add(turn.total_tokens);
         entry.usage.incomplete |= turn.incomplete;
     }
-    entry.modified = modified;
+    entry.modified_nanos = modified_nanos;
     entry.len = len;
     entry.identity = identity;
     let usage = entry.usage.clone();
     usage_cache().lock().insert(path.to_path_buf(), entry);
     usage
+}
+
+/// Return the persisted/in-memory value without scanning the update log.
+///
+/// The boolean is true when the log has changed since the cached scan or no
+/// compatible cache entry exists, allowing the UI to paint first and hydrate
+/// usage in the background.
+pub fn session_token_usage_snapshot(path: &Path) -> (SessionTokenUsage, bool) {
+    let Ok(metadata) = fs::metadata(path) else {
+        return (SessionTokenUsage::default(), false);
+    };
+    let len = metadata.len();
+    let identity = file_identity(path, &metadata);
+    let modified_nanos = modified_nanos(&metadata);
+    let cached = usage_cache().lock().get(path).cloned();
+    let Some(entry) = cached else {
+        return (SessionTokenUsage::default(), true);
+    };
+    if !identity.is_reliable()
+        || entry.identity != identity
+        || len < entry.scan_offset
+        || len < entry.len
+    {
+        return (SessionTokenUsage::default(), true);
+    }
+    let pending =
+        entry.modified_nanos != modified_nanos || entry.len != len || entry.scan_offset < len;
+    (entry.usage, pending)
 }
 
 fn u64_field(value: &Value, keys: &[&str]) -> u64 {
@@ -375,6 +476,54 @@ mod tests {
         let usage = session_token_usage(&path);
         assert!(usage.available);
         assert_eq!(usage.total_tokens, 30);
+        fs::remove_file(path).expect("remove update log");
+    }
+
+    #[test]
+    fn snapshot_is_non_scanning_and_marks_appends_pending() {
+        let path = std::env::temp_dir().join(format!(
+            "pinkcode-session-usage-snapshot-{}-{}.jsonl",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let first = "{\"update\":{\"sessionUpdate\":\"turn_completed\",\"prompt_id\":\"one\",\"usage\":{\"totalTokens\":10}}}\n";
+        fs::write(&path, first).expect("write first update");
+
+        let (cold, pending) = session_token_usage_snapshot(&path);
+        assert_eq!(cold.total_tokens, 0);
+        assert!(pending);
+
+        assert_eq!(session_token_usage(&path).total_tokens, 10);
+        let (warm, pending) = session_token_usage_snapshot(&path);
+        assert_eq!(warm.total_tokens, 10);
+        assert!(!pending);
+
+        let mut file = fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("open update log");
+        writeln!(
+            file,
+            "{{\"update\":{{\"sessionUpdate\":\"turn_completed\",\"prompt_id\":\"two\",\"usage\":{{\"totalTokens\":20}}}}}}"
+        )
+        .expect("append second update");
+        drop(file);
+
+        let (stale, pending) = session_token_usage_snapshot(&path);
+        // Small Windows files use their whole (<4 KiB) prefix as identity, so
+        // an append intentionally invalidates the snapshot instead of showing
+        // a possibly replaced file's stale total.
+        #[cfg(windows)]
+        assert_eq!(stale.total_tokens, 0);
+        #[cfg(not(windows))]
+        assert_eq!(stale.total_tokens, 10);
+        assert!(pending);
+        assert_eq!(session_token_usage(&path).total_tokens, 30);
+
+        usage_cache().lock().remove(&path);
         fs::remove_file(path).expect("remove update log");
     }
 

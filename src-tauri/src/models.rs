@@ -37,6 +37,8 @@ pub struct SessionCard {
     pub token_usage_incomplete: bool,
     /// False for legacy or unreadable update logs without durable usage records.
     pub token_usage_available: bool,
+    /// True while the durable update log has not yet been scanned to its current end.
+    pub token_usage_pending: bool,
     pub tool_call_count: u64,
     pub turn_count: u64,
     pub tools_used: Vec<String>,
@@ -45,6 +47,15 @@ pub struct SessionCard {
     pub agent_files_touched: u64,
     pub session_duration_seconds: u64,
     pub error_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionTokenUsageInfo {
+    pub session_id: String,
+    pub total_tokens: u64,
+    pub incomplete: bool,
+    pub available: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

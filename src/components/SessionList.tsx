@@ -33,6 +33,8 @@ interface Props {
    */
   needsInputSessionIds?: ReadonlySet<string>;
   onNewTask?: () => void;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 export function SessionList({
@@ -45,6 +47,8 @@ export function SessionList({
   managedPids,
   needsInputSessionIds,
   onNewTask,
+  hasMore,
+  onLoadMore,
 }: Props) {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -172,14 +176,18 @@ export function SessionList({
                   <span
                     className="card-chip"
                     title={
-                      !s.tokenUsageAvailable
+                      s.tokenUsagePending
+                        ? "Loading completed-turn token usage"
+                        : !s.tokenUsageAvailable
                         ? "Completed-turn token usage is not available for this session"
                         : s.tokenUsageIncomplete
                           ? "Approximate completed-turn total tokens; one or more turns may be incomplete"
                           : "Completed-turn total tokens (input + output, including cached reads)"
                     }
                   >
-                    {!s.tokenUsageAvailable
+                    {s.tokenUsagePending
+                      ? "… tok"
+                      : !s.tokenUsageAvailable
                       ? "? tok"
                       : `${s.tokenUsageIncomplete ? "≈" : ""}${formatTokens(s.totalTokens)} tok`}
                   </span>
@@ -200,6 +208,15 @@ export function SessionList({
             </div>
           );
         })}
+        {hasMore && onLoadMore && (
+          <button
+            className="btn ghost session-load-more"
+            type="button"
+            onClick={onLoadMore}
+          >
+            Load more
+          </button>
+        )}
       </div>
     </div>
   );

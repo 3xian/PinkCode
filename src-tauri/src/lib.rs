@@ -33,8 +33,8 @@ use agent_types::{
 };
 use billing::WeekUsage;
 use models::{
-    ActiveSession, DashboardStats, HunkPage, SessionCard, SessionDetail, SessionUpdatePage,
-    TokenUsageSeries,
+    ActiveSession, DashboardStats, HunkPage, SessionCard, SessionDetail, SessionTokenUsageInfo,
+    SessionUpdatePage, TokenUsageSeries,
 };
 use project_fs::{DirEntry, GitBranchInfo, GitChange, GitFileDiff};
 use serde_json::Value;
@@ -61,6 +61,31 @@ async fn list_sessions(limit: Option<usize>) -> Result<Vec<SessionCard>, String>
         .await
         .map_err(|e| format!("session scan task failed: {e}"))?
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn search_sessions(query: String, limit: Option<usize>) -> Result<Vec<SessionCard>, String> {
+    tauri::async_runtime::spawn_blocking(move || sessions::search_sessions(&query, limit))
+        .await
+        .map_err(|e| format!("session search task failed: {e}"))?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_session_card(session_id: String) -> Result<SessionCard, String> {
+    tauri::async_runtime::spawn_blocking(move || sessions::get_session_card(&session_id))
+        .await
+        .map_err(|e| format!("session card task failed: {e}"))?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_session_token_usages(
+    session_ids: Vec<String>,
+) -> Result<Vec<SessionTokenUsageInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || sessions::session_token_usages(&session_ids))
+        .await
+        .map_err(|e| format!("session usage task failed: {e}"))
 }
 
 #[tauri::command]
@@ -612,6 +637,9 @@ pub fn run() {
             get_grok_home,
             list_active_sessions,
             list_sessions,
+            search_sessions,
+            get_session_card,
+            list_session_token_usages,
             get_session_detail,
             list_session_updates,
             get_session_plan,

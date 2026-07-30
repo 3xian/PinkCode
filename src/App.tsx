@@ -9,7 +9,6 @@ import {
   killTask,
   listManagedAgents,
   listPendingPermissions,
-  listSessions,
   listTaskPermissionModes,
   listTaskPlanArmed,
   promptAgent,
@@ -34,6 +33,7 @@ import { useAgentEvents } from "./hooks/useAgentEvents";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { usePromptQueueController } from "./hooks/usePromptQueueController";
 import { useSessionPlanMode } from "./hooks/useSessionPlanMode";
+import { useSessionIndex } from "./hooks/useSessionIndex";
 import { useTimelineHistory } from "./hooks/useTimelineHistory";
 import { useUsageMetrics } from "./hooks/useUsageMetrics";
 import type {
@@ -85,10 +85,8 @@ function pickSelectedId(
   return live?.id ?? list[0]?.id ?? null;
 }
 function App() {
-  const [sessions, setSessions] = useState<SessionCard[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
-  const [query, setQuery] = useState("");
   const [tab, setTab] = useState<MainTab>("timeline");
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,6 +138,35 @@ function App() {
   } = useAgentEvents(selectedId, {
     onCurrentModeUpdate: planMode.onAgentModeUpdate,
   });
+  const onRecentSessionsLoaded = useCallback(
+    async (list: SessionCard[]) => {
+      setSelectedId((previous) => pickSelectedId(list, previous));
+      try {
+        const managed = await listManagedAgents();
+        for (const item of managed) {
+          upsertManaged(item);
+        }
+        setSelectedId((previous) => pickSelectedId(list, previous, managed));
+      } catch {
+        /* managed agents are optional during startup */
+      }
+    },
+    [upsertManaged],
+  );
+  const {
+    sessions,
+    query,
+    setQuery,
+    refreshList,
+    refreshCard,
+    mergeCard: mergeSessionCard,
+    hasMore: hasMoreSessions,
+    loadMore: loadMoreSessions,
+  } = useSessionIndex({
+    selectedId,
+    onRecentLoaded: onRecentSessionsLoaded,
+    onError: setError,
+  });
   const timelineHistory = useTimelineHistory(
     selectedId,
     detail,
@@ -175,31 +202,6 @@ function App() {
     checkForUpdate,
     updateCheckStatus,
   } = useAppUpdate();
-
-  const refreshList = useCallback(async () => {
-    // Skip heavy list work while the window is hidden (drag/minimize storms).
-    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-      return;
-    }
-    try {
-      // List first so the shell paints; managed agents are cheap but optional.
-      const list = await listSessions(80);
-      setSessions(list);
-      setError(null);
-      setSelectedId((prev) => pickSelectedId(list, prev));
-      try {
-        const managed = await listManagedAgents();
-        for (const m of managed) {
-          upsertManaged(m);
-        }
-        setSelectedId((prev) => pickSelectedId(list, prev, managed));
-      } catch {
-        /* ignore */
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [upsertManaged]);
 
   // Hydrate per-task permission modes, Plan arming, + last spawn seed on mount.
   useEffect(() => {
@@ -260,6 +262,7 @@ function App() {
           return;
         }
         setDetail(d);
+        mergeSessionCard(d.card);
         setDetailError(null);
       } catch (e) {
         if (seq !== detailReqSeq.current || selectedIdRef.current !== id) {
@@ -272,7 +275,7 @@ function App() {
         }
       }
     },
-    [],
+    [mergeSessionCard],
   );
 
   const refreshFromDisk = useCallback(() => {
@@ -284,10 +287,6 @@ function App() {
     if (id) void refreshDetail(id, true);
     setGitRefreshKey((n) => n + 1);
   }, [refreshList, refreshDetail]);
-
-  useEffect(() => {
-    void refreshList();
-  }, [refreshList]);
 
   const liveManagedCount = useMemo(
     () =>
@@ -323,7 +322,16 @@ function App() {
       if (cancelled || document.visibilityState === "hidden") return;
       const selected = selectedIdRef.current;
       if (payload.category === "index") {
-        void refreshList();
+        if (payload.sessionId) void refreshCard(payload.sessionId);
+        else void refreshList();
+      } else if (
+        payload.category === "timeline" &&
+        payload.sessionId &&
+        payload.sessionId !== selected
+      ) {
+        // Marks token usage pending and lets the background hydrator scan only
+        // the appended bytes for this card.
+        void refreshCard(payload.sessionId);
       }
       if (
         selected &&
@@ -339,7 +347,7 @@ function App() {
       cancelled = true;
       unlisten?.();
     };
-  }, [refreshList, refreshDetail]);
+  }, [refreshList, refreshDetail, refreshCard]);
 
   // These are advertised ACP capabilities, so consume their notifications
   // and invalidate the workspace immediately.
@@ -911,6 +919,8 @@ function App() {
             managedPids={managedPids}
             needsInputSessionIds={needsInputSessionIds}
             onNewTask={() => setModalOpen(true)}
+            hasMore={hasMoreSessions}
+            onLoadMore={loadMoreSessions}
           />
         </aside>
 

@@ -19,6 +19,7 @@ import type {
   SessionCard,
   SessionDetail,
   SessionRecapResult,
+  SessionTokenUsageInfo,
   SessionUpdatePage,
   SpawnRequest,
   TokenUsageSeries,
@@ -35,6 +36,25 @@ export async function listActiveSessions(): Promise<ActiveSession[]> {
 
 export async function listSessions(limit?: number): Promise<SessionCard[]> {
   return invoke<SessionCard[]>("list_sessions", { limit: limit ?? null });
+}
+
+export async function searchSessions(
+  query: string,
+  limit = 100,
+): Promise<SessionCard[]> {
+  return invoke<SessionCard[]>("search_sessions", { query, limit });
+}
+
+export async function getSessionCard(sessionId: string): Promise<SessionCard> {
+  return invoke<SessionCard>("get_session_card", { sessionId });
+}
+
+export async function listSessionTokenUsages(
+  sessionIds: string[],
+): Promise<SessionTokenUsageInfo[]> {
+  return invoke<SessionTokenUsageInfo[]>("list_session_token_usages", {
+    sessionIds,
+  });
 }
 
 export async function getSessionDetail(sessionId: string): Promise<SessionDetail> {

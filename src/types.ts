@@ -28,6 +28,8 @@ export interface SessionCard {
   totalTokens: number;
   tokenUsageIncomplete: boolean;
   tokenUsageAvailable: boolean;
+  /** True until the background durable-log scan reaches the current file end. */
+  tokenUsagePending: boolean;
   toolCallCount: number;
   turnCount: number;
   toolsUsed: string[];
@@ -36,6 +38,13 @@ export interface SessionCard {
   agentFilesTouched: number;
   sessionDurationSeconds: number;
   errorCount: number;
+}
+
+export interface SessionTokenUsageInfo {
+  sessionId: string;
+  totalTokens: number;
+  incomplete: boolean;
+  available: boolean;
 }
 
 export interface HunkRecord {

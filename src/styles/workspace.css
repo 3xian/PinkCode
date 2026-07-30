@@ -857,9 +857,16 @@
   height: 0;
 }
 
+.session-load-more {
+  flex-shrink: 0;
+  align-self: center;
+  margin: 6px 0 2px;
+}
+
 /*
  * Task cards — Rosé Pine surfaces:
- *   border: Highlight Med · default: Surface · hover: Highlight Low · selected: Base + Foam border
+ *   border: Highlight Med · opaque Surface · hover: opaque Highlight Low
+ *   · selected: opaque Base + Foam border
  * Status ribbon only when non-idle.
  */
 .session-card {
@@ -874,7 +881,7 @@
   position: relative;
   text-align: left;
   border: 1px solid var(--border); /* Highlight Med */
-  background: var(--bg-elevated); /* Surface */
+  background: var(--rp-surface); /* Opaque Surface */
   border-radius: 10px;
   padding: 0;
   overflow: hidden;
@@ -894,7 +901,7 @@
 
 .session-card:hover {
   border-color: var(--border);
-  background: var(--hl-low); /* Highlight Low */
+  background: var(--rp-hl-low); /* Opaque Highlight Low */
 }
 
 /* ── Status ribbon (non-idle only): solid on the left → transparent right ── */
@@ -994,13 +1001,13 @@
 /* Selected: Base fill + Foam border */
 .session-card.selected {
   border-color: var(--live); /* Foam */
-  background: var(--bg); /* Base */
+  background: var(--rp-base); /* Opaque Base */
   transition: none;
 }
 
 .session-card.selected:hover {
   border-color: var(--live);
-  background: var(--bg); /* keep Base on hover */
+  background: var(--rp-base); /* keep opaque Base on hover */
 }
 
 .session-card.selected .card-title {

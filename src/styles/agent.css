@@ -183,7 +183,7 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  background: var(--bg-elevated);
+  background: var(--bg-menu); /* opaque — no acrylic bleed-through */
 }
 
 .drag-dialog.is-positioned {
@@ -213,7 +213,7 @@
   max-height: min(56vh, 520px);
   overflow: auto;
   padding: 14px 16px;
-  background: var(--bg);
+  background: var(--rp-hl-low); /* opaque body wash on solid dialog */
   font-size: 12px;
   line-height: 1.45;
 }
@@ -225,7 +225,7 @@
   flex-direction: column;
   gap: 10px;
   border-top: 1px solid var(--border);
-  background: var(--bg-elevated);
+  background: var(--bg-menu); /* opaque — no acrylic bleed-through */
 }
 
 /* ── Tool / FS permission (session/request_permission, fs/*) ─── */
@@ -499,7 +499,7 @@ button.user-question-option:hover:not(:disabled),
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--bg);
+  background: var(--rp-hl-low); /* opaque field on solid dialog */
   color: var(--text);
   font: inherit;
   font-size: 12px;
@@ -515,7 +515,7 @@ button.user-question-option:hover:not(:disabled),
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--hl-low) 55%, transparent);
+  background: var(--rp-hl-low); /* opaque — no acrylic bleed-through */
 }
 
 .user-question-preview-label {

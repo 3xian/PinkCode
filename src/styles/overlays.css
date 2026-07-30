@@ -12,7 +12,7 @@
 
 .modal {
   width: min(520px, 100%);
-  background: var(--bg-elevated);
+  background: var(--bg-menu); /* opaque — no acrylic bleed-through */
   border: none;
   border-radius: 0;
   padding: 16px 18px 18px;
@@ -79,7 +79,7 @@
   padding: 9px 11px;
   border-radius: 0;
   border: none;
-  background: var(--bg);
+  background: var(--rp-hl-low); /* opaque field wash on solid modal */
   color: var(--text);
   font: inherit;
   outline: none;
@@ -148,7 +148,7 @@
   font-size: 12px;
   line-height: 1.45;
   word-break: break-word;
-  background: var(--bg);
+  background: var(--rp-hl-low); /* opaque — no acrylic bleed-through */
   color: var(--text-muted);
   border: 1px solid var(--border);
 }

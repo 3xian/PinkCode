@@ -694,9 +694,10 @@ button.user-question-option:hover:not(:disabled),
   flex-direction: column;
   width: 100%;
   max-width: var(--composer-max);
-  background: var(--bg-elevated);
+  background: var(--rp-surface);
   border: 1px solid var(--border);
-  box-shadow: var(--inset-spec);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm), var(--inset-spec);
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
@@ -708,7 +709,7 @@ button.user-question-option:hover:not(:disabled),
   bottom: 100%;
   margin-bottom: 4px;
   max-height: 260px;
-  background: var(--bg-elevated);
+  background: var(--bg-menu);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-md);
   z-index: 41;
@@ -809,7 +810,7 @@ button.user-question-option:hover:not(:disabled),
   margin-bottom: 4px;
   max-height: 240px;
   overflow-y: auto;
-  background: var(--bg-elevated);
+  background: var(--bg-menu);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-md);
   z-index: 40;
@@ -857,8 +858,10 @@ button.user-question-option:hover:not(:disabled),
 }
 
 .prompt-composer:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  border-color: var(--border-strong);
+  box-shadow:
+    0 8px 24px rgb(var(--text-rgb) / 0.16),
+    var(--inset-spec);
 }
 
 .prompt-input {
@@ -887,6 +890,7 @@ button.user-question-option:hover:not(:disabled),
   gap: 10px;
   padding: 5px 8px 6px;
   border-top: 1px solid var(--border);
+  border-radius: 0 0 9px 9px;
   background: color-mix(in srgb, var(--bg-elevated) 82%, var(--hl-low));
 }
 
@@ -1039,7 +1043,7 @@ button.user-question-option:hover:not(:disabled),
   min-width: 220px;
   max-width: min(320px, 70vw);
   padding: 4px;
-  background: var(--bg-elevated);
+  background: var(--bg-menu);
   border: 1px solid var(--border-strong);
   box-shadow:
     var(--shadow-md),
@@ -1111,12 +1115,10 @@ button.user-question-option:hover:not(:disabled),
 
 .prompt-stop {
   flex-shrink: 0;
-  min-width: 56px;
 }
 
 .prompt-send {
   flex-shrink: 0;
-  min-width: 64px;
 }
 
 .stream-timeline .tl-item {

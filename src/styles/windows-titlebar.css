@@ -114,7 +114,7 @@
   width: 208px;
   padding: 4px;
   border: 1px solid var(--border-strong);
-  background: var(--bg-elevated);
+  background: var(--bg-menu);
   box-shadow: var(--shadow-md);
 }
 

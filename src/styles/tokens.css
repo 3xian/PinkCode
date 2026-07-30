@@ -43,14 +43,18 @@
   --rp-foam-rgb: 86 148 159;
   --rp-iris-rgb: 144 122 169;
 
-  /* ── Surfaces ─────────────────────────────────────────────── */
-  --bg: var(--rp-base);
-  --bg-elevated: var(--rp-surface);
-  --bg-panel: var(--rp-surface);
-  --bg-hover: var(--rp-overlay);
-  --hl-low: var(--rp-hl-low);
-  --border: var(--rp-hl-med);
-  --border-strong: var(--rp-hl-high);
+  /* ── Glass surfaces ─────────────────────────────────────────
+   * Native Acrylic/Vibrancy supplies the blur; these translucent Dawn
+   * washes preserve the palette while allowing the material through.
+   */
+  --bg: transparent;
+  --bg-elevated: rgb(var(--rp-surface-rgb) / 0.68);
+  --bg-menu: var(--rp-surface);
+  --bg-panel: rgb(var(--rp-surface-rgb) / 0.64);
+  --bg-hover: rgb(var(--rp-overlay-rgb) / 0.62);
+  --hl-low: rgb(var(--rp-hl-low-rgb) / 0.66);
+  --border: rgb(var(--rp-hl-med-rgb) / 0.72);
+  --border-strong: rgb(var(--rp-hl-high-rgb) / 0.8);
 
   /* ── Type ─────────────────────────────────────────────────── */
   --text: var(--rp-text);
@@ -180,6 +184,6 @@
   /*
    * Boot splash / native window (cannot read CSS vars): keep in sync:
    * index.html background #faf4ed, accent #d7827e, border #cecacd
-   * tauri.conf.json backgroundColor [250, 244, 237, 255], theme Light
+   * tauri.conf.json windowEffects color [250, 244, 237, 96], theme Light
    */
 }

@@ -19,7 +19,6 @@ import type {
   SessionDetail as Detail,
 } from "../types";
 import { writeClipboard } from "../utils/clipboard";
-import { getSessionRecap } from "../api";
 import {
   contextPct,
   formatDuration,
@@ -202,37 +201,6 @@ export function SessionDetailView({
             <span>
               updated {formatRelative(card.lastActiveAt ?? card.updatedAt)}
             </span>
-            {onModelChange && managed && (
-              <span className="detail-header-actions">
-                <button
-                  className="btn-link tiny"
-                  title="Request session recap (appears in timeline)"
-                  onClick={() => {
-                    void getSessionRecap(managed.handleId)
-                      .then((r) => {
-                        if (r.disabled) {
-                          // eslint-disable-next-line no-alert
-                          alert("Session recap is disabled for this agent.");
-                          return;
-                        }
-                        if (!r.ok) {
-                          // eslint-disable-next-line no-alert
-                          alert("Recap request was not accepted.");
-                        }
-                        // On success: body arrives as timeline session_recap.
-                      })
-                      .catch((e: unknown) => {
-                        // eslint-disable-next-line no-alert
-                        alert(
-                          e instanceof Error ? e.message : String(e),
-                        );
-                      });
-                  }}
-                >
-                  Recap
-                </button>
-              </span>
-            )}
           </div>
           <SubagentTaskStrip
             items={timelineItems}
@@ -388,6 +356,7 @@ function TimelinePanel({
   const endRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const scrollParentRef = useRef<HTMLElement | null>(null);
+  const filterBarRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<TimelineFilterKind>("all");
 
   const kindCounts = useMemo(() => {
@@ -411,6 +380,37 @@ function TimelinePanel({
     }
     return present;
   }, [kindCounts]);
+
+  const syncFilterIndicator = useCallback(() => {
+    const bar = filterBarRef.current;
+    const active = bar?.querySelector<HTMLElement>(
+      `[data-filter-kind="${filter}"]`,
+    );
+    if (!bar || !active) return;
+
+    const activeStyle = getComputedStyle(active);
+    bar.style.setProperty("--filter-x", `${active.offsetLeft}px`);
+    bar.style.setProperty("--filter-y", `${active.offsetTop}px`);
+    bar.style.setProperty("--filter-width", `${active.offsetWidth}px`);
+    bar.style.setProperty("--filter-height", `${active.offsetHeight}px`);
+    bar.style.setProperty(
+      "--filter-indicator-bg",
+      activeStyle.getPropertyValue("--chip-bg-active"),
+    );
+    bar.classList.add("is-indicator-ready");
+  }, [filter]);
+
+  useLayoutEffect(() => {
+    syncFilterIndicator();
+    const bar = filterBarRef.current;
+    if (!bar || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(syncFilterIndicator);
+    observer.observe(bar);
+    for (const chip of bar.querySelectorAll(".timeline-filter-chip")) {
+      observer.observe(chip);
+    }
+    return () => observer.disconnect();
+  }, [filterChips, syncFilterIndicator]);
 
   // If active filter has zero items, fall back to All
   useEffect(() => {
@@ -451,13 +451,37 @@ function TimelinePanel({
     if (!scrollParent) return;
     scrollParentRef.current = scrollParent;
     const el = scrollParent;
+    let rootTop =
+      root.getBoundingClientRect().top -
+      el.getBoundingClientRect().top +
+      el.scrollTop;
     const onScroll = () => {
       const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
       stickToBottom.current = dist < 64;
+      root.style.setProperty(
+        "--timeline-fade-offset",
+        `${el.scrollTop - rootTop}px`,
+      );
     };
     el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [filtered.length > 0]);
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            rootTop =
+              root.getBoundingClientRect().top -
+              el.getBoundingClientRect().top +
+              el.scrollTop;
+            onScroll();
+          });
+    observer?.observe(el);
+    observer?.observe(root);
+    onScroll();
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      observer?.disconnect();
+    };
+  }, [filtered.length > 0, filterChips.length]);
 
   useEffect(() => {
     if (!stickToBottom.current) return;
@@ -507,7 +531,13 @@ function TimelinePanel({
           </button>
         </div>
       )}
-      <div className="timeline-filters" role="toolbar" aria-label="Timeline content filter">
+      <div
+        ref={filterBarRef}
+        className="timeline-filters"
+        role="toolbar"
+        aria-label="Timeline content filter"
+      >
+        <span className="timeline-filter-indicator" aria-hidden />
         {filterChips.map((k) => {
           const count = k === "all" ? items.length : (kindCounts.get(k) ?? 0);
           const label = TIMELINE_FILTER_LABELS[k] ?? k;
@@ -515,6 +545,7 @@ function TimelinePanel({
             <button
               key={k}
               type="button"
+              data-filter-kind={k}
               className={`timeline-filter-chip filter-${k}${
                 filter === k ? " active" : ""
               }`}

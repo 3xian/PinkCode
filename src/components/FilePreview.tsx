@@ -130,7 +130,7 @@ export function FilePreview({
             title="Copy full path"
             onClick={() => void copyPath()}
           >
-            Copy
+            Copy path
           </button>
           <button
             type="button"

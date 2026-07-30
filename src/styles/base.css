@@ -9,11 +9,11 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  background: transparent;
 }
 
 body {
   font-family: var(--font);
-  background: var(--bg);
   color: var(--text);
   font-size: 13px;
   line-height: 1.45;
@@ -95,6 +95,27 @@ pre {
   flex-direction: column;
   min-height: 0;
   contain: layout style;
+  background:
+    radial-gradient(
+      circle at 18% 0%,
+      rgb(var(--rp-rose-rgb) / 0.08),
+      transparent 38%
+    ),
+    radial-gradient(
+      circle at 92% 100%,
+      rgb(var(--rp-iris-rgb) / 0.07),
+      transparent 42%
+    );
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  body {
+    background: var(--rp-base);
+  }
+
+  .app-shell {
+    background: transparent;
+  }
 }
 
 /**

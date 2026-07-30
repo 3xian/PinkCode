@@ -11,6 +11,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "PinkCode",
@@ -21,11 +22,26 @@
         "dragDropEnabled": false,
         "theme": "Light",
         "backgroundColor": [
-          250,
-          244,
-          237,
-          255
+          0,
+          0,
+          0,
+          0
         ],
+        "transparent": true,
+        "windowEffects": {
+          "effects": [
+            "acrylic",
+            "sidebar"
+          ],
+          "state": "active",
+          "radius": 12,
+          "color": [
+            250,
+            244,
+            237,
+            96
+          ]
+        },
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "trafficLightPosition": {

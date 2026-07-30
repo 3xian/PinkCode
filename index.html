@@ -9,14 +9,15 @@
     <title>PinkCode</title>
     <!--
       Cold-start paint before CSS loads. Keep in sync with tokens.css Dawn:
-      base #faf4ed, subtle #797593, highlightHigh #cecacd, rose #d7827e
+      glass base rgba(250,244,237,.48), subtle #797593,
+      highlightHigh #cecacd, rose #d7827e
     -->
     <style>
       html,
       body {
         margin: 0;
         height: 100%;
-        background: #faf4ed;
+        background: transparent;
         color: #797593;
         font-family: "Segoe UI", system-ui, sans-serif;
       }
@@ -31,7 +32,7 @@
         align-items: center;
         justify-content: center;
         gap: 10px;
-        background: #faf4ed;
+        background: rgba(250, 244, 237, 0.48);
         z-index: 9999;
         pointer-events: none;
         transition: opacity 0.2s ease;

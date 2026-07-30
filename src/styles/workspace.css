@@ -53,9 +53,14 @@
 }
 
 .side-panel.workspace-panel {
+  --workspace-pane-bg: rgb(var(--rp-base-rgb) / 0.6);
+  --workspace-bar-bg: var(--bg-elevated);
+  --text-muted: var(--rp-text);
+  --muted: var(--rp-subtle);
   display: flex;
   flex-direction: column;
   min-height: 0;
+  background: transparent;
 }
 
 .side-panel.workspace-panel.is-collapsed {
@@ -152,7 +157,7 @@
   gap: 0;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--workspace-bar-bg);
 }
 
 .workspace-tab {
@@ -192,6 +197,14 @@
   overflow: hidden;
 }
 
+.workspace-upper {
+  background: transparent;
+}
+
+.workspace-lower {
+  background: transparent;
+}
+
 .workspace-browser {
   flex: 1;
   min-height: 0;
@@ -199,6 +212,7 @@
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  background: var(--workspace-pane-bg);
 }
 
 .workspace-tab-panel {
@@ -233,7 +247,7 @@
 .file-preview-section {
   flex: 1;
   min-height: 0;
-  background: var(--bg);
+  background: transparent;
 }
 
 .file-preview-empty {
@@ -246,6 +260,7 @@
   gap: 12px;
   padding: 16px;
   text-align: center;
+  background: var(--workspace-pane-bg);
 }
 
 .file-preview-logo {
@@ -268,7 +283,7 @@
   border: none;
   border-bottom: none;
   box-sizing: border-box;
-  background: color-mix(in srgb, var(--bg-elevated) 70%, var(--border));
+  background: var(--workspace-bar-bg);
 }
 
 .panel-header.file-preview-header .file-preview-title,
@@ -376,6 +391,7 @@
   white-space: pre;
   tab-size: 2;
   user-select: text;
+  background: var(--workspace-pane-bg);
 }
 
 .file-preview-image-wrap {
@@ -478,7 +494,7 @@
   z-index: 10000;
   min-width: 176px;
   padding: 4px 0;
-  background: var(--bg-elevated);
+  background: var(--bg-menu);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-md);
   display: flex;
@@ -859,7 +875,7 @@
   text-align: left;
   border: 1px solid var(--border); /* Highlight Med */
   background: var(--bg-elevated); /* Surface */
-  border-radius: 6px;
+  border-radius: 10px;
   padding: 0;
   overflow: hidden;
   cursor: pointer;

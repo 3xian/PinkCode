@@ -19,8 +19,6 @@
   <a href="#development">Development</a>
   ·
   <a href="#architecture">Architecture</a>
-  ·
-  <a href="docs/TODO.md">Roadmap</a>
 </p>
 
 Run multiple [Grok Build](https://x.ai/cli) tasks side by side, follow every task in a readable live timeline, and see where your credits and tokens go. PinkCode turns Grok Build's CLI workflow into a visual desktop workspace while keeping `grok` itself in charge: it connects over [ACP](https://spec.acp.dev) (Agent Client Protocol) via stdio and does not run a separate agent loop.
@@ -40,17 +38,18 @@ PinkCode is centered on two things that are difficult to manage from a terminal 
 | Focus | What PinkCode makes easier |
 |------|----------|
 | **Parallel tasks** | Work across multiple Grok Build sessions from one task board. Create, switch, prompt, and stop tasks independently; each task connects to `grok` over ACP when you first send a message. Existing sessions are loaded from `~/.grok` (`%USERPROFILE%\.grok` on Windows). |
-| **Clear task activity** | Read user messages, agent responses, thoughts, tool calls, shell output, plans, and events in one live timeline. Filter the stream when you need focus; reconnect later and PinkCode restores history from `updates.jsonl`. |
-| **Usage visuals** | See weekly Grok credit usage with a per-product breakdown, alongside a 7-day token-usage series derived from session logs. |
+| **Clear task activity** | Read user messages, agent responses, thoughts, tool calls, shell output, plans, and events in one live timeline. Subagent and background-task cards update live; attach/reconnect refills running work via ACP list APIs. Reconnect restores history from `updates.jsonl`. |
+| **Usage visuals** | See weekly Grok credit usage with a per-product breakdown, a 7-day token-usage series from session logs, and live turn tokens/cost while a turn is running. |
 
 The rest of the interface keeps those parallel workflows practical:
 
 | Area | Behavior |
 |------|----------|
 | **File changes** | Review agent file hunks from `hunk_records.jsonl`. |
-| **Workspace** | Browse the project tree, preview text and images, identify binary files, and check Git porcelain status without leaving the task view. |
-| **Modes & plans** | Move through the Grok-style cycle: **Normal → Plan → Auto → Always-approve**. Plan is independent of permission mode—the next user message becomes `/plan …`. When the agent exits plan mode, review the result and choose Approve, Request changes, or Quit. |
-| **Permissions** | Choose among Default (ask), Accept edits, Auto (classified by Grok), Bypass permissions, and Don't ask. Per-task preferences persist in `~/.pinkcode/task_prefs.json`; PinkCode handles permission requests, file writes, plan approval, and agent questions. |
+| **Workspace & Git** | Browse the project tree, preview text and images, and manage Git: branch status (ahead/behind), staged/unstaged lists, inline file diffs, **per-hunk stage/unstage**, and commit. |
+| **Modes & plans** | Shift+Tab-style cycle aligned with Grok Build: **Normal → Plan → Auto → Always-approve**. Plan is orthogonal to permission mode; free-text send becomes `/plan …`. When the agent exits plan mode, review and choose Approve, Request changes, or Quit. |
+| **Model** | Switch the session model mid-task over ACP `session/set_model`. |
+| **Permissions** | Default (ask), Accept edits, Auto (classified by Grok), Bypass permissions, Don't ask. Per-task prefs in `~/.pinkcode/task_prefs.json`. Handles tool permission, file writes, plan approval, and ask-user questions; the task list surfaces **Needs input** when a reverse-request is open. |
 | **Updates** | Check GitHub Releases automatically on startup and optionally install an update in one click. |
 
 ## Installation
@@ -125,7 +124,7 @@ npm run check              # frontend + Rust (fmt/clippy/test) — same as CI
 UI (React 19 + TypeScript)
   |-- invoke() --> Tauri commands
   |                 sessions, agent lifecycle, permissions,
-  |                 billing, workspace FS, git status
+  |                 billing, workspace FS, git status / hunk apply
   |-- listen() <-- Tauri events
                     agent-* | sessions-changed
         |
@@ -134,7 +133,7 @@ UI (React 19 + TypeScript)
         |-- Billing — HTTP calls to Grok billing API (OIDC auth via ~/.grok/auth.json)
 ```
 
-PinkCode communicates with Grok Build over ACP (JSON-RPC over stdio). The host-side permission gate intercepts reverse RPCs (`session/request_permission`, `fs/write_text_file`, `x.ai/exit_plan_mode`, `x.ai/ask_user_question`) and applies the configured risk policy before allowing or denying agent actions.
+PinkCode communicates with Grok Build over ACP (JSON-RPC over stdio): prompts, `session/set_mode`, `session/set_model`, usage/recap extensions, and lifecycle notifications. The host-side permission gate intercepts reverse RPCs (`session/request_permission`, `fs/write_text_file`, `x.ai/exit_plan_mode`, `x.ai/ask_user_question`) and applies the configured risk policy before allowing or denying agent actions.
 
 ## License
 

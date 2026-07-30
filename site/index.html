@@ -5,41 +5,52 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="PinkCode is a desktop control plane for Grok Build — run multiple agent tasks, review live timelines, manage permissions, and inspect workspace changes."
+      content="PinkCode is the desktop GUI for Grok Build — parallel agent tasks, a live readable timeline, crystal-clear usage visuals, and full workspace control."
     />
-    <meta name="theme-color" content="#100b1d" />
+    <meta name="theme-color" content="#faf4ed" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="PinkCode — Desktop control plane for Grok Build" />
+    <meta property="og:title" content="PinkCode — Grok Desktop GUI" />
     <meta
       property="og:description"
-      content="Keep every Grok Build task, tool call, permission, and workspace change in one focused desktop view."
+      content="Effortless parallel tasks & crystal-clear usage visuals. Mission control for Grok Build on your desktop."
     />
     <meta property="og:url" content="https://3xian.github.io/PinkCode/" />
     <meta property="og:image" content="https://3xian.github.io/PinkCode/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="PinkCode — Desktop control plane for Grok Build" />
+    <meta name="twitter:title" content="PinkCode — Grok Desktop GUI" />
     <meta
       name="twitter:description"
-      content="Mission control for parallel Grok Build work."
+      content="Parallel Grok Build tasks, live timelines, and usage you can actually read."
     />
     <meta name="twitter:image" content="https://3xian.github.io/PinkCode/og.png" />
     <link rel="canonical" href="https://3xian.github.io/PinkCode/" />
     <link rel="icon" type="image/png" href="./assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./styles.css" />
-    <title>PinkCode — Desktop control plane for Grok Build</title>
+    <title>PinkCode — Grok Desktop GUI</title>
   </head>
   <body>
-    <div class="page-glow page-glow-one" aria-hidden="true"></div>
-    <div class="page-glow page-glow-two" aria-hidden="true"></div>
+    <div class="ambient" aria-hidden="true">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+      <span class="grid-fade"></span>
+    </div>
 
     <header class="site-header">
       <a class="brand" href="#top" aria-label="PinkCode home">
-        <img src="./assets/logo.png" alt="" width="38" height="38" />
+        <img src="./assets/logo.png" alt="" width="36" height="36" />
         <span>PinkCode</span>
+        <span class="version-chip">v1.0.5</span>
       </a>
       <nav aria-label="Main navigation">
         <a href="#features">Features</a>
-        <a href="#workflow">Workflow</a>
+        <a href="#workflow">How it works</a>
         <a href="https://github.com/3xian/PinkCode">GitHub</a>
       </nav>
       <a class="header-cta" href="https://github.com/3xian/PinkCode/releases/latest">
@@ -51,111 +62,188 @@
       <section class="hero">
         <div class="eyebrow">
           <span class="status-dot" aria-hidden="true"></span>
-          Built for Grok Build
+          Desktop GUI for Grok Build
         </div>
-        <h1>Your agents are moving.<br /><span>Stay in control.</span></h1>
+        <h1>
+          Parallel agents.<br />
+          <span class="grad-text">Crystal-clear control.</span>
+        </h1>
         <p class="hero-copy">
-          PinkCode gives Grok Build a focused desktop command center. Run tasks
-          in parallel, follow every tool call, answer permission requests, and
-          see workspace changes without losing the thread.
+          Run multiple Grok Build tasks side by side, follow every thought and tool
+          call in a live timeline, and see where credits and tokens go — without
+          leaving the desktop.
         </p>
         <div class="hero-actions">
           <a class="button button-primary" href="https://github.com/3xian/PinkCode/releases/latest">
-            <span>Download latest release</span>
-            <span aria-hidden="true">↗</span>
+            Download latest release
+            <span class="btn-arrow" aria-hidden="true">↗</span>
           </a>
           <a class="button button-secondary" href="https://github.com/3xian/PinkCode">
-            View source on GitHub
+            View source
           </a>
         </div>
-        <p class="platform-note">Windows x64 · macOS Apple Silicon &amp; Intel</p>
+        <p class="platform-note">
+          Windows x64 · macOS Apple Silicon &amp; Intel · requires
+          <a href="https://x.ai/cli">Grok Build CLI</a>
+        </p>
       </section>
 
-      <section class="product-frame" aria-label="PinkCode product screenshot">
-        <div class="frame-bar">
-          <div class="traffic-lights" aria-hidden="true">
-            <span></span><span></span><span></span>
+      <section class="product-showcase" aria-label="PinkCode product screenshot">
+        <div class="product-frame">
+          <div class="frame-bar">
+            <div class="traffic-lights" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
+            <div class="frame-title">PinkCode · mission control</div>
+            <div class="frame-state"><span></span> live</div>
           </div>
-          <div class="frame-title">PinkCode / Agent workspace</div>
-          <div class="frame-state"><span></span> connected</div>
+          <img
+            src="./assets/screenshot.jpg"
+            alt="PinkCode showing parallel tasks, filtered live timeline, usage meter, and workspace files"
+            width="1600"
+            height="1013"
+            loading="eager"
+          />
         </div>
-        <img
-          src="./assets/screenshot.png"
-          alt="PinkCode showing a task timeline, agent questions, usage, and workspace files"
-          width="1201"
-          height="734"
-        />
       </section>
 
       <section class="signal-strip" aria-label="Product highlights">
-        <div><strong>ACP native</strong><span>Direct Grok agent sessions</span></div>
-        <div><strong>30 commands</strong><span>One coherent desktop surface</span></div>
-        <div><strong>5 permission levels</strong><span>Control without bottlenecks</span></div>
-        <div><strong>Local-first</strong><span>Your workspace stays yours</span></div>
+        <div>
+          <strong>ACP native</strong>
+          <span>Talks to <code>grok</code> over stdio</span>
+        </div>
+        <div>
+          <strong>Parallel tasks</strong>
+          <span>Many sessions, one board</span>
+        </div>
+        <div>
+          <strong>Live timeline</strong>
+          <span>Filter thoughts, tools, shell</span>
+        </div>
+        <div>
+          <strong>Usage visuals</strong>
+          <span>Credits, tokens, turn cost</span>
+        </div>
       </section>
 
       <section class="features" id="features">
         <div class="section-heading">
-          <p class="section-label">One operating surface</p>
-          <h2>Everything that matters,<br />while the agent works.</h2>
+          <p class="section-label">What you get</p>
+          <h2>Everything hard to track<br />from a terminal alone.</h2>
           <p>
-            PinkCode turns raw agent sessions into a legible workflow—from the
-            first prompt to the final diff.
+            PinkCode keeps <code>grok</code> in charge via ACP. You get a focused
+            surface for tasks, activity, cost, and workspace changes.
           </p>
         </div>
 
         <div class="feature-grid">
           <article class="feature-card feature-card-wide">
             <div class="feature-index">01</div>
-            <div>
+            <div class="feature-body">
               <h3>Parallel task board</h3>
               <p>
-                Move between active Grok sessions without reopening terminals or
-                rebuilding context. Status, branch, token use, and progress stay visible.
+                Create, switch, prompt, and stop Grok sessions independently.
+                Live badges, branch, token use, and context share stay visible
+                so you always know which agent needs you.
               </p>
             </div>
             <div class="mini-board" aria-hidden="true">
-              <div class="mini-row active"><span></span><b>Release desktop build</b><i>running</i></div>
-              <div class="mini-row"><span></span><b>Refine permission flow</b><i>review</i></div>
-              <div class="mini-row"><span></span><b>Update documentation</b><i>done</i></div>
+              <div class="mini-row live">
+                <span class="dot"></span>
+                <b>Disable New Task Popup…</b>
+                <i>LIVE</i>
+              </div>
+              <div class="mini-row">
+                <span class="dot"></span>
+                <b>Grok Build TODO…</b>
+                <i>55% ctx</i>
+              </div>
+              <div class="mini-row">
+                <span class="dot"></span>
+                <b>Session: 8df695</b>
+                <i>idle</i>
+              </div>
             </div>
           </article>
 
           <article class="feature-card">
             <div class="feature-index">02</div>
-            <h3>Live, readable timeline</h3>
+            <h3>Readable live timeline</h3>
             <p>
-              Thoughts, tool calls, shell output, plans, and responses arrive in
-              one filterable stream.
+              User messages, thoughts, tool calls, shell output, plans, and
+              events in one stream — filterable by type, with subagent cards
+              that update live.
             </p>
-            <div class="timeline-mark" aria-hidden="true">
-              <span></span><span></span><span></span><span></span>
+            <div class="chip-row" aria-hidden="true">
+              <span class="chip chip-on">ALL</span>
+              <span class="chip">USER</span>
+              <span class="chip">AGENT</span>
+              <span class="chip">TOOL</span>
+              <span class="chip">SHELL</span>
             </div>
           </article>
 
-          <article class="feature-card permission-card">
+          <article class="feature-card">
             <div class="feature-index">03</div>
-            <h3>Permission control</h3>
+            <h3>Crystal-clear usage</h3>
             <p>
-              Choose the right level of autonomy per task—from ask-first to
-              risk-classified auto approval.
+              Weekly Grok credit breakdown, a 7-day token series from session
+              logs, and live turn tokens / cost while work is running.
             </p>
-            <div class="permission-scale" aria-hidden="true">
-              <span></span><span></span><span></span><span></span><span></span>
+            <div class="usage-mock" aria-hidden="true">
+              <div class="usage-meter">
+                <div class="usage-fill"></div>
+              </div>
+              <div class="usage-bars">
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              </div>
             </div>
           </article>
 
           <article class="feature-card">
             <div class="feature-index">04</div>
-            <h3>Workspace awareness</h3>
+            <h3>Workspace &amp; Git</h3>
             <p>
-              Browse files, preview changes, and keep Git status beside the
-              conversation that created them.
+              Browse the project tree, preview files, and manage Git — branch
+              status, staged/unstaged lists, inline diffs, and per-hunk
+              stage/unstage.
             </p>
             <div class="file-stack" aria-hidden="true">
-              <span>src/agent.ts</span><span>+24</span>
-              <span>src/ui.css</span><span>+81</span>
-              <span>README.md</span><span>+12</span>
+              <span>src/styles/agent.css</span><span class="delta">M</span>
+              <span>src/styles/overlays.css</span><span class="delta">M</span>
+              <span>docs/screenshot.jpg</span><span class="delta plus">A</span>
+            </div>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-index">05</div>
+            <h3>Modes &amp; permissions</h3>
+            <p>
+              Cycle Normal → Plan → Auto → Always-approve. Five permission
+              levels, plan approval, and ask-user questions when the agent
+              needs your input.
+            </p>
+            <div class="mode-row" aria-hidden="true">
+              <span class="mode active">NORMAL</span>
+              <span class="mode">PLAN</span>
+              <span class="mode">AUTO</span>
+              <span class="mode">ALWAYS</span>
+            </div>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-index">06</div>
+            <h3>Local-first desktop</h3>
+            <p>
+              Tauri 2 · React 19 · Rust. Sessions live under
+              <code>~/.grok</code>. No cloud middleman — just your machine and
+              Grok Build.
+            </p>
+            <div class="stack-pills" aria-hidden="true">
+              <span>Tauri 2</span>
+              <span>React 19</span>
+              <span>ACP</span>
+              <span>Rust</span>
             </div>
           </article>
         </div>
@@ -168,40 +256,71 @@
           <p>
             PinkCode connects to <code>grok agent stdio</code> over ACP. It
             stays out of the agent’s way while giving you a reliable place to
-            supervise the work.
+            supervise parallel work.
           </p>
-          <a href="https://github.com/3xian/PinkCode#quick-start">Read the quick start <span>→</span></a>
+          <a class="text-link" href="https://github.com/3xian/PinkCode#installation">
+            Installation guide <span>→</span>
+          </a>
         </div>
         <ol class="workflow-steps">
-          <li><span>01</span><div><strong>Start a task</strong><p>Open a project and send the objective.</p></div></li>
-          <li><span>02</span><div><strong>Follow the work</strong><p>Watch tools, output, and file changes live.</p></div></li>
-          <li><span>03</span><div><strong>Keep authority</strong><p>Answer questions and approve sensitive actions.</p></div></li>
-          <li><span>04</span><div><strong>Review the result</strong><p>Inspect the final timeline and workspace diff.</p></div></li>
+          <li>
+            <span>01</span>
+            <div>
+              <strong>Start a task</strong>
+              <p>Open a project workspace and send the objective.</p>
+            </div>
+          </li>
+          <li>
+            <span>02</span>
+            <div>
+              <strong>Follow the work</strong>
+              <p>Watch tools, thoughts, shell output, and file changes live.</p>
+            </div>
+          </li>
+          <li>
+            <span>03</span>
+            <div>
+              <strong>Keep authority</strong>
+              <p>Answer questions and approve sensitive actions when asked.</p>
+            </div>
+          </li>
+          <li>
+            <span>04</span>
+            <div>
+              <strong>Review &amp; ship</strong>
+              <p>Inspect the timeline, usage, and Git hunks — then commit.</p>
+            </div>
+          </li>
         </ol>
       </section>
 
       <section class="final-cta">
-        <img src="./assets/logo.png" alt="" width="76" height="76" />
-        <p class="section-label">Desktop mission control</p>
-        <h2>Give your Grok agents<br />a proper control room.</h2>
-        <p>Download PinkCode and keep ambitious agent work clear, fast, and accountable.</p>
-        <div class="hero-actions">
-          <a class="button button-primary" href="https://github.com/3xian/PinkCode/releases/latest">
-            Get PinkCode <span aria-hidden="true">↗</span>
-          </a>
-          <a class="button button-secondary" href="https://github.com/3xian/PinkCode/issues">
-            Report an issue
-          </a>
+        <div class="cta-card">
+          <img src="./assets/logo.png" alt="" width="72" height="72" />
+          <p class="section-label">Ready when you are</p>
+          <h2>Give Grok Build<br />a proper control room.</h2>
+          <p>
+            Download PinkCode and keep ambitious agent work clear, parallel, and
+            accountable.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://github.com/3xian/PinkCode/releases/latest">
+              Get PinkCode <span class="btn-arrow" aria-hidden="true">↗</span>
+            </a>
+            <a class="button button-secondary" href="https://github.com/3xian/PinkCode/issues">
+              Report an issue
+            </a>
+          </div>
         </div>
       </section>
     </main>
 
     <footer>
       <a class="brand" href="#top">
-        <img src="./assets/logo.png" alt="" width="30" height="30" />
+        <img src="./assets/logo.png" alt="" width="28" height="28" />
         <span>PinkCode</span>
       </a>
-      <p>Desktop control plane for Grok Build.</p>
+      <p>Grok Desktop GUI · Apache-2.0</p>
       <div>
         <a href="https://github.com/3xian/PinkCode">GitHub</a>
         <a href="https://github.com/3xian/PinkCode/releases">Releases</a>

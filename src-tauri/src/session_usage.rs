@@ -43,6 +43,7 @@ struct FileIdentity {
     prefix_fingerprint: Option<u64>,
 }
 
+#[cfg(not(test))]
 #[derive(Default, Serialize, Deserialize)]
 struct UsageCacheFile {
     version: u32,

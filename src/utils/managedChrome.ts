@@ -6,6 +6,7 @@ import type { ManagedStatus } from "../types";
  * - starting: spawn/connect in flight
  * - open: Grok Build (or other host) process still open — not mid-turn here
  * - awaiting / live: PinkCode attached
+ * - awaiting also covers open reverse-requests (permission / question / plan)
  */
 export type CardState =
   | "running"
@@ -32,10 +33,17 @@ export function isManagedTurnActive(status?: ManagedStatus | null): boolean {
   return Boolean(status && MANAGED_ACTIVE.has(status));
 }
 
+/**
+ * @param needsInput — open reverse-request (permission queue or pending_interaction).
+ *   Single projection for "Needs input"; do not special-case in list components.
+ */
 export function resolveCardState(
   managedStatus: ManagedStatus | undefined,
   openElsewhere: boolean,
+  needsInput = false,
 ): CardState {
+  // Reverse-request wins over live chrome so the roster surfaces Needs input.
+  if (needsInput) return "awaiting";
   const st = managedStatus;
   if (st === "running" || st === "stopping") return "running";
   if (st === "starting") return "starting";
@@ -52,7 +60,9 @@ export function resolveCardState(
 export function rankManagedCard(
   managedStatus: ManagedStatus | undefined,
   sessionIsActive: boolean,
+  needsInput = false,
 ): number {
+  if (needsInput) return 1;
   const st = managedStatus;
   if (st === "running" || st === "stopping") return 0;
   if (st === "awaitingPermission") return 1;
@@ -71,7 +81,7 @@ export function stateLabel(state: CardState): string {
     case "open":
       return "Open";
     case "awaiting":
-      return "Waiting";
+      return "Needs input";
     case "live":
       return "Live";
     case "idle":
@@ -88,7 +98,7 @@ export function stateTitle(state: CardState): string {
     case "open":
       return "Open in Grok Build — send a message here to connect";
     case "awaiting":
-      return "Waiting for permission or input";
+      return "Waiting for your input (permission / question / plan)";
     case "live":
       return "Connected in PinkCode";
     case "idle":

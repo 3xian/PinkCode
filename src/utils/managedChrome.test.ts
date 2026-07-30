@@ -35,6 +35,12 @@ describe("resolveCardState / rankManagedCard", () => {
     expect(resolveCardState(undefined, false)).toBe("idle");
   });
 
+  it("needsInput projects to awaiting regardless of managed status", () => {
+    expect(resolveCardState("ready", false, true)).toBe("awaiting");
+    expect(resolveCardState("running", false, true)).toBe("awaiting");
+    expect(resolveCardState(undefined, true, true)).toBe("awaiting");
+  });
+
   it("ranks mid-turn above starting and open-elsewhere", () => {
     expect(rankManagedCard("running", false)).toBeLessThan(
       rankManagedCard("starting", false),
@@ -47,6 +53,12 @@ describe("resolveCardState / rankManagedCard", () => {
     );
     expect(rankManagedCard(undefined, true)).toBeLessThan(
       rankManagedCard(undefined, false),
+    );
+  });
+
+  it("ranks needsInput with awaitingPermission", () => {
+    expect(rankManagedCard("ready", false, true)).toBe(
+      rankManagedCard("awaitingPermission", false),
     );
   });
 });

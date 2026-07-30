@@ -143,6 +143,18 @@ impl AcpClient {
         self.gateway.call(method, params_val, timeout)
     }
 
+    /// Ext method that returns Grok's `{ result, error? }` envelope.
+    pub fn call_ext<P: Serialize, R: DeserializeOwned>(
+        &self,
+        method: &'static str,
+        params: &P,
+        timeout: Duration,
+    ) -> Result<R> {
+        let raw = self.call_raw(method, params, timeout)?;
+        let envelope: ExtMethodEnvelope<R> = serde_json::from_value(raw)?;
+        envelope.into_result().map_err(AcpError::Other)
+    }
+
     /// Typed JSON-RPC notification (no response).
     pub fn notify_typed<P: Serialize>(&self, method: &'static str, params: &P) -> Result<()> {
         let envelope = JsonRpcNotification {
@@ -322,7 +334,7 @@ impl AcpClient {
         )
     }
 
-    /// ACP `x.ai/set_session_model` — switch the session model.
+    /// ACP `session/set_model` — switch the session model.
     pub fn set_session_model(
         &self,
         session_id: &str,
@@ -330,36 +342,34 @@ impl AcpClient {
         reasoning_effort: Option<&str>,
     ) -> Result<SetSessionModelResult> {
         self.call(
-            "x.ai/set_session_model",
-            &SetSessionModelParams {
-                session_id: session_id.to_string(),
-                model_id: model_id.to_string(),
-                reasoning_effort: reasoning_effort.map(|s| s.to_string()),
-            },
+            "session/set_model",
+            &SetSessionModelParams::new(session_id, model_id)
+                .with_reasoning_effort(reasoning_effort),
             Duration::from_secs(30),
         )
     }
 
-    /// ACP `x.ai/session/usage` — live turn tokens and cost.
+    /// ACP `x.ai/session/usage` — cumulative session tokens/cost (nested `usage`).
     pub fn session_usage(&self, session_id: &str) -> Result<SessionUsageResult> {
-        self.call(
+        let wire: SessionUsageWire = self.call(
             "x.ai/session/usage",
             &SessionUsageParams {
                 session_id: session_id.to_string(),
             },
             Duration::from_secs(15),
-        )
+        )?;
+        Ok(SessionUsageResult::from(wire))
     }
 
-    /// ACP `x.ai/recap` — get a session recap/summary.
-    pub fn recap(&self, session_id: &str, max_turns: Option<u32>) -> Result<RecapResult> {
+    /// ACP `x.ai/recap` — request a recap (fire-and-forget; text arrives as notification).
+    pub fn recap(&self, session_id: &str, auto: bool) -> Result<RecapResult> {
         self.call(
             "x.ai/recap",
             &RecapParams {
                 session_id: session_id.to_string(),
-                max_turns,
+                auto,
             },
-            Duration::from_secs(60),
+            Duration::from_secs(30),
         )
     }
 
@@ -387,6 +397,7 @@ impl AcpClient {
                 session_id: session_id.to_string(),
                 target_prompt_index,
                 mode: mode.map(|s| s.to_string()),
+                force: false,
             },
             Duration::from_secs(30),
         )
@@ -398,10 +409,10 @@ impl AcpClient {
         session_id: &str,
         subagent_id: &str,
     ) -> Result<CancelSubagentResult> {
-        self.call(
+        self.call_ext(
             "x.ai/subagent/cancel",
             &CancelSubagentParams {
-                session_id: session_id.to_string(),
+                session_id: Some(session_id.to_string()),
                 subagent_id: subagent_id.to_string(),
             },
             Duration::from_secs(15),
@@ -410,7 +421,7 @@ impl AcpClient {
 
     /// ACP `x.ai/subagent/list_running` — list running subagents for a session.
     pub fn list_subagents(&self, session_id: &str) -> Result<ListSubagentsResult> {
-        self.call(
+        self.call_ext(
             "x.ai/subagent/list_running",
             &ListSubagentsParams {
                 session_id: session_id.to_string(),
@@ -421,7 +432,7 @@ impl AcpClient {
 
     /// ACP `x.ai/task/kill` — kill a background task.
     pub fn kill_task(&self, session_id: &str, task_id: &str) -> Result<KillTaskResult> {
-        self.call(
+        self.call_ext(
             "x.ai/task/kill",
             &KillTaskParams {
                 session_id: session_id.to_string(),
@@ -433,7 +444,7 @@ impl AcpClient {
 
     /// ACP `x.ai/task/list` — list background tasks for a session.
     pub fn list_tasks(&self, session_id: &str) -> Result<ListTasksResult> {
-        self.call(
+        self.call_ext(
             "x.ai/task/list",
             &ListTasksParams {
                 session_id: session_id.to_string(),
@@ -692,6 +703,76 @@ mod tests {
             v["clientCapabilities"]["meta"]["x.ai/incrementalBashOutput"],
             true
         );
+    }
+
+    #[test]
+    fn set_session_model_params_use_meta_for_effort() {
+        let p = SetSessionModelParams::new("s1", "grok-4").with_reasoning_effort(Some("high"));
+        let v = serde_json::to_value(&p).unwrap();
+        assert_eq!(v["sessionId"], "s1");
+        assert_eq!(v["modelId"], "grok-4");
+        assert_eq!(v["_meta"]["reasoningEffort"], "high");
+        assert!(v.get("reasoningEffort").is_none());
+    }
+
+    #[test]
+    fn session_usage_wire_nests_under_usage() {
+        let wire: SessionUsageWire = serde_json::from_value(json!({
+            "usage": {
+                "inputTokens": 100,
+                "outputTokens": 10,
+                "numTurns": 2,
+                "costUsdTicks": 20_000_000
+            }
+        }))
+        .unwrap();
+        let flat = SessionUsageResult::from(wire);
+        assert_eq!(flat.input_tokens, 100);
+        assert_eq!(flat.output_tokens, 10);
+        assert_eq!(flat.total_tokens, 110);
+        assert_eq!(flat.turn_count, 2);
+        assert_eq!(flat.cost_usd_ticks, 20_000_000);
+    }
+
+    #[test]
+    fn ext_method_envelope_unwraps_result() {
+        let raw = json!({ "result": { "taskId": "t1", "outcome": "killed" } });
+        let env: ExtMethodEnvelope<KillTaskResult> = serde_json::from_value(raw).unwrap();
+        let r = env.into_result().unwrap();
+        assert_eq!(r.task_id.as_deref(), Some("t1"));
+        assert_eq!(r.outcome, Some(json!("killed")));
+    }
+
+    #[test]
+    fn rewind_points_use_snake_case_wire() {
+        let r: RewindPointsResult = serde_json::from_value(json!({
+            "rewind_points": [{
+                "prompt_index": 3,
+                "created_at": "2026-01-01T00:00:00Z",
+                "num_file_snapshots": 2,
+                "has_file_changes": true,
+                "prompt_preview": "fix auth"
+            }]
+        }))
+        .unwrap();
+        assert_eq!(r.rewind_points.len(), 1);
+        assert_eq!(r.rewind_points[0].prompt_index, 3);
+        assert_eq!(
+            r.rewind_points[0].prompt_preview.as_deref(),
+            Some("fix auth")
+        );
+    }
+
+    #[test]
+    fn recap_params_use_auto_not_max_turns() {
+        let p = RecapParams {
+            session_id: "s1".into(),
+            auto: false,
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        assert_eq!(v["sessionId"], "s1");
+        assert_eq!(v["auto"], false);
+        assert!(v.get("maxTurns").is_none());
     }
 
     #[test]

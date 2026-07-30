@@ -10,6 +10,8 @@ import type {
   GitFileDiff,
   HunkPage,
   LiveSessionUsage,
+  ListSubagentsResult,
+  ListTasksResult,
   ManagedAgentInfo,
   PendingPermission,
   PermissionMode,
@@ -317,7 +319,7 @@ export async function getSessionUsage(
   return invoke<LiveSessionUsage>("get_session_usage", { handleId });
 }
 
-/** ACP `x.ai/set_session_model` — switch model during session. */
+/** ACP `session/set_model` — switch model during session. */
 export async function setSessionModel(
   handleId: string,
   modelId: string,
@@ -330,13 +332,17 @@ export async function setSessionModel(
   });
 }
 
+/**
+ * ACP `x.ai/recap` — request a recap (fire-and-forget).
+ * Summary text arrives later as a timeline `session_recap` event.
+ */
 export async function getSessionRecap(
   handleId: string,
-  maxTurns?: number | null,
+  auto = false,
 ): Promise<SessionRecapResult> {
   return invoke<SessionRecapResult>("get_session_recap", {
     handleId,
-    maxTurns: maxTurns ?? null,
+    auto,
   });
 }
 
@@ -371,8 +377,8 @@ export async function cancelSubagent(
 /** ACP `x.ai/subagent/list_running` — list running subagents. */
 export async function listSubagents(
   handleId: string,
-): Promise<Record<string, unknown>> {
-  return invoke("list_subagents", { handleId });
+): Promise<ListSubagentsResult> {
+  return invoke<ListSubagentsResult>("list_subagents", { handleId });
 }
 
 /** ACP `x.ai/task/kill` — kill a background task. */
@@ -384,10 +390,8 @@ export async function killTask(
 }
 
 /** ACP `x.ai/task/list` — list background tasks. */
-export async function listTasks(
-  handleId: string,
-): Promise<Record<string, unknown>> {
-  return invoke("list_tasks", { handleId });
+export async function listTasks(handleId: string): Promise<ListTasksResult> {
+  return invoke<ListTasksResult>("list_tasks", { handleId });
 }
 
 /** Git branch info: name, upstream, ahead/behind, staged/unstaged counts. */
@@ -430,4 +434,16 @@ export async function gitCommit(
   message: string,
 ): Promise<string> {
   return invoke<string>("git_commit", { cwd, message });
+}
+
+/**
+ * Apply a unified-diff patch to the index (`git apply --cached`).
+ * Pass `reverse: true` to unstage the selected hunks.
+ */
+export async function gitApplyPatch(
+  cwd: string,
+  patch: string,
+  reverse = false,
+): Promise<void> {
+  return invoke("git_apply_patch", { cwd, patch, reverse });
 }

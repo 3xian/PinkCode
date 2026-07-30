@@ -339,24 +339,42 @@ pub struct QueueInterjectParams {
     pub client_identifier: String,
 }
 
-// ── x.ai/set_session_model ──────────────────────────────────────────────────
+// ── session/set_model (ACP standard, not x.ai/*) ────────────────────────────
 
+/// ACP `session/set_model` request. Reasoning effort rides in `_meta.reasoningEffort`
+/// (same key Grok pager uses via REASONING_EFFORT_META_KEY).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetSessionModelParams {
     pub session_id: String,
     pub model_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reasoning_effort: Option<String>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl SetSessionModelParams {
+    pub fn new(session_id: impl Into<String>, model_id: impl Into<String>) -> Self {
+        Self {
+            session_id: session_id.into(),
+            model_id: model_id.into(),
+            meta: None,
+        }
+    }
+
+    pub fn with_reasoning_effort(mut self, effort: Option<&str>) -> Self {
+        if let Some(effort) = effort.map(str::trim).filter(|s| !s.is_empty()) {
+            self.meta = Some(serde_json::json!({ "reasoningEffort": effort }));
+        }
+        self
+    }
+}
+
+/// ACP `session/set_model` response is essentially empty (`_meta` only).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SetSessionModelResult {
-    #[serde(default)]
-    pub accepted: bool,
-    #[serde(default)]
-    pub model_id: Option<String>,
+    #[serde(default, rename = "_meta")]
+    pub meta: Option<Value>,
 }
 
 // ── x.ai/session/usage ──────────────────────────────────────────────────────
@@ -367,9 +385,10 @@ pub struct SessionUsageParams {
     pub session_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Wire totals nested under `usage` (Grok `SessionUsageResponse` / `PromptUsage`).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct SessionUsageResult {
+pub struct PromptUsageTotals {
     #[serde(default)]
     pub input_tokens: u64,
     #[serde(default)]
@@ -378,29 +397,72 @@ pub struct SessionUsageResult {
     pub cached_read_tokens: u64,
     #[serde(default)]
     pub total_tokens: u64,
+    /// Absent when scrubbed / partial; never treat absence as free.
     #[serde(default)]
+    pub cost_usd_ticks: Option<i64>,
+    #[serde(default)]
+    pub num_turns: u64,
+}
+
+/// Wire response: `{ "usage": { ... } }` (bare, no ExtMethodResult envelope).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionUsageWire {
+    #[serde(default)]
+    pub usage: PromptUsageTotals,
+}
+
+/// Flattened shape for the PinkCode UI / Tauri bridge.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionUsageResult {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cached_read_tokens: u64,
+    pub total_tokens: u64,
+    /// 0 when cost is scrubbed/partial (UI treats 0 as “no cost label”).
     pub cost_usd_ticks: u64,
-    #[serde(default)]
     pub turn_count: u64,
+}
+
+impl From<SessionUsageWire> for SessionUsageResult {
+    fn from(wire: SessionUsageWire) -> Self {
+        let u = wire.usage;
+        let cost = u.cost_usd_ticks.unwrap_or(0);
+        Self {
+            input_tokens: u.input_tokens,
+            output_tokens: u.output_tokens,
+            cached_read_tokens: u.cached_read_tokens,
+            total_tokens: if u.total_tokens > 0 {
+                u.total_tokens
+            } else {
+                u.input_tokens.saturating_add(u.output_tokens)
+            },
+            // Scrubbed/partial costs stay 0; UI hides the cost chip when 0.
+            cost_usd_ticks: cost.clamp(0, i64::MAX) as u64,
+            turn_count: u.num_turns,
+        }
+    }
 }
 
 // ── x.ai/recap ──────────────────────────────────────────────────────────────
 
+/// Fire-and-forget: recap text arrives later as `session_recap` notification.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecapParams {
     pub session_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_turns: Option<u32>,
+    #[serde(default)]
+    pub auto: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RecapResult {
     #[serde(default)]
-    pub recap: Option<String>,
+    pub ok: bool,
     #[serde(default)]
-    pub available: bool,
+    pub disabled: bool,
 }
 
 // ── x.ai/rewind/points ──────────────────────────────────────────────────────
@@ -411,19 +473,24 @@ pub struct RewindPointsParams {
     pub session_id: String,
 }
 
+/// Grok shell serializes rewind DTOs in snake_case (no rename_all).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct RewindPoint {
     pub prompt_index: u64,
     #[serde(default)]
-    pub summary: Option<String>,
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub num_file_snapshots: u64,
+    #[serde(default)]
+    pub has_file_changes: bool,
+    #[serde(default)]
+    pub prompt_preview: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RewindPointsResult {
     #[serde(default)]
-    pub points: Vec<RewindPoint>,
+    pub rewind_points: Vec<RewindPoint>,
 }
 
 // ── x.ai/rewind/execute ─────────────────────────────────────────────────────
@@ -435,13 +502,26 @@ pub struct RewindExecuteParams {
     pub target_prompt_index: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub force: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RewindExecuteResult {
     #[serde(default)]
-    pub accepted: bool,
+    pub success: bool,
+    #[serde(default)]
+    pub target_prompt_index: u64,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub reverted_files: Vec<String>,
+    #[serde(default)]
+    pub clean_files: Vec<String>,
+    #[serde(default)]
+    pub prompt_text: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 // ── x.ai/subagent/cancel ────────────────────────────────────────────────────
@@ -449,19 +529,23 @@ pub struct RewindExecuteResult {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CancelSubagentParams {
-    pub session_id: String,
+    /// Optional; pager also sends it, agent only requires subagent_id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     pub subagent_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Payload under ExtMethodResult.result.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CancelSubagentResult {
     #[serde(default)]
     pub subagent_id: Option<String>,
     #[serde(default)]
     pub cancelled: bool,
+    /// Tagged outcome (`cancelled` / `already_finished` / `not_found`) or raw JSON.
     #[serde(default)]
-    pub outcome: Option<String>,
+    pub outcome: Option<Value>,
 }
 
 // ── x.ai/subagent/list_running ──────────────────────────────────────────────
@@ -472,7 +556,7 @@ pub struct ListSubagentsParams {
     pub session_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SubagentInfo {
     #[serde(default)]
@@ -482,12 +566,14 @@ pub struct SubagentInfo {
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
+    pub subagent_type: Option<String>,
+    #[serde(default)]
     pub status: Option<String>,
     #[serde(default)]
     pub activity_label: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ListSubagentsResult {
     #[serde(default)]
@@ -503,13 +589,14 @@ pub struct KillTaskParams {
     pub task_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct KillTaskResult {
     #[serde(default)]
     pub task_id: Option<String>,
+    /// `killed` | `already_exited` | `not_found` (string) or raw.
     #[serde(default)]
-    pub outcome: Option<String>,
+    pub outcome: Option<Value>,
 }
 
 // ── x.ai/task/list ──────────────────────────────────────────────────────────
@@ -520,7 +607,7 @@ pub struct ListTasksParams {
     pub session_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BgTaskInfo {
     #[serde(default)]
@@ -533,11 +620,35 @@ pub struct BgTaskInfo {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ListTasksResult {
     #[serde(default)]
     pub tasks: Vec<BgTaskInfo>,
+}
+
+/// Grok shell wraps many ext methods as `{ "result": T, "error"?: ... }`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExtMethodEnvelope<T> {
+    pub result: Option<T>,
+    #[serde(default)]
+    pub error: Option<Value>,
+}
+
+impl<T> ExtMethodEnvelope<T> {
+    pub fn into_result(self) -> std::result::Result<T, String> {
+        if let Some(err) = self.error {
+            if !err.is_null() {
+                let msg = err
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| err.to_string());
+                return Err(msg);
+            }
+        }
+        self.result
+            .ok_or_else(|| "ext method response missing result".into())
+    }
 }
 
 // ── x.ai/yolo_mode_changed ──────────────────────────────────────────────────

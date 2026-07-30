@@ -1,7 +1,7 @@
 import type { PermissionMode, SessionMode } from "../types";
 import { SESSION_MODES } from "../types";
 
-/** Shift+Tab order (Grok): Normal → Plan → Ask → Auto → Always-approve → … */
+/** Shift+Tab order (Grok TUI): Normal → Plan → Auto → Always-approve → … */
 export function cycleSessionMode(current: SessionMode): SessionMode {
   const i = SESSION_MODES.indexOf(current);
   const next = i < 0 ? 0 : (i + 1) % SESSION_MODES.length;
@@ -9,10 +9,12 @@ export function cycleSessionMode(current: SessionMode): SessionMode {
 }
 
 /**
- * When Mode is Plan / Ask and the user sends free text, apply prefix.
+ * When Mode is Plan and the user sends free text, apply `/plan` prefix.
  *
- * Real activation over ACP is `session/set_mode({ modeId: "plan" })` or
- * `session/set_mode({ modeId: "ask" })`. The prefix is model-visible label.
+ * Real plan activation over ACP is `session/set_mode({ modeId: "plan" })`.
+ * The prefix is a model-visible label (same as Grok slash).
+ *
+ * Grok TUI has no "Ask" session mode — Ask is permission ("prompt before tools").
  */
 export function applySessionModeToPrompt(
   mode: SessionMode,
@@ -23,22 +25,18 @@ export function applySessionModeToPrompt(
   if (mode === "plan" && !trimmed.startsWith("/")) {
     return `/plan ${trimmed}`;
   }
-  if (mode === "ask" && !trimmed.startsWith("/")) {
-    return `/ask ${trimmed}`;
-  }
   return text;
 }
 
 /**
  * ACP wire mode_id for a SessionMode.
- * Grok SessionMode wire ids: `default` | `plan` | `ask`.
+ * Grok SessionMode wire ids used by the pager: `default` | `plan`.
+ * (Agent enum also has `ask`, but the TUI never cycles to it.)
  */
 export function sessionModeWireId(mode: SessionMode): string {
   switch (mode) {
     case "plan":
       return "plan";
-    case "ask":
-      return "ask";
     default:
       return "default";
   }
@@ -72,7 +70,7 @@ export function applyAgentModeUpdate(
 /**
  * Display Mode from the two-source model:
  * - `planArmed` — Plan is orthogonal to permission (Grok status shows `plan`)
- * - `permission` (persisted host gate) — Ask / Auto / Always-approve / fine-grained
+ * - `permission` (persisted host gate) — Auto / Always-approve / fine-grained
  */
 export function displaySessionMode(
   planArmed: boolean,
@@ -106,8 +104,6 @@ export function applySessionModeChange(
   switch (mode) {
     case "plan":
       return { planArmed: true, permission: null };
-    case "ask":
-      return { planArmed: false, permission: null };
     case "auto":
       return { planArmed: false, permission: "auto" };
     case "alwaysApprove":
@@ -140,5 +136,3 @@ export function sessionModeFromPermission(
       return "normal";
   }
 }
-
-

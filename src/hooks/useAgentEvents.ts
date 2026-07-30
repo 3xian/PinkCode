@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listSubagents, listTasks } from "../api";
 import type {
   AgentUpdateEvent,
   AvailableCommand,
@@ -12,7 +13,12 @@ import type { LocalSlashItem } from "../utils/localSlash";
 import { describeUpdate, extractUpdateTsMs } from "../utils/format";
 import {
   describeLifecycleNotification,
+  describePendingInteractionNotification,
   isLifecycleNotificationMethod,
+  lifecycleFromListSubagents,
+  lifecycleFromListTasks,
+  type LifecycleDescription,
+  type PendingInteractionKind,
 } from "../utils/subagentTasks";
 import {
   LOCAL_HANDLE_ID,
@@ -26,6 +32,31 @@ import {
   settleStreamingItems,
   shouldDropUpdate,
 } from "./liveTimeline";
+
+/** Open reverse-request tracked via session_notification (roster NeedsInput). */
+export interface TrackedPendingInteraction {
+  toolCallId: string;
+  kind: PendingInteractionKind;
+  sessionId: string;
+  handleId?: string | null;
+}
+
+function isLiveManagedStatus(status: ManagedAgentInfo["status"]): boolean {
+  return (
+    status === "ready" ||
+    status === "running" ||
+    status === "awaitingPermission"
+  );
+}
+
+function isResetManagedStatus(status: ManagedAgentInfo["status"]): boolean {
+  return (
+    status === "stopped" ||
+    status === "error" ||
+    status === "starting" ||
+    status === "stopping"
+  );
+}
 
 export interface AgentEventsOptions {
   /** ACP current_mode_update (plan ↔ default). Prefer over window events. */
@@ -52,11 +83,17 @@ export function useAgentEvents(
   const [permissions, setPermissions] = useState<Map<string, PendingPermission>>(
     () => new Map(),
   );
+  /** toolCallId → pending interaction (fire-and-forget session_notification). */
+  const [pendingInteractions, setPendingInteractions] = useState<
+    Map<string, TrackedPendingInteraction>
+  >(() => new Map());
   const [lastError, setLastError] = useState<string | null>(null);
   const seq = useRef(0);
   /** Latest live map for rAF batching (avoids setState-to-read anti-pattern). */
   const liveRef = useRef(liveBySession);
   liveRef.current = liveBySession;
+  /** Handles already filled via list_running / task/list (attach + reconnect). */
+  const lifecycleRefilledHandles = useRef(new Set<string>());
 
   const clearError = useCallback(() => setLastError(null), []);
 
@@ -74,6 +111,7 @@ export function useAgentEvents(
   }, []);
 
   const removeManaged = useCallback((handleId: string) => {
+    lifecycleRefilledHandles.current.delete(handleId);
     setManaged((prev) => {
       if (!prev.has(handleId)) return prev;
       const next = new Map(prev);
@@ -81,6 +119,17 @@ export function useAgentEvents(
       return next;
     });
     setPermissions((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const [k, p] of next) {
+        if (p.handleId === handleId) {
+          next.delete(k);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setPendingInteractions((prev) => {
       let changed = false;
       const next = new Map(prev);
       for (const [k, p] of next) {
@@ -159,6 +208,69 @@ export function useAgentEvents(
       );
     },
     [],
+  );
+
+  /**
+   * Apply lifecycle cards into live timeline.
+   * Uses a fresh reducer state so list hydrate never touches stream session state.
+   */
+  const applyLifecycleDescriptions = useCallback(
+    (
+      handleId: string,
+      sessionId: string | null | undefined,
+      descriptions: LifecycleDescription[],
+    ) => {
+      if (!descriptions.length) return;
+      const now = Date.now();
+      const listReducerState = createTimelineReducerState();
+      setLiveBySession((prev) => {
+        let map = prev;
+        for (const description of descriptions) {
+          map = reduceAgentUpdate(
+            map,
+            {
+              handleId,
+              sessionId,
+              description,
+              now,
+              nextId: () => `${now}-${seq.current++}`,
+            },
+            listReducerState,
+          );
+        }
+        if (map !== prev) liveRef.current = map;
+        return map;
+      });
+    },
+    [],
+  );
+
+  /**
+   * Own lifecycle refill: list_running + task/list after attach/reconnect.
+   * Single owner — App must not duplicate this.
+   */
+  const refillLifecycleCards = useCallback(
+    async (info: ManagedAgentInfo) => {
+      if (!isLiveManagedStatus(info.status)) return;
+      if (lifecycleRefilledHandles.current.has(info.handleId)) return;
+      lifecycleRefilledHandles.current.add(info.handleId);
+      try {
+        const [subs, tasks] = await Promise.all([
+          listSubagents(info.handleId).catch(() => null),
+          listTasks(info.handleId).catch(() => null),
+        ]);
+        const descs = [
+          ...lifecycleFromListSubagents(subs ?? undefined),
+          ...lifecycleFromListTasks(tasks ?? undefined),
+        ];
+        if (descs.length) {
+          applyLifecycleDescriptions(info.handleId, info.sessionId, descs);
+        }
+      } catch {
+        // Non-fatal: live notifications remain the primary path.
+      }
+    },
+    [applyLifecycleDescriptions],
   );
 
   useEffect(() => {
@@ -314,9 +426,33 @@ export function useAgentEvents(
       // Subagent + background-task lifecycle (x.ai/session_notification,
       // x.ai/task_backgrounded, x.ai/task_completed). TaskTool/Wait/Kill
       // scrollback is suppressed; these notifications own the cards.
+      // Also pending_interaction / interaction_resolved for NeedsInput roster.
       const u7 = await listen<AgentUpdateEvent>("agent-notification", (e) => {
         if (cancelled) return;
         const { handleId, sessionId, method, params } = e.payload;
+
+        const pendingEv = describePendingInteractionNotification(method, params);
+        if (pendingEv) {
+          setPendingInteractions((prev) => {
+            const next = new Map(prev);
+            if (pendingEv.resolved) {
+              if (!next.has(pendingEv.toolCallId)) return prev;
+              next.delete(pendingEv.toolCallId);
+              return next;
+            }
+            const sid = sessionId ?? "";
+            if (!sid) return prev;
+            next.set(pendingEv.toolCallId, {
+              toolCallId: pendingEv.toolCallId,
+              kind: pendingEv.kind,
+              sessionId: sid,
+              handleId,
+            });
+            return next;
+          });
+          return;
+        }
+
         if (!isLifecycleNotificationMethod(method)) return;
         const desc = describeLifecycleNotification(method, params);
         if (!desc) return;
@@ -408,6 +544,34 @@ export function useAgentEvents(
     );
   }, [allPermissions, managedForSession, selectedSessionId]);
 
+  /**
+   * Single NeedsInput projection: permission reverse-requests + pending_interaction.
+   * Session list / chrome must use this only (via resolveCardState needsInput).
+   */
+  const needsInputSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of allPermissions) {
+      if (p.sessionId) ids.add(p.sessionId);
+    }
+    for (const p of pendingInteractions.values()) {
+      if (p.sessionId) ids.add(p.sessionId);
+    }
+    return ids;
+  }, [allPermissions, pendingInteractions]);
+
+  // Attach / reconnect: refill lifecycle cards once per live handle.
+  useEffect(() => {
+    for (const m of managedList) {
+      if (isResetManagedStatus(m.status)) {
+        lifecycleRefilledHandles.current.delete(m.handleId);
+        continue;
+      }
+      if (isLiveManagedStatus(m.status)) {
+        void refillLifecycleCards(m);
+      }
+    }
+  }, [managedList, refillLifecycleCards]);
+
   return {
     managed,
     managedList,
@@ -416,6 +580,7 @@ export function useAgentEvents(
     availableCommands,
     permissions: allPermissions,
     permissionsForSession,
+    needsInputSessionIds,
     lastError,
     clearError,
     upsertManaged,

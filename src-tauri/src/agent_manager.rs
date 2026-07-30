@@ -199,7 +199,7 @@ impl AgentManager {
         Ok(())
     }
 
-    /// ACP `x.ai/set_session_model` — switch the model for a session.
+    /// ACP `session/set_model` — switch the model for a session.
     pub fn set_session_model(
         &self,
         handle_id: &str,
@@ -217,7 +217,7 @@ impl AgentManager {
         Ok(serde_json::to_value(result).unwrap_or_default())
     }
 
-    /// ACP `x.ai/session/usage` — live turn token usage.
+    /// ACP `x.ai/session/usage` — cumulative session token usage.
     pub fn session_usage(&self, handle_id: &str) -> Result<Value, String> {
         let (session_id, client) = self.resolve_target(handle_id)?;
         let result = client
@@ -226,11 +226,11 @@ impl AgentManager {
         Ok(serde_json::to_value(result).unwrap_or_default())
     }
 
-    /// ACP `x.ai/recap` — session recap / summary.
-    pub fn recap(&self, handle_id: &str, max_turns: Option<u32>) -> Result<Value, String> {
+    /// ACP `x.ai/recap` — request recap (text arrives via session_recap notification).
+    pub fn recap(&self, handle_id: &str, auto: bool) -> Result<Value, String> {
         let (session_id, client) = self.resolve_target(handle_id)?;
         let result = client
-            .recap(&session_id, max_turns)
+            .recap(&session_id, auto)
             .map_err(|error| error.user_message())?;
         Ok(serde_json::to_value(result).unwrap_or_default())
     }

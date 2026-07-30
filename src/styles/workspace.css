@@ -666,6 +666,60 @@
   word-break: break-all;
 }
 
+.git-hunk-list {
+  max-height: 360px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.git-hunk-block {
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  margin: 0 10px;
+  overflow: hidden;
+}
+
+.git-hunk-block.is-selected {
+  border-color: var(--color-accent, #7c6af7);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent, #7c6af7) 40%, transparent);
+}
+
+.git-hunk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  font-size: 11px;
+  user-select: none;
+}
+
+.git-hunk-header {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
+.git-hunk-stats {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.git-hunk-body {
+  max-height: 180px;
+  margin: 0;
+  border: none;
+}
+
 /* Commit section */
 .git-commit-section {
   border-top: 1px solid var(--color-border);

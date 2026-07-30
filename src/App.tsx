@@ -135,6 +135,7 @@ function App() {
     hydratePermissions,
     appendLocalLive,
     hydrateDiskLive,
+    needsInputSessionIds,
   } = useAgentEvents(selectedId, {
     onCurrentModeUpdate: planMode.onAgentModeUpdate,
   });
@@ -514,6 +515,7 @@ function App() {
     setPinTimelineBottomSeq((n) => n + 1);
     const queued = await listPendingPermissions(info.handleId);
     hydratePermissions(queued);
+    // Lifecycle list_running / task/list refill is owned by useAgentEvents.
 
     if (info.status === "error" || info.status === "stopped") {
       throw new Error(info.lastError ?? "Failed to connect agent");
@@ -609,7 +611,7 @@ function App() {
 
     setError(null);
     try {
-      // Sync ACP session mode for every mode switch (plan / ask / default).
+      // Sync ACP session mode (wire: plan | default). Permission is separate.
       if (sessionId && liveHandle) {
         await setSessionMode(liveHandle, sessionModeWireId(mode));
       }
@@ -901,6 +903,7 @@ function App() {
             }}
             managedStatuses={managedStatuses}
             managedPids={managedPids}
+            needsInputSessionIds={needsInputSessionIds}
             onNewTask={() => setModalOpen(true)}
           />
         </aside>

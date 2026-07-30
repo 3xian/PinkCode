@@ -812,6 +812,69 @@ pub fn git_commit(cwd: &str, message: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output).trim().to_string())
 }
 
+/// Apply a unified-diff patch to the index (`git apply --cached`).
+///
+/// Used for interactive hunk stage/unstage. `reverse = true` unstages
+/// the selected hunks (`git apply --cached --reverse`).
+pub fn git_apply_patch(cwd: &str, patch: &str, reverse: bool) -> Result<(), String> {
+    let root = resolve_root(cwd)?;
+    if patch.trim().is_empty() {
+        return Err("empty patch".into());
+    }
+
+    let mut args = vec!["apply", "--cached", "--whitespace=nowarn"];
+    if reverse {
+        args.push("--reverse");
+    }
+    // Read patch from stdin.
+    args.push("-");
+
+    let mut cmd = Command::new("git");
+    cmd.args(&args)
+        .current_dir(&root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("git apply failed to start: {e}"))?;
+    {
+        use std::io::Write;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "git apply stdin unavailable".to_string())?;
+        stdin
+            .write_all(patch.as_bytes())
+            .map_err(|e| format!("git apply write stdin: {e}"))?;
+        // Drop closes stdin so apply proceeds.
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("git apply wait failed: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let msg = [stderr.trim(), stdout.trim()]
+            .into_iter()
+            .find(|s| !s.is_empty())
+            .unwrap_or("git apply failed");
+        return Err(msg.to_string());
+    }
+
+    git_cache().lock().remove(&path_for_ui(&root));
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

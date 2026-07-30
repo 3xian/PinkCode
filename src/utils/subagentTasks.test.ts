@@ -3,8 +3,13 @@ import { describeUpdate, isGrokScrollbackSuppressedTool } from "./format";
 import {
   SUBAGENT_MAX_DEPTH,
   describeLifecycleNotification,
+  describeListedSubagent,
+  describeListedTask,
+  describePendingInteractionNotification,
   formatSubagentTitle,
   isBgPlumbingTool,
+  lifecycleFromListSubagents,
+  lifecycleFromListTasks,
   lifecycleMirrorKey,
   listActiveBgTasks,
   listActiveSubagents,
@@ -619,5 +624,108 @@ describe("describeUpdate hydrate path", () => {
     expect(desc.kind).toBe("subagent");
     expect(desc.mergeKey).toBe("c-hydrate");
     expect(desc.subagent?.description).toBe("from disk");
+  });
+});
+
+describe("list_running / task/list parsers", () => {
+  it("maps list_running camelCase DTO", () => {
+    const d = describeListedSubagent({
+      subagentId: "sa-9",
+      childSessionId: "child-9",
+      parentSessionId: "parent",
+      description: "explore auth",
+      subagentType: "explore",
+      durationMs: 1200,
+      toolCallCount: 3,
+      turnCount: 2,
+      tokensUsed: 400,
+      toolsUsed: ["read_file", "grep"],
+    });
+    expect(d?.kind).toBe("subagent");
+    expect(d?.mergeKey).toBe("child-9");
+    expect(d?.subagent?.status).toBe("running");
+    expect(d?.subagent?.activityLabel).toBe("Using read_file, grep");
+  });
+
+  it("skips completed tasks and maps outstanding ones", () => {
+    expect(
+      describeListedTask({
+        task_id: "done-1",
+        command: "echo hi",
+        completed: true,
+      }),
+    ).toBeNull();
+
+    const d = describeListedTask({
+      task_id: "run-1",
+      command: "npm test",
+      description: "unit",
+      cwd: "/tmp/p",
+      completed: false,
+      kind: "bash",
+    });
+    expect(d?.kind).toBe("task");
+    expect(d?.mergeKey).toBe("run-1");
+    expect(d?.task?.status).toBe("running");
+    expect(d?.task?.command).toBe("npm test");
+  });
+
+  it("lifecycleFromList* filters empty/completed", () => {
+    expect(
+      lifecycleFromListSubagents({
+        subagents: [{ subagentId: "a", childSessionId: "c1", description: "x" }],
+      }),
+    ).toHaveLength(1);
+    expect(
+      lifecycleFromListTasks({
+        tasks: [
+          { task_id: "t1", command: "ls", completed: false },
+          { task_id: "t2", command: "x", completed: true },
+        ],
+      }),
+    ).toHaveLength(1);
+  });
+});
+
+describe("pending_interaction notifications", () => {
+  it("parses pending_interaction and interaction_resolved", () => {
+    const open = describePendingInteractionNotification(
+      "x.ai/session_notification",
+      {
+        update: {
+          sessionUpdate: "pending_interaction",
+          tool_call_id: "call-1",
+          kind: "permission",
+        },
+      },
+    );
+    expect(open).toEqual({
+      toolCallId: "call-1",
+      kind: "permission",
+      resolved: false,
+    });
+
+    const done = describePendingInteractionNotification(
+      "x.ai/session_notification",
+      {
+        update: {
+          sessionUpdate: "interaction_resolved",
+          tool_call_id: "call-1",
+        },
+      },
+    );
+    expect(done).toEqual({
+      toolCallId: "call-1",
+      kind: "unknown",
+      resolved: true,
+    });
+  });
+
+  it("ignores unrelated methods", () => {
+    expect(
+      describePendingInteractionNotification("x.ai/task_backgrounded", {
+        task_id: "t",
+      }),
+    ).toBeNull();
   });
 });

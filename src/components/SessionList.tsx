@@ -27,6 +27,11 @@ interface Props {
   managedStatuses?: Record<string, ManagedStatus>;
   /** sessionId → live process pid (managed agent, else active_sessions). */
   managedPids?: Record<string, number>;
+  /**
+   * Single NeedsInput projection from useAgentEvents (permissions + pending_interaction).
+   * Passed into resolveCardState / rankManagedCard — no local special-case.
+   */
+  needsInputSessionIds?: ReadonlySet<string>;
   onNewTask?: () => void;
 }
 
@@ -38,6 +43,7 @@ export function SessionList({
   onSelect,
   managedStatuses,
   managedPids,
+  needsInputSessionIds,
   onNewTask,
 }: Props) {
   const visible = useMemo(() => {
@@ -52,14 +58,21 @@ export function SessionList({
         )
       : sessions.slice();
 
-    // Mid-turn first, then attached / open elsewhere, keep relative order.
     list.sort((a, b) => {
-      const ar = rankManagedCard(managedStatuses?.[a.id], a.isActive);
-      const br = rankManagedCard(managedStatuses?.[b.id], b.isActive);
+      const ar = rankManagedCard(
+        managedStatuses?.[a.id],
+        a.isActive,
+        needsInputSessionIds?.has(a.id) ?? false,
+      );
+      const br = rankManagedCard(
+        managedStatuses?.[b.id],
+        b.isActive,
+        needsInputSessionIds?.has(b.id) ?? false,
+      );
       return ar - br;
     });
     return list;
-  }, [sessions, query, managedStatuses]);
+  }, [sessions, query, managedStatuses, needsInputSessionIds]);
 
   return (
     <div className="session-list">
@@ -96,9 +109,13 @@ export function SessionList({
         {visible.map((s) => {
           const managedStatus = managedStatuses?.[s.id];
           const attached = isPinkcodeAttached(managedStatus);
-          // Live PID in active_sessions.json, not attached here — "open", not mid-turn.
           const openElsewhere = s.isActive && !attached;
-          const state = resolveCardState(managedStatus, openElsewhere);
+          const needsInput = needsInputSessionIds?.has(s.id) ?? false;
+          const state = resolveCardState(
+            managedStatus,
+            openElsewhere,
+            needsInput,
+          );
           const pid = managedPids?.[s.id] ?? s.activePid ?? null;
           const cardClass = [
             "session-card",
@@ -187,5 +204,3 @@ export function SessionList({
     </div>
   );
 }
-
-

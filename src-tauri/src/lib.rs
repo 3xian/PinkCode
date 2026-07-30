@@ -304,7 +304,7 @@ async fn set_session_mode(
         .map_err(|e| format!("set_session_mode task failed: {e}"))?
 }
 
-/// ACP `x.ai/set_session_model` — switch the model for a session.
+/// ACP `session/set_model` — switch the model for a session.
 #[tauri::command]
 async fn set_session_model(
     manager: tauri::State<'_, AgentManager>,
@@ -320,7 +320,7 @@ async fn set_session_model(
     .map_err(|e| format!("set_session_model task failed: {e}"))?
 }
 
-/// ACP `x.ai/session/usage` — live turn tokens and cost.
+/// ACP `x.ai/session/usage` — cumulative session tokens and cost.
 #[tauri::command]
 async fn get_session_usage(
     manager: tauri::State<'_, AgentManager>,
@@ -332,15 +332,15 @@ async fn get_session_usage(
         .map_err(|e| format!("session_usage task failed: {e}"))?
 }
 
-/// ACP `x.ai/recap` — session recap / summary.
+/// ACP `x.ai/recap` — request recap; body arrives as `session_recap` on the timeline.
 #[tauri::command]
 async fn get_session_recap(
     manager: tauri::State<'_, AgentManager>,
     handle_id: String,
-    max_turns: Option<u32>,
+    auto: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     let manager = manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || manager.recap(&handle_id, max_turns))
+    tauri::async_runtime::spawn_blocking(move || manager.recap(&handle_id, auto.unwrap_or(false)))
         .await
         .map_err(|e| format!("recap task failed: {e}"))?
 }
@@ -562,6 +562,14 @@ async fn git_commit(cwd: String, message: String) -> Result<String, String> {
         .map_err(|e| format!("git commit task failed: {e}"))?
 }
 
+/// Apply a partial unified-diff patch to the index (hunk stage/unstage).
+#[tauri::command]
+async fn git_apply_patch(cwd: String, patch: String, reverse: bool) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || project_fs::git_apply_patch(&cwd, &patch, reverse))
+        .await
+        .map_err(|e| format!("git apply patch task failed: {e}"))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Layered config + structured logging before any agent/watcher work.
@@ -654,6 +662,7 @@ pub fn run() {
             git_stage_all,
             git_unstage_all,
             git_commit,
+            git_apply_patch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

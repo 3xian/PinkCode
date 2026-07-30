@@ -206,14 +206,27 @@ export function SessionDetailView({
               <span className="detail-header-actions">
                 <button
                   className="btn-link tiny"
-                  title="Session recap / summary"
+                  title="Request session recap (appears in timeline)"
                   onClick={() => {
-                    void getSessionRecap(managed.handleId).then((r) => {
-                      if (r.recap) {
+                    void getSessionRecap(managed.handleId)
+                      .then((r) => {
+                        if (r.disabled) {
+                          // eslint-disable-next-line no-alert
+                          alert("Session recap is disabled for this agent.");
+                          return;
+                        }
+                        if (!r.ok) {
+                          // eslint-disable-next-line no-alert
+                          alert("Recap request was not accepted.");
+                        }
+                        // On success: body arrives as timeline session_recap.
+                      })
+                      .catch((e: unknown) => {
                         // eslint-disable-next-line no-alert
-                        alert(r.recap.slice(0, 2000));
-                      }
-                    });
+                        alert(
+                          e instanceof Error ? e.message : String(e),
+                        );
+                      });
                   }}
                 >
                   Recap

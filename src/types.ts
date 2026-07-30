@@ -257,12 +257,12 @@ export const PERMISSION_MODE_OPTIONS: {
 
 /**
  * Grok Build session modes — single TUI control (Shift+Tab cycle).
- * Normal → Plan → Ask → Auto → Always-approve. Plan is orthogonal to permission.
+ * Normal → Plan → Auto → Always-approve. Plan is orthogonal to permission.
+ * ("Ask" in Grok is permission mode = prompt before tools, not a session mode.)
  */
 export const SESSION_MODES = [
   "normal",
   "plan",
-  "ask",
   "auto",
   "alwaysApprove",
 ] as const;
@@ -272,12 +272,12 @@ export const SESSION_MODE_OPTIONS: {
   value: SessionMode;
   label: string;
   hint: string;
-  accent: "neutral" | "plan" | "ask" | "auto" | "yolo";
+  accent: "neutral" | "plan" | "auto" | "yolo";
 }[] = [
   {
     value: "normal",
     label: "Normal",
-    hint: "Ask before tools (Grok default / ask)",
+    hint: "Ask before tools (Grok default / ask permission)",
     accent: "neutral",
   },
   {
@@ -285,12 +285,6 @@ export const SESSION_MODE_OPTIONS: {
     label: "Plan",
     hint: "Plan first · next free-text send becomes /plan",
     accent: "plan",
-  },
-  {
-    value: "ask",
-    label: "Ask",
-    hint: "Read-only Q&A mode — no tools, no file writes",
-    accent: "ask",
   },
   {
     value: "auto",
@@ -503,7 +497,7 @@ export interface PromptQueueState {
   runningCombinedTexts?: string[] | null;
 }
 
-/** Live turn usage from ACP x.ai/session/usage. */
+/** Flattened live usage from ACP x.ai/session/usage (nested wire → host). */
 export interface LiveSessionUsage {
   inputTokens: number;
   outputTokens: number;
@@ -513,8 +507,49 @@ export interface LiveSessionUsage {
   turnCount: number;
 }
 
-/** Session recap result from ACP x.ai/recap. */
+/** One row from ACP `x.ai/subagent/list_running` (camelCase wire DTO). */
+export interface ListedSubagent {
+  subagentId?: string;
+  childSessionId?: string;
+  parentSessionId?: string;
+  description?: string;
+  subagentType?: string;
+  durationMs?: number;
+  toolCallCount?: number;
+  turnCount?: number;
+  tokensUsed?: number;
+  toolsUsed?: string[];
+}
+
+export interface ListSubagentsResult {
+  subagents: ListedSubagent[];
+}
+
+/**
+ * One row from ACP `x.ai/task/list` TaskSnapshot.
+ * Shell serializes TaskSnapshot fields in snake_case.
+ */
+export interface ListedTask {
+  task_id?: string;
+  command?: string;
+  display_command?: string;
+  description?: string;
+  cwd?: string;
+  completed?: boolean;
+  kind?: string;
+  exit_code?: number | null;
+  signal?: string | null;
+}
+
+export interface ListTasksResult {
+  tasks: ListedTask[];
+}
+
+/**
+ * ACP `x.ai/recap` is fire-and-forget: `{ ok, disabled? }`.
+ * Body arrives later as timeline `session_recap`.
+ */
 export interface SessionRecapResult {
-  recap?: string | null;
-  available: boolean;
+  ok: boolean;
+  disabled?: boolean;
 }

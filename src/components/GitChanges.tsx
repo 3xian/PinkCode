@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { gitBranchInfo, gitCommit, gitDiffFile, gitStageAll, gitStageFile, gitStatus, gitUnstageAll, gitUnstageFile } from "../api";
+import {
+  gitBranchInfo,
+  gitCommit,
+  gitDiffFile,
+  gitStageAll,
+  gitStageFile,
+  gitStatus,
+  gitUnstageAll,
+  gitUnstageFile,
+} from "../api";
 import { useKeyedSilentRefresh } from "../hooks/useKeyedSilentRefresh";
 import type { GitBranchInfo, GitChange, GitFileDiff } from "../types";
 import { joinUnderRoot, pathsEqual } from "../utils/paths";
+import { GitDiffHunkPanel } from "./GitDiffHunkPanel";
 
 interface Props {
   cwd: string | null;
@@ -108,13 +118,16 @@ export function GitChanges({
     return () => window.clearInterval(id);
   }, [cwd, active, refresh]);
 
+  const closeDiff = useCallback(() => {
+    setDiff(null);
+    setDiffPath(null);
+  }, []);
+
   const handleFileClick = useCallback(
     async (path: string, staged: boolean) => {
       if (!cwd) return;
       if (diffPath === path && diffStaged === staged) {
-        // Toggle off
-        setDiff(null);
-        setDiffPath(null);
+        closeDiff();
         return;
       }
       setDiffLoading(true);
@@ -132,7 +145,7 @@ export function GitChanges({
         setDiffLoading(false);
       }
     },
-    [cwd, diffPath, diffStaged],
+    [cwd, diffPath, diffStaged, closeDiff],
   );
 
   const handleStage = useCallback(
@@ -207,7 +220,6 @@ export function GitChanges({
     );
   }
 
-  // Split changes into staged (X != ' ') and unstaged (Y != ' ')
   const stagedChanges = changes.filter((c) => {
     const s = c.status;
     return s.length >= 2 && s[0] !== " " && s[0] !== "?";
@@ -221,7 +233,6 @@ export function GitChanges({
 
   return (
     <div className="workspace-section git-changes-section">
-      {/* Branch info bar */}
       {branchInfo && (
         <div className="git-branch-bar">
           <span className="git-branch-name mono">
@@ -240,12 +251,14 @@ export function GitChanges({
             )}
             {branchInfo.unstagedCount > 0 && (
               <span className="git-unstaged-count">
-                {" "}~{branchInfo.unstagedCount} unstaged
+                {" "}
+                ~{branchInfo.unstagedCount} unstaged
               </span>
             )}
             {branchInfo.untrackedCount > 0 && (
               <span className="git-untracked-count">
-                {" "}?{branchInfo.untrackedCount} new
+                {" "}
+                ?{branchInfo.untrackedCount} new
               </span>
             )}
           </span>
@@ -262,7 +275,6 @@ export function GitChanges({
         </div>
       ) : (
         <>
-          {/* Staged changes */}
           {hasStaged && (
             <div className="git-section-group">
               <div className="git-section-header">
@@ -276,22 +288,23 @@ export function GitChanges({
                 </button>
               </div>
               <ul className="git-change-list">
-                {stagedChanges.map((c) => renderChangeRow(c, cwd, {
-                  selectedPath,
-                  onSelectFile,
-                  diffPath,
-                  diffStaged,
-                  diffLoading,
-                  onFileClick: handleFileClick,
-                  onStage: handleStage,
-                  onUnstage: handleUnstage,
-                  staged: true,
-                }))}
+                {stagedChanges.map((c) =>
+                  renderChangeRow(c, cwd, {
+                    selectedPath,
+                    onSelectFile,
+                    diffPath,
+                    diffStaged,
+                    diffLoading,
+                    onFileClick: handleFileClick,
+                    onStage: handleStage,
+                    onUnstage: handleUnstage,
+                    staged: true,
+                  }),
+                )}
               </ul>
             </div>
           )}
 
-          {/* Unstaged changes */}
           {hasUnstaged && (
             <div className="git-section-group">
               <div className="git-section-header">
@@ -305,41 +318,35 @@ export function GitChanges({
                 </button>
               </div>
               <ul className="git-change-list">
-                {unstagedChanges.map((c) => renderChangeRow(c, cwd, {
-                  selectedPath,
-                  onSelectFile,
-                  diffPath,
-                  diffStaged,
-                  diffLoading,
-                  onFileClick: handleFileClick,
-                  onStage: handleStage,
-                  onUnstage: handleUnstage,
-                  staged: false,
-                }))}
+                {unstagedChanges.map((c) =>
+                  renderChangeRow(c, cwd, {
+                    selectedPath,
+                    onSelectFile,
+                    diffPath,
+                    diffStaged,
+                    diffLoading,
+                    onFileClick: handleFileClick,
+                    onStage: handleStage,
+                    onUnstage: handleUnstage,
+                    staged: false,
+                  }),
+                )}
               </ul>
             </div>
           )}
 
-          {/* Inline diff viewer */}
           {diff && diffPath && (
-            <div className="git-diff-inline">
-              <div className="git-diff-header">
-                <span className="mono">{diffPath}</span>
-                <span className="muted">({diff.kind})</span>
-                <button
-                  className="btn-link small"
-                  onClick={() => { setDiff(null); setDiffPath(null); }}
-                >
-                  Close
-                </button>
-              </div>
-              <pre className="git-diff-content mono">
-                {diff.diff || "(no changes)"}
-              </pre>
-            </div>
+            <GitDiffHunkPanel
+              cwd={cwd}
+              path={diffPath}
+              diff={diff}
+              staged={diffStaged}
+              onClose={closeDiff}
+              onApplied={() => void refresh(cwd, true)}
+              onError={setError}
+            />
           )}
 
-          {/* Commit section */}
           {hasStaged && (
             <div className="git-commit-section">
               <textarea
@@ -358,7 +365,9 @@ export function GitChanges({
                 {committing ? "Committing…" : "Commit"}
               </button>
               {commitResult && (
-                <div className="git-commit-result small muted">{commitResult}</div>
+                <div className="git-commit-result small muted">
+                  {commitResult}
+                </div>
               )}
             </div>
           )}
@@ -380,11 +389,7 @@ interface RowActions {
   staged: boolean;
 }
 
-function renderChangeRow(
-  c: GitChange,
-  cwd: string,
-  actions: RowActions,
-) {
+function renderChangeRow(c: GitChange, cwd: string, actions: RowActions) {
   const abs = joinUnderRoot(cwd, c.path);
   const selected =
     actions.selectedPath != null && pathsEqual(actions.selectedPath, abs);
@@ -423,7 +428,10 @@ function renderChangeRow(
         {actions.staged ? (
           <button
             className="btn-link tiny"
-            onClick={(e) => { e.stopPropagation(); actions.onUnstage(c.path); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              actions.onUnstage(c.path);
+            }}
             title="Unstage"
           >
             −
@@ -432,7 +440,10 @@ function renderChangeRow(
           indexChar && (
             <button
               className="btn-link tiny"
-              onClick={(e) => { e.stopPropagation(); actions.onStage(c.path); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                actions.onStage(c.path);
+              }}
               title="Stage"
             >
               +
@@ -449,9 +460,9 @@ function sameGitChanges(a: GitChange[], b: GitChange[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
     if (
-      a[i].path !== b[i].path ||
-      a[i].status !== b[i].status ||
-      a[i].kind !== b[i].kind
+      a[i]!.path !== b[i]!.path ||
+      a[i]!.status !== b[i]!.status ||
+      a[i]!.kind !== b[i]!.kind
     ) {
       return false;
     }
@@ -463,7 +474,6 @@ function statusLetter(c: GitChange): string {
   const s = c.status.replace(/\s/g, "");
   if (s === "??") return "U";
   if (s.length === 0) return "?";
-  // Prefer index letter, else worktree.
-  const ch = c.status[0] !== " " ? c.status[0]! : c.status[1] ?? "?";
+  const ch = c.status[0] !== " " ? c.status[0]! : (c.status[1] ?? "?");
   return ch === "?" ? "U" : ch;
 }

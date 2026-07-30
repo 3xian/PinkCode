@@ -17,6 +17,10 @@
 import type {
   BgTaskLifecyclePatch,
   BgTaskLifecycleStatus,
+  ListedSubagent,
+  ListedTask,
+  ListSubagentsResult,
+  ListTasksResult,
   SubagentLifecyclePatch,
   SubagentLifecycleStatus,
   TimelineBgTaskPayload,
@@ -619,6 +623,158 @@ export function lifecycleMirrorKey(item: TimelineItem): string | null {
   }
   if (item.kind === "task" && item.task?.taskId) {
     return `task:${item.task.taskId}`;
+  }
+  return null;
+}
+
+// ── list_running / task/list → lifecycle cards (attach / reconnect) ─────────
+
+/**
+ * Map one `x.ai/subagent/list_running` entry into a lifecycle card description.
+ * Wire DTO is camelCase (`SubagentLiveSnapshotDto`).
+ */
+export function describeListedSubagent(
+  row: ListedSubagent,
+): LifecycleDescription | null {
+  const childSessionId = row.childSessionId ?? row.subagentId;
+  if (!childSessionId) return null;
+  const subagentId = row.subagentId ?? childSessionId;
+  const tools = (row.toolsUsed ?? []).filter(Boolean).slice(0, 3);
+  return subagentDesc(
+    sparseSubagent(childSessionId, {
+      subagentId,
+      parentSessionId: row.parentSessionId ?? null,
+      description: row.description ?? "subagent",
+      subagentType: row.subagentType ?? "general-purpose",
+      status: "running",
+      durationMs: row.durationMs,
+      toolCalls: row.toolCallCount,
+      turns: row.turnCount,
+      tokensUsed: row.tokensUsed,
+      activityLabel: tools.length ? `Using ${tools.join(", ")}` : undefined,
+    }),
+  );
+}
+
+/**
+ * Map one `x.ai/task/list` TaskSnapshot into a bg-task card.
+ * Snapshot fields are snake_case; skip already-completed tasks.
+ */
+export function describeListedTask(
+  row: ListedTask,
+): LifecycleDescription | null {
+  if (row.completed) return null;
+  const taskId = row.task_id;
+  if (!taskId) return null;
+  const command = row.display_command ?? row.command ?? "";
+  const kind = row.kind ?? "bash";
+  const monDesc = row.description;
+  const isMonitor =
+    kind === "monitor" ||
+    Boolean(monDesc && command.startsWith("[monitor] "));
+  const exitCode = row.exit_code ?? null;
+  return taskDesc(
+    sparseBgTask(taskId, {
+      command: isMonitor
+        ? command.replace(/^\[monitor\]\s*/, "")
+        : command,
+      description: monDesc ?? null,
+      cwd: row.cwd ?? null,
+      isMonitor,
+      status: normalizeBgStatus(null, exitCode),
+      exitCode,
+      error: row.signal ?? null,
+    }),
+  );
+}
+
+/** list_running result (envelope already unwrapped by host) → lifecycle cards. */
+export function lifecycleFromListSubagents(
+  result: ListSubagentsResult | null | undefined,
+): LifecycleDescription[] {
+  if (!result?.subagents?.length) return [];
+  const out: LifecycleDescription[] = [];
+  for (const item of result.subagents) {
+    const d = describeListedSubagent(item);
+    if (d) out.push(d);
+  }
+  return out;
+}
+
+/** task/list result → outstanding lifecycle cards. */
+export function lifecycleFromListTasks(
+  result: ListTasksResult | null | undefined,
+): LifecycleDescription[] {
+  if (!result?.tasks?.length) return [];
+  const out: LifecycleDescription[] = [];
+  for (const item of result.tasks) {
+    const d = describeListedTask(item);
+    if (d) out.push(d);
+  }
+  return out;
+}
+
+// ── pending_interaction / interaction_resolved ─────────────────────────────
+
+export type PendingInteractionKind =
+  | "permission"
+  | "question"
+  | "plan_approval"
+  | "unknown";
+
+export interface PendingInteractionEvent {
+  toolCallId: string;
+  kind: PendingInteractionKind;
+  resolved: boolean;
+}
+
+function normalizePendingKind(raw?: string | null): PendingInteractionKind {
+  const s = (raw ?? "").toLowerCase();
+  if (s === "permission") return "permission";
+  if (s === "question") return "question";
+  if (s === "plan_approval" || s === "planapproval") return "plan_approval";
+  return "unknown";
+}
+
+/**
+ * Parse pending_interaction / interaction_resolved from session_notification.
+ * Returns null for unrelated updates.
+ */
+export function describePendingInteractionNotification(
+  method: string | undefined | null,
+  params: unknown,
+): PendingInteractionEvent | null {
+  if (
+    method &&
+    method !== "x.ai/session_notification" &&
+    method !== "x.ai/session/update"
+  ) {
+    return null;
+  }
+  const root = asRecord(params);
+  if (!root) return null;
+  const update =
+    asRecord(root.update) ??
+    (str(root, "sessionUpdate", "session_update") ? root : null);
+  if (!update) return null;
+  const sessionUpdate = str(update, "sessionUpdate", "session_update");
+  if (sessionUpdate === "pending_interaction") {
+    const toolCallId = str(update, "tool_call_id", "toolCallId");
+    if (!toolCallId) return null;
+    return {
+      toolCallId,
+      kind: normalizePendingKind(str(update, "kind")),
+      resolved: false,
+    };
+  }
+  if (sessionUpdate === "interaction_resolved") {
+    const toolCallId = str(update, "tool_call_id", "toolCallId");
+    if (!toolCallId) return null;
+    return {
+      toolCallId,
+      kind: "unknown",
+      resolved: true,
+    };
   }
   return null;
 }

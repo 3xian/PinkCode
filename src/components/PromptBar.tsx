@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AvailableCommand,
+  AvailableModelInfo,
   ManagedAgentInfo,
   SessionMode,
   TimelineItem,
@@ -39,6 +40,11 @@ interface Props {
   sessionId?: string | null;
   /** Current model id (e.g. grok-4.5), shown left of Send. */
   modelId?: string | null;
+  /**
+   * Agent-advertised catalog (`availableModels`). Empty while non-blocking
+   * startup has not yet filled the list — falls back to a built-in set.
+   */
+  availableModels?: AvailableModelInfo[];
   /** Change the session model via ACP set_session_model. */
   onModelChange?: (modelId: string) => void;
   /** Show Stop when the managed agent process can be terminated. */
@@ -56,6 +62,7 @@ export function PromptBar({
   timelineItems = [],
   sessionId = null,
   modelId = null,
+  availableModels = [],
   onModelChange,
   canStop = false,
   onStop,
@@ -384,6 +391,7 @@ export function PromptBar({
             {modelId && (
               <ModelSelector
                 current={modelId}
+                availableModels={availableModels}
                 onChange={onModelChange}
               />
             )}
@@ -447,22 +455,45 @@ function parseSlashQuery(
 
 // ── Model selector ──────────────────────────────────────────────────────
 
-/** Available Grok models for the dropdown. */
-const AVAILABLE_MODELS = [
+/** Offline / empty-catalog fallback when agent has not yet pushed models. */
+const FALLBACK_MODELS: { id: string; label: string }[] = [
   { id: "grok-4.5", label: "Grok 4.5" },
   { id: "grok-4", label: "Grok 4" },
   { id: "grok-4-mini", label: "Grok 4 Mini" },
   { id: "grok-4-fast", label: "Grok 4 Fast" },
-] as const;
+];
+
+function resolveModelOptions(
+  available: AvailableModelInfo[],
+  current: string,
+): { id: string; label: string }[] {
+  const fromAgent = available
+    .map((m) => {
+      const id = m.modelId.trim();
+      if (!id) return null;
+      const label = (m.name ?? "").trim() || id;
+      return { id, label };
+    })
+    .filter((m): m is { id: string; label: string } => m != null);
+
+  const list = fromAgent.length > 0 ? fromAgent : [...FALLBACK_MODELS];
+  if (current && !list.some((m) => m.id === current)) {
+    list.unshift({ id: current, label: current });
+  }
+  return list;
+}
 
 function ModelSelector({
   current,
+  availableModels = [],
   onChange,
 }: {
   current: string;
+  availableModels?: AvailableModelInfo[];
   onChange?: (modelId: string) => void;
 }) {
-  if (!onChange || AVAILABLE_MODELS.length <= 1) {
+  const options = resolveModelOptions(availableModels, current);
+  if (!onChange || options.length <= 1) {
     return (
       <span className="prompt-model" title={current}>
         {current}
@@ -470,14 +501,19 @@ function ModelSelector({
     );
   }
 
+  const catalogPending = availableModels.length === 0;
   return (
     <select
       className="prompt-model-select"
       value={current}
-      title={`Current model: ${current}`}
+      title={
+        catalogPending
+          ? `Current model: ${current} (catalog loading…)`
+          : `Current model: ${current}`
+      }
       onChange={(e) => onChange(e.target.value)}
     >
-      {AVAILABLE_MODELS.map((m) => (
+      {options.map((m) => (
         <option key={m.id} value={m.id}>
           {m.label}
         </option>

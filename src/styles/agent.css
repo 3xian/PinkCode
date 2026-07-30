@@ -331,6 +331,12 @@
   font-size: 12px;
 }
 
+.plan-approval-hints {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
 .plan-approval-comments textarea {
   min-height: 52px;
   resize: vertical;

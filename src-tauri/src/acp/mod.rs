@@ -207,12 +207,13 @@ impl AcpClient {
         let Some(method_id) = select_non_interactive_auth_method(initialize) else {
             return Ok(None);
         };
+        // Align with Grok `STARTUP_AUTH_TIMEOUT` (60s) — cold token refresh.
         self.call_raw(
             "authenticate",
             &AuthenticateParams {
                 method_id: method_id.to_string(),
             },
-            Duration::from_secs(30),
+            Duration::from_secs(60),
         )
         .map(Some)
     }
@@ -231,6 +232,8 @@ impl AcpClient {
     pub fn session_load(&self, session_id: &str, cwd: &str) -> Result<SessionBootstrapResult> {
         // Grok `LoadSessionResponse` often omits `sessionId` (client already
         // knows it). Normalize via the shared helper so the field is stable.
+        // 120s covers large-session load under streaming replay (see
+        // docs/grok-build-watch · MIN_CLIENT_CONNECT_TIMEOUT floor).
         let mut result: SessionBootstrapResult = self.call(
             "session/load",
             &SessionLoadParams {
@@ -238,7 +241,7 @@ impl AcpClient {
                 cwd: cwd.to_string(),
                 mcp_servers: vec![],
             },
-            Duration::from_secs(60),
+            Duration::from_secs(120),
         )?;
         result.session_id = result.resolve_session_id(Some(session_id));
         Ok(result)
@@ -783,8 +786,47 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(r.session_id.as_deref(), Some("sess-1"));
-        assert_eq!(r.current_model_id(), Some("grok-4"));
+        assert_eq!(
+            r.models
+                .as_ref()
+                .and_then(|m| m.current_model_id.as_deref()),
+            Some("grok-4")
+        );
         assert_eq!(r.resolve_session_id(None).as_deref(), Some("sess-1"));
+    }
+
+    #[test]
+    fn session_bootstrap_result_reads_available_models() {
+        let r: SessionBootstrapResult = serde_json::from_value(json!({
+            "sessionId": "sess-1",
+            "models": {
+                "currentModelId": "grok-4.5",
+                "availableModels": [
+                    { "modelId": "grok-4.5", "name": "Grok 4.5" },
+                    { "modelId": "grok-4", "name": "Grok 4" }
+                ]
+            }
+        }))
+        .unwrap();
+        let models = r.models.as_ref().expect("models");
+        assert_eq!(models.current_model_id.as_deref(), Some("grok-4.5"));
+        assert_eq!(models.available_models.len(), 2);
+        assert_eq!(models.available_models[0].model_id, "grok-4.5");
+        assert_eq!(models.available_models[0].name.as_deref(), Some("Grok 4.5"));
+    }
+
+    #[test]
+    fn session_models_info_deserializes_models_update_params() {
+        // Wire shape of `x.ai/models/update` / `_x.ai/models/update` params.
+        let m: SessionModelsInfo = serde_json::from_value(json!({
+            "currentModelId": "grok-new",
+            "availableModels": [
+                { "modelId": "grok-new", "name": "Grok New" }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(m.current_model_id.as_deref(), Some("grok-new"));
+        assert_eq!(m.available_models[0].model_id, "grok-new");
     }
 
     #[test]
@@ -795,7 +837,12 @@ mod tests {
         }))
         .unwrap();
         assert!(r.session_id.is_none());
-        assert_eq!(r.current_model_id(), Some("grok-4"));
+        assert_eq!(
+            r.models
+                .as_ref()
+                .and_then(|m| m.current_model_id.as_deref()),
+            Some("grok-4")
+        );
         assert_eq!(
             r.resolve_session_id(Some("known-sess")).as_deref(),
             Some("known-sess")

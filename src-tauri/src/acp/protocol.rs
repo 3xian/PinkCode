@@ -166,11 +166,29 @@ pub struct SessionLoadParams {
     pub mcp_servers: Vec<Value>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// One entry in ACP `SessionModelState.availableModels`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpModelInfo {
+    /// Wire field is `modelId` (string id, e.g. `grok-4.5`).
+    #[serde(default, alias = "id")]
+    pub model_id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// ACP `SessionModelState` — used by `session/new`|`load` `models` and by
+/// `x.ai/models/update` params. Catalog may be empty right after non-blocking
+/// agent startup, then filled via a later models/update notification.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionModelsInfo {
     #[serde(default)]
     pub current_model_id: Option<String>,
+    #[serde(default)]
+    pub available_models: Vec<AcpModelInfo>,
 }
 
 /// Shared shape for `session/new` and `session/load` results.
@@ -190,12 +208,6 @@ pub struct SessionBootstrapResult {
 }
 
 impl SessionBootstrapResult {
-    pub fn current_model_id(&self) -> Option<&str> {
-        self.models
-            .as_ref()
-            .and_then(|m| m.current_model_id.as_deref())
-    }
-
     pub fn running_prompt_id(&self) -> Option<&str> {
         self.meta
             .as_ref()

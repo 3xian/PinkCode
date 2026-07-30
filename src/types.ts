@@ -300,6 +300,12 @@ export const SESSION_MODE_OPTIONS: {
   },
 ];
 
+/** One model from agent catalog (`session/new|load` or `x.ai/models/update`). */
+export interface AvailableModelInfo {
+  modelId: string;
+  name?: string | null;
+}
+
 export interface ManagedAgentInfo {
   handleId: string;
   sessionId?: string | null;
@@ -310,6 +316,11 @@ export interface ManagedAgentInfo {
   /** Mirror of permissionMode === "bypassPermissions". */
   alwaysApprove: boolean;
   modelId?: string | null;
+  /**
+   * Live catalog from the agent. Empty until bootstrap / models/update.
+   * UI falls back to a built-in list when still empty.
+   */
+  availableModels?: AvailableModelInfo[];
   lastError?: string | null;
   title?: string | null;
   createdAt: string;

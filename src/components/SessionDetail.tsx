@@ -328,6 +328,7 @@ export function SessionDetailView({
         timelineItems={timelineItems}
         sessionId={card?.id ?? null}
         modelId={managed?.modelId ?? card.modelId ?? null}
+        availableModels={managed?.availableModels ?? []}
         onModelChange={onModelChange}
         canStop={Boolean(canStop)}
         onStop={onStopAgent}

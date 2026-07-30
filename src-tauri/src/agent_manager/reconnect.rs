@@ -366,7 +366,7 @@ fn run(inner: Arc<Inner>, handle_id: String, failed_generation: u64) {
             next_generation,
             grok_bin: &grok_bin,
             candidate: &candidate,
-            model_id: loaded.current_model_id(),
+            models_info: loaded.models.clone(),
             running_prompt_id: loaded.running_prompt_id().map(str::to_string),
         };
         let Some(old_client) = inbox.activate(activation) else {
@@ -438,7 +438,7 @@ struct CandidateActivation<'a> {
     next_generation: u64,
     grok_bin: &'a str,
     candidate: &'a Arc<AcpClient>,
-    model_id: Option<&'a str>,
+    models_info: Option<crate::acp::protocol::SessionModelsInfo>,
     running_prompt_id: Option<String>,
 }
 
@@ -459,8 +459,8 @@ fn activate_candidate(
     agent.info.pid = Some(activation.candidate.pid());
     agent.info.last_error = None;
     agent.info.pending_permission_count = pending_count(inner, handle_id);
-    if let Some(model_id) = activation.model_id {
-        agent.info.model_id = Some(model_id.to_string());
+    if let Some(ref models) = activation.models_info {
+        super::models::apply_models_info(&mut agent.info, models);
     }
     set_prompt_state(agent, activation.running_prompt_id);
     AgentManager::emit_status(inner, &agent.info);

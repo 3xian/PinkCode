@@ -94,6 +94,21 @@ export function trimLiveList(
   }
 }
 
+function sameAvailableModels(
+  left: ManagedAgentInfo["availableModels"],
+  right: ManagedAgentInfo["availableModels"],
+): boolean {
+  const a = left ?? [];
+  const b = right ?? [];
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].modelId !== b[i].modelId || (a[i].name ?? null) !== (b[i].name ?? null)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function sameManagedAgent(
   left: ManagedAgentInfo,
   right: ManagedAgentInfo,
@@ -105,6 +120,8 @@ export function sameManagedAgent(
     left.pendingPermissionCount === right.pendingPermissionCount &&
     left.alwaysApprove === right.alwaysApprove &&
     left.permissionMode === right.permissionMode &&
+    left.modelId === right.modelId &&
+    sameAvailableModels(left.availableModels, right.availableModels) &&
     left.title === right.title &&
     left.lastError === right.lastError
   );

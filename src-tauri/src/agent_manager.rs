@@ -1,3 +1,4 @@
+use crate::acp::protocol::SessionModelsInfo;
 use crate::acp::{AcpClient, NotifyFn};
 use crate::agent_fs::write_text_file;
 use crate::agent_runtime::{find_grok_bin, now_iso, truncate_text};
@@ -23,6 +24,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
+mod models;
 mod reconnect;
 
 struct LiveAgent {
@@ -214,6 +216,18 @@ impl AgentManager {
         let result = client
             .set_session_model(&session_id, model_id, reasoning_effort)
             .map_err(|error| error.user_message())?;
+        // Reflect the switch immediately so the UI dropdown does not lag on
+        // a later models/update or session snapshot.
+        let updated = {
+            let mut agents = self.inner.agents.lock();
+            agents.get_mut(handle_id).map(|agent| {
+                agent.info.model_id = Some(model_id.to_string());
+                agent.info.clone()
+            })
+        };
+        if let Some(info) = updated {
+            Self::emit_status(&self.inner, &info);
+        }
         Ok(serde_json::to_value(result).unwrap_or_default())
     }
 
@@ -646,6 +660,12 @@ impl AgentManager {
             }
         }
 
+        // Non-blocking agent startup: catalog may arrive after ready via
+        // `x.ai/models/update` (or `_x.ai/models/update` on some transports).
+        if models::is_models_update_method(&method) {
+            Self::apply_models_update_notification(inner, handle_id, &params);
+        }
+
         let payload = json!({
             "handleId": handle_id,
             "sessionId": session_id,
@@ -666,6 +686,29 @@ impl AgentManager {
         } else if !method.is_empty() {
             Self::emit(inner, "agent-notification", payload);
         }
+    }
+
+    fn apply_models_update_notification(inner: &Arc<Inner>, handle_id: &str, params: &Value) {
+        let models: SessionModelsInfo = match serde_json::from_value(params.clone()) {
+            Ok(m) => m,
+            Err(error) => {
+                tracing::debug!(
+                    handle_id,
+                    error = %error,
+                    "ignore unreadable x.ai/models/update params"
+                );
+                return;
+            }
+        };
+        let updated = {
+            let mut agents = inner.agents.lock();
+            let Some(agent) = agents.get_mut(handle_id) else {
+                return;
+            };
+            models::apply_models_info(&mut agent.info, &models);
+            agent.info.clone()
+        };
+        Self::emit_status(inner, &updated);
     }
 
     fn finish_notified_prompt(
@@ -1175,6 +1218,7 @@ impl AgentManager {
             permission_mode,
             always_approve,
             model_id: req.model.clone(),
+            available_models: Vec::new(),
             last_error: None,
             title: req
                 .prompt
@@ -1212,8 +1256,8 @@ impl AgentManager {
 
         info.session_id = Some(session_id.clone());
         task_prefs::set_permission_mode(&session_id, permission_mode)?;
-        if let Some(m) = result.current_model_id() {
-            info.model_id = Some(m.to_string());
+        if let Some(models) = result.models.as_ref() {
+            models::apply_models_info(&mut info, models);
         }
         info.status = ManagedStatus::Ready;
         if let Some(a) = self.inner.agents.lock().get_mut(&handle_id) {
@@ -1303,6 +1347,7 @@ impl AgentManager {
             permission_mode,
             always_approve,
             model_id: None,
+            available_models: Vec::new(),
             last_error: None,
             title: Some(format!(
                 "Attached {}",
@@ -1324,8 +1369,8 @@ impl AgentManager {
             }
         };
 
-        if let Some(m) = result.current_model_id() {
-            info.model_id = Some(m.to_string());
+        if let Some(models) = result.models.as_ref() {
+            models::apply_models_info(&mut info, models);
         }
         info.status = ManagedStatus::Ready;
         if let Some(a) = self.inner.agents.lock().get_mut(&handle_id) {

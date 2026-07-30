@@ -61,6 +61,15 @@ impl PermissionMode {
     }
 }
 
+/// Model advertised by the agent (session/new|load `models` or `x.ai/models/update`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailableModelInfo {
+    pub model_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedAgentInfo {
@@ -72,6 +81,9 @@ pub struct ManagedAgentInfo {
     pub permission_mode: PermissionMode,
     pub always_approve: bool,
     pub model_id: Option<String>,
+    /// Live catalog from the agent. Empty until bootstrap/models/update fills it.
+    #[serde(default)]
+    pub available_models: Vec<AvailableModelInfo>,
     pub last_error: Option<String>,
     pub title: Option<String>,
     pub created_at: String,

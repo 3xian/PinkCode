@@ -143,7 +143,21 @@ jobs:
       - name: Install dependencies
         # setup-node already restores ~/.npm. Avoid npm's unrelated audit/fund
         # network work on the noticeably slower Windows runner.
-        run: npm ci --prefer-offline --no-audit --no-fund
+        # Retry: Windows runners occasionally hit ECONNRESET mid-npm-ci
+        # (transient registry/network blips), which would otherwise fail the
+        # whole release matrix and leave latest.json without win64.
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if npm ci --prefer-offline --no-audit --no-fund; then
+              exit 0
+            fi
+            echo "::warning::npm ci failed (attempt ${attempt}/3); retrying in 15s..."
+            sleep 15
+          done
+          echo "::error::npm ci failed after 3 attempts"
+          exit 1
 
       - name: Configure ad-hoc macOS signing
         if: runner.os == 'macOS'

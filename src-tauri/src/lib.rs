@@ -36,7 +36,7 @@ use models::{
     ActiveSession, DashboardStats, HunkPage, SessionCard, SessionDetail, SessionUpdatePage,
     TokenUsageSeries,
 };
-use project_fs::{DirEntry, GitChange};
+use project_fs::{DirEntry, GitBranchInfo, GitChange, GitFileDiff};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
@@ -304,6 +304,125 @@ async fn set_session_mode(
         .map_err(|e| format!("set_session_mode task failed: {e}"))?
 }
 
+/// ACP `x.ai/set_session_model` — switch the model for a session.
+#[tauri::command]
+async fn set_session_model(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+    model_id: String,
+    reasoning_effort: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        manager.set_session_model(&handle_id, &model_id, reasoning_effort.as_deref())
+    })
+    .await
+    .map_err(|e| format!("set_session_model task failed: {e}"))?
+}
+
+/// ACP `x.ai/session/usage` — live turn tokens and cost.
+#[tauri::command]
+async fn get_session_usage(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+) -> Result<serde_json::Value, String> {
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.session_usage(&handle_id))
+        .await
+        .map_err(|e| format!("session_usage task failed: {e}"))?
+}
+
+/// ACP `x.ai/recap` — session recap / summary.
+#[tauri::command]
+async fn get_session_recap(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+    max_turns: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.recap(&handle_id, max_turns))
+        .await
+        .map_err(|e| format!("recap task failed: {e}"))?
+}
+
+/// ACP `x.ai/rewind/points` — list rewindable prompt indices.
+#[tauri::command]
+async fn get_rewind_points(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+) -> Result<serde_json::Value, String> {
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.rewind_points(&handle_id))
+        .await
+        .map_err(|e| format!("rewind_points task failed: {e}"))?
+}
+
+/// ACP `x.ai/rewind/execute` — rewind session to a previous prompt index.
+#[tauri::command]
+async fn rewind_execute(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+    target_prompt_index: u64,
+    mode: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        manager.rewind_execute(&handle_id, target_prompt_index, mode.as_deref())
+    })
+    .await
+    .map_err(|e| format!("rewind_execute task failed: {e}"))?
+}
+
+/// ACP `x.ai/subagent/cancel` — cancel a running subagent.
+#[tauri::command]
+async fn cancel_subagent(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+    subagent_id: String,
+) -> Result<serde_json::Value, String> {
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.cancel_subagent(&handle_id, &subagent_id))
+        .await
+        .map_err(|e| format!("cancel_subagent task failed: {e}"))?
+}
+
+/// ACP `x.ai/subagent/list_running` — list running subagents.
+#[tauri::command]
+async fn list_subagents(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+) -> Result<serde_json::Value, String> {
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.list_subagents(&handle_id))
+        .await
+        .map_err(|e| format!("list_subagents task failed: {e}"))?
+}
+
+/// ACP `x.ai/task/kill` — kill a background task.
+#[tauri::command]
+async fn kill_task(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+    task_id: String,
+) -> Result<serde_json::Value, String> {
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.kill_task(&handle_id, &task_id))
+        .await
+        .map_err(|e| format!("kill_task task failed: {e}"))?
+}
+
+/// ACP `x.ai/task/list` — list background tasks.
+#[tauri::command]
+async fn list_tasks(
+    manager: tauri::State<'_, AgentManager>,
+    handle_id: String,
+) -> Result<serde_json::Value, String> {
+    let manager = manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.list_tasks(&handle_id))
+        .await
+        .map_err(|e| format!("list_tasks task failed: {e}"))?
+}
+
 /// Persist permission mode for a task even when no agent is attached.
 #[tauri::command]
 fn set_task_permission_mode(session_id: String, mode: PermissionMode) -> Result<(), String> {
@@ -387,6 +506,62 @@ async fn git_status(cwd: String) -> Result<Vec<GitChange>, String> {
         .map_err(|e| format!("git status task failed: {e}"))?
 }
 
+/// Git branch info: name, upstream, ahead/behind, staged/unstaged/untracked counts.
+#[tauri::command]
+async fn git_branch_info(cwd: String) -> Result<GitBranchInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || project_fs::git_branch_info(&cwd))
+        .await
+        .map_err(|e| format!("git branch info task failed: {e}"))?
+}
+
+/// Git unified diff for a single file (staged or unstaged).
+#[tauri::command]
+async fn git_diff_file(cwd: String, path: String, staged: bool) -> Result<GitFileDiff, String> {
+    tauri::async_runtime::spawn_blocking(move || project_fs::git_diff_file(&cwd, &path, staged))
+        .await
+        .map_err(|e| format!("git diff file task failed: {e}"))?
+}
+
+/// Stage a file (git add).
+#[tauri::command]
+async fn git_stage_file(cwd: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || project_fs::git_stage(&cwd, &path))
+        .await
+        .map_err(|e| format!("git stage task failed: {e}"))?
+}
+
+/// Unstage a file (git reset HEAD).
+#[tauri::command]
+async fn git_unstage_file(cwd: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || project_fs::git_unstage(&cwd, &path))
+        .await
+        .map_err(|e| format!("git unstage task failed: {e}"))?
+}
+
+/// Stage all changes.
+#[tauri::command]
+async fn git_stage_all(cwd: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || project_fs::git_stage_all(&cwd))
+        .await
+        .map_err(|e| format!("git stage all task failed: {e}"))?
+}
+
+/// Unstage all changes.
+#[tauri::command]
+async fn git_unstage_all(cwd: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || project_fs::git_unstage_all(&cwd))
+        .await
+        .map_err(|e| format!("git unstage all task failed: {e}"))?
+}
+
+/// Commit staged changes.
+#[tauri::command]
+async fn git_commit(cwd: String, message: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || project_fs::git_commit(&cwd, &message))
+        .await
+        .map_err(|e| format!("git commit task failed: {e}"))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Layered config + structured logging before any agent/watcher work.
@@ -452,6 +627,15 @@ pub fn run() {
             resolve_permission,
             set_permission_mode,
             set_session_mode,
+            set_session_model,
+            get_session_usage,
+            get_session_recap,
+            get_rewind_points,
+            rewind_execute,
+            cancel_subagent,
+            list_subagents,
+            kill_task,
+            list_tasks,
             set_task_permission_mode,
             get_task_permission_mode,
             list_task_permission_modes,
@@ -463,6 +647,13 @@ pub fn run() {
             open_project_path,
             read_project_file,
             git_status,
+            git_branch_info,
+            git_diff_file,
+            git_stage_file,
+            git_unstage_file,
+            git_stage_all,
+            git_unstage_all,
+            git_commit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

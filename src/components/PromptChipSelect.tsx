@@ -6,7 +6,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 
-export type ChipAccent = "neutral" | "plan" | "auto" | "yolo" | "danger";
+export type ChipAccent = "neutral" | "plan" | "ask" | "auto" | "yolo" | "danger";
 
 export interface ChipOption<T extends string = string> {
   value: T;

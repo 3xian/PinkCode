@@ -37,6 +37,33 @@ pub struct GitChange {
     pub kind: String,
 }
 
+/// Branch and upstream tracking info.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBranchInfo {
+    pub branch: Option<String>,
+    pub upstream: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+    /// Staged change count (index vs HEAD).
+    pub staged_count: u32,
+    /// Unstaged change count (worktree vs index).
+    pub unstaged_count: u32,
+    /// Untracked file count.
+    pub untracked_count: u32,
+}
+
+/// One file diff (unified format).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitFileDiff {
+    pub path: String,
+    /// Unified diff content (or empty if no changes).
+    pub diff: String,
+    /// "staged" | "unstaged"
+    pub kind: String,
+}
+
 /// List immediate children of `path` under `root` (or `root` itself when `path` is empty).
 ///
 /// Both paths are absolute after resolution. Entries starting with `.` are included
@@ -593,6 +620,196 @@ fn image_mime_for_path(path: &Path) -> Option<&'static str> {
         "tif" | "tiff" => Some("image/tiff"),
         _ => None,
     }
+}
+
+/// Run a git command under `cwd`, return stdout bytes (truncated at limit).
+fn run_git_cmd(
+    cwd: &Path,
+    args: &[&str],
+    timeout: Duration,
+    max_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    let mut cmd = Command::new("git");
+    cmd.args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("git {} failed to start: {e}", args.join(" ")))?;
+    let stdout = child.stdout.take().ok_or("git stdout unavailable")?;
+    let stdout_reader = thread::spawn(move || read_limited(stdout, max_bytes));
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(25)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("git {} timed out", args.join(" ")));
+            }
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("git {} wait failed: {e}", args.join(" ")));
+            }
+        }
+    };
+    let (stdout_bytes, _) = stdout_reader
+        .join()
+        .map_err(|_| "git stdout reader panicked".to_string())??;
+    if !status.success() {
+        return Ok(stdout_bytes); // return partial output; caller handles empty
+    }
+    Ok(stdout_bytes)
+}
+
+/// Get branch name, upstream, ahead/behind counts, and staged/unstaged counts.
+pub fn git_branch_info(cwd: &str) -> Result<GitBranchInfo, String> {
+    let root = resolve_root(cwd)?;
+
+    let branch = String::from_utf8_lossy(&run_git_cmd(
+        &root,
+        &["rev-parse", "--abbrev-ref", "HEAD"],
+        GIT_TIMEOUT,
+        4096,
+    )?)
+    .trim()
+    .to_string();
+    let branch = if branch.is_empty() || branch == "HEAD" {
+        None
+    } else {
+        Some(branch)
+    };
+
+    let upstream_raw = run_git_cmd(
+        &root,
+        &["rev-parse", "--abbrev-ref", "@{u}"],
+        GIT_TIMEOUT,
+        4096,
+    );
+    let upstream = upstream_raw
+        .ok()
+        .map(|b| String::from_utf8_lossy(&b).trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let (ahead, behind) = if upstream.is_some() {
+        let counts = run_git_cmd(
+            &root,
+            &["rev-list", "--left-right", "--count", "HEAD...@{u}"],
+            GIT_TIMEOUT,
+            256,
+        )
+        .unwrap_or_default();
+        let s = String::from_utf8_lossy(&counts);
+        let parts: Vec<&str> = s.trim().split('\t').collect();
+        let ahead = parts.first().and_then(|p| p.parse().ok()).unwrap_or(0);
+        let behind = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(0);
+        (ahead, behind)
+    } else {
+        (0, 0)
+    };
+
+    // Count staged / unstaged / untracked from porcelain
+    let changes = git_status(cwd).unwrap_or_default();
+    let mut staged_count = 0u32;
+    let mut unstaged_count = 0u32;
+    let mut untracked_count = 0u32;
+    for c in &changes {
+        let bytes = c.status.as_bytes();
+        if bytes.len() >= 2 {
+            let x = bytes[0] as char;
+            let y = bytes[1] as char;
+            if x == '?' && y == '?' {
+                untracked_count += 1;
+            } else {
+                if x != ' ' && x != '?' {
+                    staged_count += 1;
+                }
+                if y != ' ' && y != '?' {
+                    unstaged_count += 1;
+                }
+            }
+        }
+    }
+
+    Ok(GitBranchInfo {
+        branch,
+        upstream,
+        ahead,
+        behind,
+        staged_count,
+        unstaged_count,
+        untracked_count,
+    })
+}
+
+/// Get unified diff for a specific file (staged or unstaged).
+pub fn git_diff_file(cwd: &str, path: &str, staged: bool) -> Result<GitFileDiff, String> {
+    let root = resolve_root(cwd)?;
+    let args: &[&str] = if staged {
+        &["diff", "--cached", "--", path]
+    } else {
+        &["diff", "--", path]
+    };
+    let diff_bytes = run_git_cmd(&root, args, GIT_TIMEOUT, GIT_OUTPUT_MAX_BYTES)?;
+    let diff = String::from_utf8_lossy(&diff_bytes).into_owned();
+    Ok(GitFileDiff {
+        path: path.to_string(),
+        diff,
+        kind: if staged { "staged" } else { "unstaged" }.to_string(),
+    })
+}
+
+/// Stage a file (git add).
+pub fn git_stage(cwd: &str, path: &str) -> Result<(), String> {
+    let root = resolve_root(cwd)?;
+    run_git_cmd(&root, &["add", "--", path], GIT_TIMEOUT, 0)?;
+    // Bust the git status cache so the frontend sees the update immediately.
+    git_cache().lock().remove(&path_for_ui(&root));
+    Ok(())
+}
+
+/// Unstage a file (git reset HEAD).
+pub fn git_unstage(cwd: &str, path: &str) -> Result<(), String> {
+    let root = resolve_root(cwd)?;
+    run_git_cmd(&root, &["reset", "HEAD", "--", path], GIT_TIMEOUT, 0)?;
+    git_cache().lock().remove(&path_for_ui(&root));
+    Ok(())
+}
+
+/// Stage all changes (git add -A).
+pub fn git_stage_all(cwd: &str) -> Result<(), String> {
+    let root = resolve_root(cwd)?;
+    run_git_cmd(&root, &["add", "-A"], GIT_TIMEOUT, 0)?;
+    git_cache().lock().remove(&path_for_ui(&root));
+    Ok(())
+}
+
+/// Unstage all changes (git reset HEAD).
+pub fn git_unstage_all(cwd: &str) -> Result<(), String> {
+    let root = resolve_root(cwd)?;
+    run_git_cmd(&root, &["reset", "HEAD"], GIT_TIMEOUT, 0)?;
+    git_cache().lock().remove(&path_for_ui(&root));
+    Ok(())
+}
+
+/// Commit staged changes.
+pub fn git_commit(cwd: &str, message: &str) -> Result<String, String> {
+    let root = resolve_root(cwd)?;
+    let output = run_git_cmd(&root, &["commit", "-m", message], GIT_TIMEOUT, 65536)?;
+    git_cache().lock().remove(&path_for_ui(&root));
+    Ok(String::from_utf8_lossy(&output).trim().to_string())
 }
 
 #[cfg(test)]

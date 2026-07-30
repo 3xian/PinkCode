@@ -39,6 +39,8 @@ interface Props {
   sessionId?: string | null;
   /** Current model id (e.g. grok-4.5), shown left of Send. */
   modelId?: string | null;
+  /** Change the session model via ACP set_session_model. */
+  onModelChange?: (modelId: string) => void;
   /** Show Stop when the managed agent process can be terminated. */
   canStop?: boolean;
   onStop?: () => void;
@@ -54,6 +56,7 @@ export function PromptBar({
   timelineItems = [],
   sessionId = null,
   modelId = null,
+  onModelChange,
   canStop = false,
   onStop,
 }: Props) {
@@ -379,9 +382,10 @@ export function PromptBar({
           </div>
           <div className="prompt-send-group">
             {modelId && (
-              <span className="prompt-model" title={modelId}>
-                {modelId}
-              </span>
+              <ModelSelector
+                current={modelId}
+                onChange={onModelChange}
+              />
             )}
             {canStop && onStop && (
               <button
@@ -439,4 +443,45 @@ function parseSlashQuery(
     return { query: body, hasArgs: false };
   }
   return { query: body.slice(0, space), hasArgs: true };
+}
+
+// ── Model selector ──────────────────────────────────────────────────────
+
+/** Available Grok models for the dropdown. */
+const AVAILABLE_MODELS = [
+  { id: "grok-4.5", label: "Grok 4.5" },
+  { id: "grok-4", label: "Grok 4" },
+  { id: "grok-4-mini", label: "Grok 4 Mini" },
+  { id: "grok-4-fast", label: "Grok 4 Fast" },
+] as const;
+
+function ModelSelector({
+  current,
+  onChange,
+}: {
+  current: string;
+  onChange?: (modelId: string) => void;
+}) {
+  if (!onChange || AVAILABLE_MODELS.length <= 1) {
+    return (
+      <span className="prompt-model" title={current}>
+        {current}
+      </span>
+    );
+  }
+
+  return (
+    <select
+      className="prompt-model-select"
+      value={current}
+      title={`Current model: ${current}`}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {AVAILABLE_MODELS.map((m) => (
+        <option key={m.id} value={m.id}>
+          {m.label}
+        </option>
+      ))}
+    </select>
+  );
 }

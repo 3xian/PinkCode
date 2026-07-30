@@ -119,6 +119,23 @@
   text-overflow: ellipsis;
 }
 
+.subagent-task-chip-close {
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: var(--text-muted);
+}
+.subagent-task-chip:hover .subagent-task-chip-close {
+  opacity: 1;
+}
+.subagent-task-chip[role="button"] {
+  cursor: pointer;
+}
+.subagent-task-chip[role="button"]:hover {
+  filter: brightness(0.9);
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

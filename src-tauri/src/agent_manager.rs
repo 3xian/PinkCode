@@ -192,22 +192,106 @@ impl AgentManager {
         if mode_id.is_empty() {
             return Err("mode_id is empty".into());
         }
-        let (session_id, client) = {
-            let agents = self.inner.agents.lock();
-            let agent = agents
-                .get(handle_id)
-                .ok_or_else(|| format!("unknown handle {handle_id}"))?;
-            let sid = agent
-                .info
-                .session_id
-                .clone()
-                .ok_or_else(|| "agent has no session_id".to_string())?;
-            (sid, Arc::clone(&agent.client))
-        };
+        let (session_id, client) = self.resolve_target(handle_id)?;
         client
             .session_set_mode(&session_id, mode_id)
             .map_err(|error| error.user_message())?;
         Ok(())
+    }
+
+    /// ACP `x.ai/set_session_model` — switch the model for a session.
+    pub fn set_session_model(
+        &self,
+        handle_id: &str,
+        model_id: &str,
+        reasoning_effort: Option<&str>,
+    ) -> Result<Value, String> {
+        let model_id = model_id.trim();
+        if model_id.is_empty() {
+            return Err("model_id is empty".into());
+        }
+        let (session_id, client) = self.resolve_target(handle_id)?;
+        let result = client
+            .set_session_model(&session_id, model_id, reasoning_effort)
+            .map_err(|error| error.user_message())?;
+        Ok(serde_json::to_value(result).unwrap_or_default())
+    }
+
+    /// ACP `x.ai/session/usage` — live turn token usage.
+    pub fn session_usage(&self, handle_id: &str) -> Result<Value, String> {
+        let (session_id, client) = self.resolve_target(handle_id)?;
+        let result = client
+            .session_usage(&session_id)
+            .map_err(|error| error.user_message())?;
+        Ok(serde_json::to_value(result).unwrap_or_default())
+    }
+
+    /// ACP `x.ai/recap` — session recap / summary.
+    pub fn recap(&self, handle_id: &str, max_turns: Option<u32>) -> Result<Value, String> {
+        let (session_id, client) = self.resolve_target(handle_id)?;
+        let result = client
+            .recap(&session_id, max_turns)
+            .map_err(|error| error.user_message())?;
+        Ok(serde_json::to_value(result).unwrap_or_default())
+    }
+
+    /// ACP `x.ai/rewind/points` — list rewindable points.
+    pub fn rewind_points(&self, handle_id: &str) -> Result<Value, String> {
+        let (session_id, client) = self.resolve_target(handle_id)?;
+        let result = client
+            .rewind_points(&session_id)
+            .map_err(|error| error.user_message())?;
+        Ok(serde_json::to_value(result).unwrap_or_default())
+    }
+
+    /// ACP `x.ai/rewind/execute` — rewind to a target prompt index.
+    pub fn rewind_execute(
+        &self,
+        handle_id: &str,
+        target_prompt_index: u64,
+        mode: Option<&str>,
+    ) -> Result<Value, String> {
+        let (session_id, client) = self.resolve_target(handle_id)?;
+        let result = client
+            .rewind_execute(&session_id, target_prompt_index, mode)
+            .map_err(|error| error.user_message())?;
+        Ok(serde_json::to_value(result).unwrap_or_default())
+    }
+
+    /// ACP `x.ai/subagent/cancel` — cancel a running subagent.
+    pub fn cancel_subagent(&self, handle_id: &str, subagent_id: &str) -> Result<Value, String> {
+        let (session_id, client) = self.resolve_target(handle_id)?;
+        let result = client
+            .cancel_subagent(&session_id, subagent_id)
+            .map_err(|error| error.user_message())?;
+        Ok(serde_json::to_value(result).unwrap_or_default())
+    }
+
+    /// ACP `x.ai/subagent/list_running` — list running subagents.
+    pub fn list_subagents(&self, handle_id: &str) -> Result<Value, String> {
+        let (session_id, client) = self.resolve_target(handle_id)?;
+        let result = client
+            .list_subagents(&session_id)
+            .map_err(|error| error.user_message())?;
+        Ok(serde_json::to_value(result).unwrap_or_default())
+    }
+
+    /// ACP `x.ai/task/kill` — kill a background task.
+    pub fn kill_task(&self, handle_id: &str, task_id: &str) -> Result<Value, String> {
+        let (session_id, client) = self.resolve_target(handle_id)?;
+        let result = client
+            .kill_task(&session_id, task_id)
+            .map_err(|error| error.user_message())?;
+        Ok(serde_json::to_value(result).unwrap_or_default())
+    }
+
+    /// ACP `x.ai/task/list` — list background tasks.
+    pub fn list_tasks(&self, handle_id: &str) -> Result<Value, String> {
+        let (session_id, client) = self.resolve_target(handle_id)?;
+        let result = client
+            .list_tasks(&session_id)
+            .map_err(|error| error.user_message())?;
+        Ok(serde_json::to_value(result).unwrap_or_default())
     }
 
     pub fn interject(&self, handle_id: &str, text: &str) -> Result<Value, String> {
@@ -215,24 +299,14 @@ impl AgentManager {
         if text.is_empty() {
             return Err("interjection is empty".into());
         }
-        let (session_id, client) = {
-            let agents = self.inner.agents.lock();
-            let agent = agents
-                .get(handle_id)
-                .ok_or_else(|| format!("unknown handle {handle_id}"))?;
-            let session_id = agent
-                .info
-                .session_id
-                .clone()
-                .ok_or_else(|| "agent has no session_id".to_string())?;
-            (session_id, Arc::clone(&agent.client))
-        };
+        let (session_id, client) = self.resolve_target(handle_id)?;
         client
             .session_interject(&session_id, text)
             .map_err(|error| error.user_message())
     }
 
-    fn queue_target(&self, handle_id: &str) -> Result<(String, Arc<AcpClient>), String> {
+    /// Resolve a handle_id into its (session_id, AcpClient) pair.
+    fn resolve_target(&self, handle_id: &str) -> Result<(String, Arc<AcpClient>), String> {
         let agents = self.inner.agents.lock();
         let agent = agents
             .get(handle_id)
@@ -246,21 +320,21 @@ impl AgentManager {
     }
 
     pub fn queue_remove(&self, handle_id: &str, id: &str, version: u64) -> Result<(), String> {
-        let (session_id, client) = self.queue_target(handle_id)?;
+        let (session_id, client) = self.resolve_target(handle_id)?;
         client
             .queue_remove(&session_id, id, version)
             .map_err(|error| error.user_message())
     }
 
     pub fn queue_reorder(&self, handle_id: &str, ordered_ids: &[String]) -> Result<(), String> {
-        let (session_id, client) = self.queue_target(handle_id)?;
+        let (session_id, client) = self.resolve_target(handle_id)?;
         client
             .queue_reorder(&session_id, ordered_ids)
             .map_err(|error| error.user_message())
     }
 
     pub fn queue_clear(&self, handle_id: &str) -> Result<(), String> {
-        let (session_id, client) = self.queue_target(handle_id)?;
+        let (session_id, client) = self.resolve_target(handle_id)?;
         client
             .queue_clear(&session_id)
             .map_err(|error| error.user_message())
@@ -270,14 +344,14 @@ impl AgentManager {
         if new_text.trim().is_empty() {
             return Err("queued prompt is empty".into());
         }
-        let (session_id, client) = self.queue_target(handle_id)?;
+        let (session_id, client) = self.resolve_target(handle_id)?;
         client
             .queue_edit(&session_id, id, new_text)
             .map_err(|error| error.user_message())
     }
 
     pub fn queue_interject(&self, handle_id: &str, id: &str, version: u64) -> Result<(), String> {
-        let (session_id, client) = self.queue_target(handle_id)?;
+        let (session_id, client) = self.resolve_target(handle_id)?;
         client
             .queue_interject(&session_id, id, version)
             .map_err(|error| error.user_message())

@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   attachAgent,
+  cancelSubagent,
   getLastSpawnPermissionMode,
   getSessionDetail,
   interjectAgent,
+  killTask,
   listManagedAgents,
   listPendingPermissions,
   listSessions,
@@ -13,7 +15,10 @@ import {
   promptAgent,
   resolvePermission,
   setPermissionMode,
+  setSessionMode,
+  setSessionModel,
   setTaskPermissionMode,
+  setTaskPlanArmed,
   spawnAgent,
   stopAgent,
 } from "./api";
@@ -50,6 +55,7 @@ import {
   applySessionModeToPrompt,
   displaySessionMode,
   sessionModeFromPermission,
+  sessionModeWireId,
 } from "./utils/sessionMode";
 import "./App.css";
 
@@ -594,24 +600,28 @@ function App() {
       return;
     }
 
+    const liveHandle =
+      managedForSession &&
+      managedForSession.status !== "stopped" &&
+      managedForSession.status !== "error"
+        ? managedForSession.handleId
+        : null;
+
     setError(null);
     try {
+      // Sync ACP session mode for every mode switch (plan / ask / default).
+      if (sessionId && liveHandle) {
+        await setSessionMode(liveHandle, sessionModeWireId(mode));
+      }
+
+      // Persist plan arming separately.
       if (sessionId && planChanged) {
-        const liveHandle =
-          managedForSession &&
-          managedForSession.status !== "stopped" &&
-          managedForSession.status !== "error"
-            ? managedForSession.handleId
-            : null;
-        await planMode.syncPlanArming(sessionId, next.planArmed, liveHandle);
+        await setTaskPlanArmed(sessionId, next.planArmed);
       }
 
       if (permChanged && targetPerm) {
-        if (managedForSession && managedForSession.status !== "stopped") {
-          const info = await setPermissionMode(
-            managedForSession.handleId,
-            targetPerm,
-          );
+        if (liveHandle) {
+          const info = await setPermissionMode(liveHandle, targetPerm);
           upsertManaged(info);
           if (info.sessionId) {
             setTaskPermissionModes((prev) => ({
@@ -924,6 +934,33 @@ function App() {
           pinTimelineBottomSeq={pinTimelineBottomSeq}
           availableCommands={availableCommands}
           onOpenFile={openPreview}
+          onCancelSubagent={
+            managedForSession &&
+            managedForSession.status !== "stopped" &&
+            managedForSession.status !== "error"
+              ? (subagentId: string) => {
+                  void cancelSubagent(managedForSession.handleId, subagentId);
+                }
+              : undefined
+          }
+          onKillTask={
+            managedForSession &&
+            managedForSession.status !== "stopped" &&
+            managedForSession.status !== "error"
+              ? (taskId: string) => {
+                  void killTask(managedForSession.handleId, taskId);
+                }
+              : undefined
+          }
+          onModelChange={
+            managedForSession &&
+            managedForSession.status !== "stopped" &&
+            managedForSession.status !== "error"
+              ? (modelId: string) => {
+                  void setSessionModel(managedForSession.handleId, modelId);
+                }
+              : undefined
+          }
         />
 
         <aside

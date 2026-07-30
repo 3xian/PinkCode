@@ -574,6 +574,135 @@
   letter-spacing: 0.03em;
 }
 
+/* Git branch info bar */
+.git-branch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+
+.git-branch-name {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.git-upstream {
+  font-size: 11px;
+}
+
+.git-counts {
+  margin-left: auto;
+  font-size: 11px;
+  display: flex;
+  gap: 4px;
+}
+
+.git-staged-count { color: var(--color-green, #4caf50); }
+.git-unstaged-count { color: var(--color-orange, #ff9800); }
+.git-untracked-count { color: var(--color-muted); }
+
+/* Git section groups (staged / unstaged) */
+.git-section-group {
+  margin-bottom: 4px;
+}
+
+.git-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.git-section-label {
+  color: var(--color-text);
+}
+
+/* Git row actions (stage / unstage buttons) */
+.git-row-actions {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.git-change:hover .git-row-actions {
+  opacity: 1;
+}
+
+/* Inline diff viewer */
+.git-diff-inline {
+  border-top: 1px solid var(--color-border);
+  margin-top: 8px;
+  padding: 8px 0;
+}
+
+.git-diff-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.git-diff-content {
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow: auto;
+  background: var(--color-bg-subtle);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Commit section */
+.git-commit-section {
+  border-top: 1px solid var(--color-border);
+  padding: 8px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.git-commit-input {
+  flex: 1;
+  min-width: 140px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  resize: vertical;
+}
+
+.git-commit-result {
+  width: 100%;
+  font-size: 11px;
+  padding: 2px 0;
+}
+
+.btn-link.tiny {
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 1;
+  min-width: 18px;
+  text-align: center;
+}
+
 .btn.tiny {
   padding: 0 6px;
   min-height: 20px;

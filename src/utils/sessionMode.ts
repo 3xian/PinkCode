@@ -1,7 +1,7 @@
 import type { PermissionMode, SessionMode } from "../types";
 import { SESSION_MODES } from "../types";
 
-/** Shift+Tab order (Grok): Normal → Plan → Auto → Always-approve → … */
+/** Shift+Tab order (Grok): Normal → Plan → Ask → Auto → Always-approve → … */
 export function cycleSessionMode(current: SessionMode): SessionMode {
   const i = SESSION_MODES.indexOf(current);
   const next = i < 0 ? 0 : (i + 1) % SESSION_MODES.length;
@@ -9,12 +9,10 @@ export function cycleSessionMode(current: SessionMode): SessionMode {
 }
 
 /**
- * When Mode is Plan and the user sends free text, prefix `/plan`.
- * Slash commands and empty strings are left alone.
+ * When Mode is Plan / Ask and the user sends free text, apply prefix.
  *
- * Real activation over ACP is `session/set_mode({ modeId: "plan" })` (Grok
- * Build `handle_session_mode` → enter_pending). The `/plan` prefix is TUI
- * parity / model-visible label; it is not sufficient alone.
+ * Real activation over ACP is `session/set_mode({ modeId: "plan" })` or
+ * `session/set_mode({ modeId: "ask" })`. The prefix is model-visible label.
  */
 export function applySessionModeToPrompt(
   mode: SessionMode,
@@ -22,9 +20,28 @@ export function applySessionModeToPrompt(
 ): string {
   const trimmed = text.trim();
   if (!trimmed) return text;
-  if (mode !== "plan") return text;
-  if (trimmed.startsWith("/")) return text;
-  return `/plan ${trimmed}`;
+  if (mode === "plan" && !trimmed.startsWith("/")) {
+    return `/plan ${trimmed}`;
+  }
+  if (mode === "ask" && !trimmed.startsWith("/")) {
+    return `/ask ${trimmed}`;
+  }
+  return text;
+}
+
+/**
+ * ACP wire mode_id for a SessionMode.
+ * Grok SessionMode wire ids: `default` | `plan` | `ask`.
+ */
+export function sessionModeWireId(mode: SessionMode): string {
+  switch (mode) {
+    case "plan":
+      return "plan";
+    case "ask":
+      return "ask";
+    default:
+      return "default";
+  }
 }
 
 /**
@@ -89,6 +106,8 @@ export function applySessionModeChange(
   switch (mode) {
     case "plan":
       return { planArmed: true, permission: null };
+    case "ask":
+      return { planArmed: false, permission: null };
     case "auto":
       return { planArmed: false, permission: "auto" };
     case "alwaysApprove":

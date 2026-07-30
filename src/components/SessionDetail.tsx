@@ -19,6 +19,7 @@ import type {
   SessionDetail as Detail,
 } from "../types";
 import { writeClipboard } from "../utils/clipboard";
+import { getSessionRecap } from "../api";
 import {
   contextPct,
   formatDuration,
@@ -70,6 +71,12 @@ interface Props {
   availableCommands?: AvailableCommand[];
   /** Open a project file path in the right-rail preview pane. */
   onOpenFile?: (path: string) => void;
+  /** Cancel a running subagent by its id. */
+  onCancelSubagent?: (subagentId: string) => void;
+  /** Kill a running background task by its id. */
+  onKillTask?: (taskId: string) => void;
+  /** Switch session model via ACP set_session_model. */
+  onModelChange?: (modelId: string) => void;
 }
 
 const TIMELINE_FILTER_LABELS: Record<string, string> = {
@@ -121,6 +128,9 @@ export function SessionDetailView({
   pinTimelineBottomSeq = 0,
   availableCommands = [],
   onOpenFile,
+  onCancelSubagent,
+  onKillTask,
+  onModelChange,
 }: Props) {
   const tabBodyRef = useRef<HTMLDivElement>(null);
 
@@ -192,8 +202,30 @@ export function SessionDetailView({
             <span>
               updated {formatRelative(card.lastActiveAt ?? card.updatedAt)}
             </span>
+            {onModelChange && managed && (
+              <span className="detail-header-actions">
+                <button
+                  className="btn-link tiny"
+                  title="Session recap / summary"
+                  onClick={() => {
+                    void getSessionRecap(managed.handleId).then((r) => {
+                      if (r.recap) {
+                        // eslint-disable-next-line no-alert
+                        alert(r.recap.slice(0, 2000));
+                      }
+                    });
+                  }}
+                >
+                  Recap
+                </button>
+              </span>
+            )}
           </div>
-          <SubagentTaskStrip items={timelineItems} />
+          <SubagentTaskStrip
+            items={timelineItems}
+            onCancelSubagent={onCancelSubagent}
+            onKillTask={onKillTask}
+          />
         </div>
 
         <div className="metric-grid">
@@ -283,6 +315,7 @@ export function SessionDetailView({
         timelineItems={timelineItems}
         sessionId={card?.id ?? null}
         modelId={managed?.modelId ?? card.modelId ?? null}
+        onModelChange={onModelChange}
         canStop={Boolean(canStop)}
         onStop={onStopAgent}
       />
@@ -516,7 +549,15 @@ function TimelinePanel({
  * Live chips for running child subagents + background tasks.
  * Mirrors Grok Build's tasks-pane summary without a second full pane.
  */
-function SubagentTaskStrip({ items }: { items: TimelineItem[] }) {
+function SubagentTaskStrip({
+  items,
+  onCancelSubagent,
+  onKillTask,
+}: {
+  items: TimelineItem[];
+  onCancelSubagent?: (subagentId: string) => void;
+  onKillTask?: (taskId: string) => void;
+}) {
   const subs = useMemo(() => listActiveSubagents(items), [items]);
   const tasks = useMemo(() => listActiveBgTasks(items), [items]);
   if (subs.length === 0 && tasks.length === 0) return null;
@@ -532,9 +573,27 @@ function SubagentTaskStrip({ items }: { items: TimelineItem[] }) {
             s.subagentType,
             s.model,
             s.childSessionId,
+            onCancelSubagent ? "Click to cancel" : "",
           ]
             .filter(Boolean)
             .join(" · ")}
+          onClick={
+            onCancelSubagent
+              ? () => onCancelSubagent(s.subagentId)
+              : undefined
+          }
+          role={onCancelSubagent ? "button" : undefined}
+          tabIndex={onCancelSubagent ? 0 : undefined}
+          onKeyDown={
+            onCancelSubagent
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onCancelSubagent(s.subagentId);
+                  }
+                }
+              : undefined
+          }
         >
           <span className="subagent-task-chip-mark" aria-hidden>
             ◆
@@ -544,6 +603,11 @@ function SubagentTaskStrip({ items }: { items: TimelineItem[] }) {
             {s.subagentType}
             {s.activityLabel ? ` · ${s.activityLabel}` : ""}
           </span>
+          {onCancelSubagent && (
+            <span className="subagent-task-chip-close" aria-hidden title="Cancel subagent">
+              ✕
+            </span>
+          )}
         </span>
       ))}
       {tasks.map((t) => (
@@ -552,13 +616,40 @@ function SubagentTaskStrip({ items }: { items: TimelineItem[] }) {
           className={`subagent-task-chip task-chip${
             t.isMonitor ? " is-monitor" : ""
           }`}
-          title={[t.command, t.taskId, t.cwd].filter(Boolean).join(" · ")}
+          title={[
+            t.command,
+            t.taskId,
+            t.cwd,
+            onKillTask ? "Click to kill" : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+          onClick={
+            onKillTask ? () => onKillTask(t.taskId) : undefined
+          }
+          role={onKillTask ? "button" : undefined}
+          tabIndex={onKillTask ? 0 : undefined}
+          onKeyDown={
+            onKillTask
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onKillTask(t.taskId);
+                  }
+                }
+              : undefined
+          }
         >
           <span className="subagent-task-chip-mark" aria-hidden>
             ▣
           </span>
           {t.isMonitor ? "Monitor" : "Task"}:{" "}
           {t.description?.trim() || t.command || t.taskId}
+          {onKillTask && (
+            <span className="subagent-task-chip-close" aria-hidden title="Kill task">
+              ✕
+            </span>
+          )}
         </span>
       ))}
     </div>

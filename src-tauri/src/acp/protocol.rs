@@ -339,6 +339,207 @@ pub struct QueueInterjectParams {
     pub client_identifier: String,
 }
 
+// ── x.ai/set_session_model ──────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetSessionModelParams {
+    pub session_id: String,
+    pub model_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetSessionModelResult {
+    #[serde(default)]
+    pub accepted: bool,
+    #[serde(default)]
+    pub model_id: Option<String>,
+}
+
+// ── x.ai/session/usage ──────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionUsageParams {
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionUsageResult {
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
+    #[serde(default)]
+    pub cached_read_tokens: u64,
+    #[serde(default)]
+    pub total_tokens: u64,
+    #[serde(default)]
+    pub cost_usd_ticks: u64,
+    #[serde(default)]
+    pub turn_count: u64,
+}
+
+// ── x.ai/recap ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecapParams {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_turns: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecapResult {
+    #[serde(default)]
+    pub recap: Option<String>,
+    #[serde(default)]
+    pub available: bool,
+}
+
+// ── x.ai/rewind/points ──────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RewindPointsParams {
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RewindPoint {
+    pub prompt_index: u64,
+    #[serde(default)]
+    pub summary: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RewindPointsResult {
+    #[serde(default)]
+    pub points: Vec<RewindPoint>,
+}
+
+// ── x.ai/rewind/execute ─────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RewindExecuteParams {
+    pub session_id: String,
+    pub target_prompt_index: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RewindExecuteResult {
+    #[serde(default)]
+    pub accepted: bool,
+}
+
+// ── x.ai/subagent/cancel ────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelSubagentParams {
+    pub session_id: String,
+    pub subagent_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelSubagentResult {
+    #[serde(default)]
+    pub subagent_id: Option<String>,
+    #[serde(default)]
+    pub cancelled: bool,
+    #[serde(default)]
+    pub outcome: Option<String>,
+}
+
+// ── x.ai/subagent/list_running ──────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSubagentsParams {
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentInfo {
+    #[serde(default)]
+    pub subagent_id: Option<String>,
+    #[serde(default)]
+    pub child_session_id: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub activity_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSubagentsResult {
+    #[serde(default)]
+    pub subagents: Vec<SubagentInfo>,
+}
+
+// ── x.ai/task/kill ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KillTaskParams {
+    pub session_id: String,
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KillTaskResult {
+    #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub outcome: Option<String>,
+}
+
+// ── x.ai/task/list ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListTasksParams {
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BgTaskInfo {
+    #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListTasksResult {
+    #[serde(default)]
+    pub tasks: Vec<BgTaskInfo>,
+}
+
 // ── x.ai/yolo_mode_changed ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize)]

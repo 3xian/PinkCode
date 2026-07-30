@@ -322,6 +322,126 @@ impl AcpClient {
         )
     }
 
+    /// ACP `x.ai/set_session_model` — switch the session model.
+    pub fn set_session_model(
+        &self,
+        session_id: &str,
+        model_id: &str,
+        reasoning_effort: Option<&str>,
+    ) -> Result<SetSessionModelResult> {
+        self.call(
+            "x.ai/set_session_model",
+            &SetSessionModelParams {
+                session_id: session_id.to_string(),
+                model_id: model_id.to_string(),
+                reasoning_effort: reasoning_effort.map(|s| s.to_string()),
+            },
+            Duration::from_secs(30),
+        )
+    }
+
+    /// ACP `x.ai/session/usage` — live turn tokens and cost.
+    pub fn session_usage(&self, session_id: &str) -> Result<SessionUsageResult> {
+        self.call(
+            "x.ai/session/usage",
+            &SessionUsageParams {
+                session_id: session_id.to_string(),
+            },
+            Duration::from_secs(15),
+        )
+    }
+
+    /// ACP `x.ai/recap` — get a session recap/summary.
+    pub fn recap(&self, session_id: &str, max_turns: Option<u32>) -> Result<RecapResult> {
+        self.call(
+            "x.ai/recap",
+            &RecapParams {
+                session_id: session_id.to_string(),
+                max_turns,
+            },
+            Duration::from_secs(60),
+        )
+    }
+
+    /// ACP `x.ai/rewind/points` — list rewritable prompt indices.
+    pub fn rewind_points(&self, session_id: &str) -> Result<RewindPointsResult> {
+        self.call(
+            "x.ai/rewind/points",
+            &RewindPointsParams {
+                session_id: session_id.to_string(),
+            },
+            Duration::from_secs(15),
+        )
+    }
+
+    /// ACP `x.ai/rewind/execute` — rewind to a previous prompt index.
+    pub fn rewind_execute(
+        &self,
+        session_id: &str,
+        target_prompt_index: u64,
+        mode: Option<&str>,
+    ) -> Result<RewindExecuteResult> {
+        self.call(
+            "x.ai/rewind/execute",
+            &RewindExecuteParams {
+                session_id: session_id.to_string(),
+                target_prompt_index,
+                mode: mode.map(|s| s.to_string()),
+            },
+            Duration::from_secs(30),
+        )
+    }
+
+    /// ACP `x.ai/subagent/cancel` — cancel a running subagent.
+    pub fn cancel_subagent(
+        &self,
+        session_id: &str,
+        subagent_id: &str,
+    ) -> Result<CancelSubagentResult> {
+        self.call(
+            "x.ai/subagent/cancel",
+            &CancelSubagentParams {
+                session_id: session_id.to_string(),
+                subagent_id: subagent_id.to_string(),
+            },
+            Duration::from_secs(15),
+        )
+    }
+
+    /// ACP `x.ai/subagent/list_running` — list running subagents for a session.
+    pub fn list_subagents(&self, session_id: &str) -> Result<ListSubagentsResult> {
+        self.call(
+            "x.ai/subagent/list_running",
+            &ListSubagentsParams {
+                session_id: session_id.to_string(),
+            },
+            Duration::from_secs(15),
+        )
+    }
+
+    /// ACP `x.ai/task/kill` — kill a background task.
+    pub fn kill_task(&self, session_id: &str, task_id: &str) -> Result<KillTaskResult> {
+        self.call(
+            "x.ai/task/kill",
+            &KillTaskParams {
+                session_id: session_id.to_string(),
+                task_id: task_id.to_string(),
+            },
+            Duration::from_secs(15),
+        )
+    }
+
+    /// ACP `x.ai/task/list` — list background tasks for a session.
+    pub fn list_tasks(&self, session_id: &str) -> Result<ListTasksResult> {
+        self.call(
+            "x.ai/task/list",
+            &ListTasksParams {
+                session_id: session_id.to_string(),
+            },
+            Duration::from_secs(15),
+        )
+    }
+
     /// Host permission mode → Grok shell yolo/auto notification.
     pub fn notify_yolo_mode(
         &self,

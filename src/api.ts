@@ -5,14 +5,18 @@ import type {
   DashboardStats,
   DirEntry,
   FilePreview,
+  GitBranchInfo,
   GitChange,
+  GitFileDiff,
   HunkPage,
+  LiveSessionUsage,
   ManagedAgentInfo,
   PendingPermission,
   PermissionMode,
   PromptQueueEntry,
   SessionCard,
   SessionDetail,
+  SessionRecapResult,
   SessionUpdatePage,
   SpawnRequest,
   TokenUsageSeries,
@@ -305,4 +309,125 @@ export async function readProjectFile(
 
 export async function gitStatus(cwd: string): Promise<GitChange[]> {
   return invoke<GitChange[]>("git_status", { cwd });
+}
+
+export async function getSessionUsage(
+  handleId: string,
+): Promise<LiveSessionUsage> {
+  return invoke<LiveSessionUsage>("get_session_usage", { handleId });
+}
+
+/** ACP `x.ai/set_session_model` — switch model during session. */
+export async function setSessionModel(
+  handleId: string,
+  modelId: string,
+  reasoningEffort?: string | null,
+): Promise<Record<string, unknown>> {
+  return invoke("set_session_model", {
+    handleId,
+    modelId,
+    reasoningEffort: reasoningEffort ?? null,
+  });
+}
+
+export async function getSessionRecap(
+  handleId: string,
+  maxTurns?: number | null,
+): Promise<SessionRecapResult> {
+  return invoke<SessionRecapResult>("get_session_recap", {
+    handleId,
+    maxTurns: maxTurns ?? null,
+  });
+}
+
+/** ACP `x.ai/rewind/points` — list rewindable points. */
+export async function getRewindPoints(
+  handleId: string,
+): Promise<Record<string, unknown>> {
+  return invoke("get_rewind_points", { handleId });
+}
+
+/** ACP `x.ai/rewind/execute` — rewind to target prompt index. */
+export async function rewindExecute(
+  handleId: string,
+  targetPromptIndex: number,
+  mode?: string | null,
+): Promise<Record<string, unknown>> {
+  return invoke("rewind_execute", {
+    handleId,
+    targetPromptIndex,
+    mode: mode ?? null,
+  });
+}
+
+/** ACP `x.ai/subagent/cancel` — cancel running subagent. */
+export async function cancelSubagent(
+  handleId: string,
+  subagentId: string,
+): Promise<Record<string, unknown>> {
+  return invoke("cancel_subagent", { handleId, subagentId });
+}
+
+/** ACP `x.ai/subagent/list_running` — list running subagents. */
+export async function listSubagents(
+  handleId: string,
+): Promise<Record<string, unknown>> {
+  return invoke("list_subagents", { handleId });
+}
+
+/** ACP `x.ai/task/kill` — kill a background task. */
+export async function killTask(
+  handleId: string,
+  taskId: string,
+): Promise<Record<string, unknown>> {
+  return invoke("kill_task", { handleId, taskId });
+}
+
+/** ACP `x.ai/task/list` — list background tasks. */
+export async function listTasks(
+  handleId: string,
+): Promise<Record<string, unknown>> {
+  return invoke("list_tasks", { handleId });
+}
+
+/** Git branch info: name, upstream, ahead/behind, staged/unstaged counts. */
+export async function gitBranchInfo(cwd: string): Promise<GitBranchInfo> {
+  return invoke<GitBranchInfo>("git_branch_info", { cwd });
+}
+
+/** Git unified diff for a single file. */
+export async function gitDiffFile(
+  cwd: string,
+  path: string,
+  staged: boolean,
+): Promise<GitFileDiff> {
+  return invoke<GitFileDiff>("git_diff_file", { cwd, path, staged });
+}
+
+/** Stage a file (git add). */
+export async function gitStageFile(cwd: string, path: string): Promise<void> {
+  return invoke("git_stage_file", { cwd, path });
+}
+
+/** Unstage a file (git reset HEAD). */
+export async function gitUnstageFile(cwd: string, path: string): Promise<void> {
+  return invoke("git_unstage_file", { cwd, path });
+}
+
+/** Stage all changes. */
+export async function gitStageAll(cwd: string): Promise<void> {
+  return invoke("git_stage_all", { cwd });
+}
+
+/** Unstage all changes. */
+export async function gitUnstageAll(cwd: string): Promise<void> {
+  return invoke("git_unstage_all", { cwd });
+}
+
+/** Commit staged changes. */
+export async function gitCommit(
+  cwd: string,
+  message: string,
+): Promise<string> {
+  return invoke<string>("git_commit", { cwd, message });
 }

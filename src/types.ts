@@ -156,6 +156,24 @@ export interface GitChange {
   kind: string;
 }
 
+/** Branch + upstream + ahead/behind + staged/unstaged counts. */
+export interface GitBranchInfo {
+  branch?: string | null;
+  upstream?: string | null;
+  ahead: number;
+  behind: number;
+  stagedCount: number;
+  unstagedCount: number;
+  untrackedCount: number;
+}
+
+/** Unified diff for a single file. */
+export interface GitFileDiff {
+  path: string;
+  diff: string;
+  kind: "staged" | "unstaged";
+}
+
 export type FilePreviewKind = "text" | "image" | "binary";
 
 /** In-app workspace file preview (from `read_project_file`). */
@@ -239,11 +257,12 @@ export const PERMISSION_MODE_OPTIONS: {
 
 /**
  * Grok Build session modes — single TUI control (Shift+Tab cycle).
- * Normal → Plan → Auto → Always-approve. Plan is orthogonal to permission.
+ * Normal → Plan → Ask → Auto → Always-approve. Plan is orthogonal to permission.
  */
 export const SESSION_MODES = [
   "normal",
   "plan",
+  "ask",
   "auto",
   "alwaysApprove",
 ] as const;
@@ -253,7 +272,7 @@ export const SESSION_MODE_OPTIONS: {
   value: SessionMode;
   label: string;
   hint: string;
-  accent: "neutral" | "plan" | "auto" | "yolo";
+  accent: "neutral" | "plan" | "ask" | "auto" | "yolo";
 }[] = [
   {
     value: "normal",
@@ -266,6 +285,12 @@ export const SESSION_MODE_OPTIONS: {
     label: "Plan",
     hint: "Plan first · next free-text send becomes /plan",
     accent: "plan",
+  },
+  {
+    value: "ask",
+    label: "Ask",
+    hint: "Read-only Q&A mode — no tools, no file writes",
+    accent: "ask",
   },
   {
     value: "auto",
@@ -476,4 +501,20 @@ export interface PromptQueueState {
   runningText?: string | null;
   runningKind?: string | null;
   runningCombinedTexts?: string[] | null;
+}
+
+/** Live turn usage from ACP x.ai/session/usage. */
+export interface LiveSessionUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cachedReadTokens: number;
+  totalTokens: number;
+  costUsdTicks: number;
+  turnCount: number;
+}
+
+/** Session recap result from ACP x.ai/recap. */
+export interface SessionRecapResult {
+  recap?: string | null;
+  available: boolean;
 }

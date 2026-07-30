@@ -28,6 +28,7 @@ import { SessionDetailView } from "./components/SessionDetail";
 import { SessionList } from "./components/SessionList";
 import { StatsBar } from "./components/StatsBar";
 import { UpdateModal } from "./components/UpdateModal";
+import { WindowsTitlebar } from "./components/WindowsTitlebar";
 import { WorkspacePanel } from "./components/WorkspacePanel";
 import { useAgentEvents } from "./hooks/useAgentEvents";
 import { useAppUpdate } from "./hooks/useAppUpdate";
@@ -862,6 +863,11 @@ function App() {
 
   return (
     <div className="app-shell">
+      <WindowsTitlebar
+        onCheckUpdate={checkForUpdate}
+        checkStatus={updateCheckStatus}
+        onWindowError={setError}
+      />
       {(error || lastError) && (
         <div className="banner error-banner">
           <span>{error || lastError}</span>

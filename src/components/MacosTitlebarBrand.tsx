@@ -1,7 +1,6 @@
-import { getVersion } from "@tauri-apps/api/app";
-import { useEffect, useState } from "react";
 import logoMark from "../assets/logo.png";
 import type { UpdateCheckStatus } from "../hooks/useAppUpdate";
+import { useAppVersion } from "../hooks/useAppVersion";
 import { isMacosDesktop } from "../utils/platform";
 
 const STATUS_LINE: Partial<Record<UpdateCheckStatus, string>> = {
@@ -21,23 +20,8 @@ export function MacosTitlebarBrand({
   onCheckUpdate: () => void;
   checkStatus: UpdateCheckStatus;
 }) {
-  const [version, setVersion] = useState<string | null>(null);
   const macDesktop = isMacosDesktop();
-
-  useEffect(() => {
-    if (!macDesktop) return;
-    let cancelled = false;
-    void getVersion()
-      .then((v) => {
-        if (!cancelled) setVersion(v);
-      })
-      .catch(() => {
-        /* leave version empty */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [macDesktop]);
+  const version = useAppVersion(macDesktop);
 
   if (!macDesktop) return null;
 

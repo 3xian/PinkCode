@@ -1,0 +1,230 @@
+/* Windows custom title bar. It is rendered only when the Tauri Windows app runs. */
+.windows-titlebar {
+  height: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  user-select: none;
+  position: relative;
+  z-index: 20;
+}
+
+.windows-titlebar-drag {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px 0 12px;
+}
+
+.windows-titlebar-logo {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.windows-titlebar-name {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.windows-titlebar-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.windows-titlebar-actions,
+.windows-window-controls {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+
+.windows-settings {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.windows-settings-trigger,
+.windows-window-control,
+.windows-settings-item {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.windows-settings-trigger {
+  min-width: 84px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.windows-settings-trigger:hover,
+.windows-settings-trigger[aria-expanded="true"] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.windows-settings-chevron {
+  display: block;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 120ms ease;
+}
+
+.windows-settings-trigger[aria-expanded="true"] .windows-settings-chevron {
+  transform: rotate(180deg);
+}
+
+.windows-settings-trigger:focus-visible,
+.windows-window-control:focus-visible,
+.windows-settings-item:focus-visible {
+  outline: 2px solid var(--live);
+  outline-offset: -2px;
+}
+
+.windows-settings-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 1px);
+  left: 0;
+  width: 208px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.windows-settings-item {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 9px;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+}
+
+.windows-settings-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.windows-settings-item:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.windows-update-status {
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.windows-update-status.is-up-to-date {
+  color: var(--live);
+}
+
+.windows-update-status.is-error {
+  color: var(--danger);
+}
+
+.windows-settings-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.windows-settings-version {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 9px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.windows-window-control {
+  width: 46px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+}
+
+.windows-window-control:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.windows-window-control-close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+.windows-control-minimize {
+  width: 10px;
+  height: 1px;
+  background: currentColor;
+}
+
+.windows-control-maximize {
+  width: 10px;
+  height: 10px;
+  border: 1px solid currentColor;
+}
+
+.windows-control-close {
+  width: 10px;
+  height: 10px;
+  position: relative;
+}
+
+.windows-control-close::before,
+.windows-control-close::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 0;
+  width: 11px;
+  height: 1px;
+  background: currentColor;
+}
+
+.windows-control-close::before {
+  transform: rotate(45deg);
+}
+
+.windows-control-close::after {
+  transform: rotate(-45deg);
+}

@@ -588,6 +588,8 @@ pub fn run() {
             }
             // Version only at runtime so conf/html stay product name (no version drift).
             if let Some(window) = app.get_webview_window("main") {
+                #[cfg(windows)]
+                window.set_decorations(false)?;
                 let name = app
                     .config()
                     .product_name

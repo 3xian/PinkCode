@@ -9,21 +9,24 @@ import {
 } from "./sessionMode";
 
 describe("cycleSessionMode", () => {
-  it("cycles Normal → Plan → Auto → Always-approve → Normal", () => {
+  it("cycles Normal → Plan → Ask → Auto → Always-approve → Normal", () => {
     expect(cycleSessionMode("normal")).toBe("plan");
-    expect(cycleSessionMode("plan")).toBe("auto");
+    expect(cycleSessionMode("plan")).toBe("ask");
+    expect(cycleSessionMode("ask")).toBe("auto");
     expect(cycleSessionMode("auto")).toBe("alwaysApprove");
     expect(cycleSessionMode("alwaysApprove")).toBe("normal");
   });
 });
 
 describe("applySessionModeToPrompt", () => {
-  it("prefixes free text in plan mode", () => {
+  it("prefixes free text in plan and ask modes", () => {
     expect(applySessionModeToPrompt("plan", "add auth")).toBe("/plan add auth");
+    expect(applySessionModeToPrompt("ask", "what is rust")).toBe("/ask what is rust");
   });
 
-  it("leaves slash commands and non-plan modes alone", () => {
+  it("leaves slash commands and non-plan/ask modes alone", () => {
     expect(applySessionModeToPrompt("plan", "/compact")).toBe("/compact");
+    expect(applySessionModeToPrompt("ask", "/help")).toBe("/help");
     expect(applySessionModeToPrompt("normal", "add auth")).toBe("add auth");
     expect(applySessionModeToPrompt("auto", "add auth")).toBe("add auth");
   });
@@ -79,6 +82,14 @@ describe("planArmed + permission model", () => {
     });
     expect(applySessionModeChange("plan", "auto")).toEqual({
       planArmed: true,
+      permission: null,
+    });
+    expect(applySessionModeChange("ask", "default")).toEqual({
+      planArmed: false,
+      permission: null,
+    });
+    expect(applySessionModeChange("ask", "auto")).toEqual({
+      planArmed: false,
       permission: null,
     });
     expect(applySessionModeChange("auto", "default")).toEqual({

@@ -6,7 +6,7 @@ on:
     paths:
       - "site/**"
       - "docs/logo.png"
-      - "docs/screenshot.jpg"
+      - "docs/screenshot.png"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -33,7 +33,7 @@ jobs:
         run: |
           mkdir -p _site/assets
           cp -R site/. _site/
-          cp docs/logo.png docs/screenshot.jpg _site/assets/
+          cp docs/logo.png docs/screenshot.png _site/assets/
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

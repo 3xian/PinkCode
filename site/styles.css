@@ -404,95 +404,20 @@ h1 {
   border-color: var(--iris);
 }
 
-/* ── Product frame ────────────────────────────────────────────── */
+/* ── Product shot (window chrome is in the PNG) ───────────────── */
 
 .product-showcase {
   position: relative;
-  margin-bottom: 0;
+  margin: 0 auto;
+  max-width: 100%;
 }
 
-.product-frame {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid rgba(206, 202, 205, 0.85);
-  border-radius: calc(var(--radius) + 4px);
-  background: var(--surface-solid);
-  box-shadow: var(--shadow-frame);
-}
-
-.product-frame::before {
-  content: "";
-  position: absolute;
-  z-index: 1;
-  top: 0;
-  right: 10%;
-  left: 10%;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(215, 130, 126, 0.55),
-    rgba(144, 122, 169, 0.45),
-    transparent
-  );
-}
-
-.frame-bar {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  height: 40px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, #fffaf3, #faf4ed);
-  color: var(--rp-muted);
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.02em;
-}
-
-.traffic-lights {
-  display: flex;
-  gap: 6px;
-}
-
-.traffic-lights span {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #dfdad9;
-}
-
-.traffic-lights span:nth-child(1) {
-  background: #eb6f92;
-}
-.traffic-lights span:nth-child(2) {
-  background: #f6c177;
-}
-.traffic-lights span:nth-child(3) {
-  background: #9ccfd8;
-}
-
-.frame-state {
-  justify-self: end;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--foam);
-  font-weight: 500;
-}
-
-.frame-state span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--foam);
-  box-shadow: 0 0 8px rgba(86, 148, 159, 0.6);
-}
-
-.product-frame > img {
+.product-shot {
   width: 100%;
   height: auto;
+  /* Soft lift only — no second fake titlebar / traffic lights */
+  filter: drop-shadow(0 28px 50px rgba(87, 82, 121, 0.18))
+    drop-shadow(0 8px 18px rgba(180, 99, 122, 0.1));
 }
 
 /* ── Signal strip ─────────────────────────────────────────────── */
@@ -1112,23 +1037,9 @@ footer > div:last-child {
     width: 100%;
   }
 
-  .frame-title,
-  .frame-state {
-    display: none;
-  }
-
-  .frame-bar {
-    grid-template-columns: 1fr;
-  }
-
-  .product-frame {
-    border-radius: 14px;
-  }
-
-  .product-frame > img {
-    width: 168%;
-    max-width: none;
-    transform: translateX(-22%);
+  .product-shot {
+    /* Keep full window visible; slight scale not needed with real chrome */
+    width: 100%;
   }
 
   .signal-strip {

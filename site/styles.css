@@ -65,6 +65,9 @@ a {
 img {
   display: block;
   max-width: 100%;
+  /* Required with HTML width/height attrs — otherwise max-width shrinks
+     width while height stays fixed and the bitmap looks stretched. */
+  height: auto;
 }
 
 code {
@@ -410,14 +413,20 @@ h1 {
   position: relative;
   margin: 0 auto;
   max-width: 100%;
+  /* Filter on the wrapper so the <img> box keeps a clean aspect ratio. */
+  filter: drop-shadow(0 28px 50px rgba(87, 82, 121, 0.18))
+    drop-shadow(0 8px 18px rgba(180, 99, 122, 0.1));
 }
 
 .product-shot {
+  display: block;
   width: 100%;
+  max-width: 100%;
   height: auto;
-  /* Soft lift only — no second fake titlebar / traffic lights */
-  filter: drop-shadow(0 28px 50px rgba(87, 82, 121, 0.18))
-    drop-shadow(0 8px 18px rgba(180, 99, 122, 0.1));
+  /* Lock ratio to the PNG (1400×847) — never stretch to a foreign box. */
+  aspect-ratio: 1400 / 847;
+  object-fit: contain;
+  object-position: center;
 }
 
 /* ── Signal strip ─────────────────────────────────────────────── */
@@ -1038,8 +1047,10 @@ footer > div:last-child {
   }
 
   .product-shot {
-    /* Keep full window visible; slight scale not needed with real chrome */
     width: 100%;
+    height: auto;
+    aspect-ratio: 1400 / 847;
+    object-fit: contain;
   }
 
   .signal-strip {

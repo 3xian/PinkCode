@@ -634,9 +634,3 @@ function parseAvailableCommands(raw: unknown): AvailableCommand[] {
   }
   return out;
 }
-
-// Slash registry lives in slashCommands.ts (single source for local vs agent).
-export {
-  GROK_BUILTIN_SLASH_COMMANDS,
-  mergeSlashCommands,
-} from "./slashCommands";

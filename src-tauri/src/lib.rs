@@ -21,6 +21,7 @@ mod session_usage;
 mod sessions;
 mod shell_emitter;
 mod shell_stream;
+mod skill_catalog;
 mod task_prefs;
 mod watcher;
 #[cfg(windows)]
@@ -38,6 +39,7 @@ use models::{
 };
 use project_fs::{DirEntry, GitBranchInfo, GitChange, GitFileDiff};
 use serde_json::Value;
+use skill_catalog::AvailableCommandInfo;
 use std::collections::HashMap;
 use std::path::Path;
 use tauri::Manager;
@@ -164,6 +166,17 @@ async fn get_week_usage() -> WeekUsage {
 #[tauri::command]
 fn resolve_grok_bin(manager: tauri::State<'_, AgentManager>) -> Result<String, String> {
     manager.resolve_grok_bin()
+}
+
+#[tauri::command]
+async fn list_slash_skills(
+    manager: tauri::State<'_, AgentManager>,
+    cwd: String,
+) -> Result<Vec<AvailableCommandInfo>, String> {
+    let grok_bin = manager.resolve_grok_bin()?;
+    tauri::async_runtime::spawn_blocking(move || skill_catalog::list_slash_skills(&grok_bin, &cwd))
+        .await
+        .map_err(|error| format!("skill discovery task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -648,6 +661,7 @@ pub fn run() {
             get_token_usage_series,
             get_week_usage,
             resolve_grok_bin,
+            list_slash_skills,
             list_managed_agents,
             spawn_agent,
             attach_agent,

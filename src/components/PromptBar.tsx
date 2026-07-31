@@ -8,10 +8,7 @@ import type {
 } from "../types";
 import { SESSION_MODE_OPTIONS } from "../types";
 import { usePromptHistoryBrowse } from "../hooks/usePromptHistoryBrowse";
-import {
-  GROK_BUILTIN_SLASH_COMMANDS,
-  mergeSlashCommands,
-} from "../utils/format";
+import { filterSlashCommands } from "../utils/slashCommands";
 import {
   applySessionModeToPrompt,
   cycleSessionMode,
@@ -124,26 +121,12 @@ export function PromptBar({
     onSessionReset,
   });
 
-  /** Agent overrides builtins by name; builtins fill gaps. */
-  const commandCatalog = useMemo(
-    () => mergeSlashCommands(availableCommands, GROK_BUILTIN_SLASH_COMMANDS),
-    [availableCommands],
-  );
-
   const slashQuery = useMemo(() => parseSlashQuery(text), [text]);
 
   const filteredCommands = useMemo(() => {
     if (!slashQuery) return [] as AvailableCommand[];
-    const q = slashQuery.query.toLowerCase();
-    if (!q) return commandCatalog.slice(0, 40);
-    return commandCatalog
-      .filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.description.toLowerCase().includes(q),
-      )
-      .slice(0, 40);
-  }, [slashQuery, commandCatalog]);
+    return filterSlashCommands(availableCommands, slashQuery.query);
+  }, [slashQuery, availableCommands]);
 
   // While browsing history, keep slash menu closed (Grok history intercept).
   const showMenu =

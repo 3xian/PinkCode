@@ -34,6 +34,7 @@ import { useAppUpdate } from "./hooks/useAppUpdate";
 import { usePromptQueueController } from "./hooks/usePromptQueueController";
 import { useSessionPlanMode } from "./hooks/useSessionPlanMode";
 import { useSessionIndex } from "./hooks/useSessionIndex";
+import { useSlashCommandCatalog } from "./hooks/useSlashCommandCatalog";
 import { useTimelineHistory } from "./hooks/useTimelineHistory";
 import { useUsageMetrics } from "./hooks/useUsageMetrics";
 import type {
@@ -183,6 +184,7 @@ function App() {
     // New project → clear previous preview selection.
     setPreviewPath(null);
   }, [projectCwd]);
+  const promptCommands = useSlashCommandCatalog(projectCwd, availableCommands);
 
   /** Single write boundary for preview: one path identity (absolute under root). */
   const openPreview = useCallback(
@@ -951,7 +953,7 @@ function App() {
               : undefined
           }
           pinTimelineBottomSeq={pinTimelineBottomSeq}
-          availableCommands={availableCommands}
+          availableCommands={promptCommands}
           onOpenFile={openPreview}
           onCancelSubagent={
             managedForSession &&

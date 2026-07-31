@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ActiveSession,
+  AvailableCommand,
   AttachRequest,
   DashboardStats,
   DirEntry,
@@ -97,6 +98,10 @@ export async function getWeekUsage(): Promise<WeekUsage> {
 
 export async function resolveGrokBin(): Promise<string> {
   return invoke<string>("resolve_grok_bin");
+}
+
+export async function listSlashSkills(cwd: string): Promise<AvailableCommand[]> {
+  return invoke<AvailableCommand[]>("list_slash_skills", { cwd });
 }
 
 export async function listManagedAgents(): Promise<ManagedAgentInfo[]> {

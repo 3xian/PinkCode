@@ -184,6 +184,7 @@
   /*
    * Boot splash / native window (cannot read CSS vars): keep in sync:
    * index.html background #faf4ed, accent #d7827e, border #cecacd
-   * tauri.conf.json windowEffects color [250, 244, 237, 96], theme Light
+   * tauri.conf.json uses Acrylic on Windows and UnderWindowBackground on macOS.
+   * Its color [250, 244, 237, 96] applies to Windows only; theme Light.
    */
 }

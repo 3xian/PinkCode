@@ -13,6 +13,13 @@
   max-width: 100%;
 }
 
+.detail-title-row {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .detail-header h1 {
   margin: 0 0 4px;
   font-size: 20px;
@@ -31,7 +38,9 @@
   color: transparent;
   -webkit-text-fill-color: transparent;
   min-width: 0;
-  max-width: 100%;
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: calc(100% - 16px);
   /* Long titles: 2 lines then ellipsis — keeps header height stable */
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -40,6 +49,14 @@
   overflow: hidden;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+/* Keep task text interactive/selectable while the unused title-row width
+ * provides the expected window drag target on macOS. */
+.detail-title-drag-region {
+  flex: 1 1 auto;
+  min-width: 16px;
+  margin-bottom: 4px;
 }
 
 .detail-sub {

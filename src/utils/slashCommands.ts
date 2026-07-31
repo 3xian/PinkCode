@@ -1,5 +1,7 @@
 import type { AvailableCommand } from "../types";
 
+export const SLASH_MENU_LIMIT = 40;
+
 /** Where a slash command is fulfilled. */
 export type SlashFulfillment = "local" | "agent";
 
@@ -222,4 +224,51 @@ export function mergeSlashCommands(
     if (!agentNames.has(b.name.toLowerCase())) out.push(b);
   }
   return out;
+}
+
+/**
+ * Resolve the complete prompt catalog from exactly one runtime authority.
+ *
+ * Once ACP has advertised commands it is authoritative; locally inspected
+ * skills are only a pre-attach fallback. Builtins beat inspected skills on
+ * collision because those names cannot be invoked as bare skill commands.
+ */
+export function resolveSlashCommandCatalog(
+  agent: AvailableCommand[] | null,
+  inspectedSkills: AvailableCommand[],
+  builtins: AvailableCommand[] = GROK_BUILTIN_SLASH_COMMANDS,
+): AvailableCommand[] {
+  return agent !== null
+    ? mergeSlashCommands(agent, builtins)
+    : mergeSlashCommands(builtins, inspectedSkills);
+}
+
+/**
+ * Filter slash commands with command-name matches ahead of description-only
+ * matches. Sorting is stable within each match class.
+ */
+export function filterSlashCommands(
+  catalog: AvailableCommand[],
+  query: string,
+): AvailableCommand[] {
+  const q = query.trim().replace(/^\/+/, "").toLowerCase();
+  if (!q) return catalog.slice(0, SLASH_MENU_LIMIT);
+
+  return catalog
+    .map((command, index) => {
+      const name = command.name.toLowerCase();
+      const description = command.description.toLowerCase();
+      const rank = name.startsWith(q)
+        ? 0
+        : name.includes(q)
+          ? 1
+          : description.includes(q)
+            ? 2
+            : -1;
+      return { command, index, rank };
+    })
+    .filter((match) => match.rank >= 0)
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .slice(0, SLASH_MENU_LIMIT)
+    .map((match) => match.command);
 }

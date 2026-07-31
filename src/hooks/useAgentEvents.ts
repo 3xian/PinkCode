@@ -543,15 +543,15 @@ export function useAgentEvents(
 
   /** Agent-advertised slash commands for the selected session (may be empty). */
   const availableCommands = useMemo(() => {
-    if (!selectedSessionId) return [] as AvailableCommand[];
+    if (!selectedSessionId) return null;
     const bySession = commandsByKey.get(selectedSessionId);
-    if (bySession?.length) return bySession;
+    if (bySession) return bySession;
     const handle = managedForSession?.handleId;
     if (handle) {
       const byHandle = commandsByKey.get(handle);
-      if (byHandle?.length) return byHandle;
+      if (byHandle) return byHandle;
     }
-    return [] as AvailableCommand[];
+    return null;
   }, [selectedSessionId, commandsByKey, managedForSession]);
 
   const allPermissions = useMemo(

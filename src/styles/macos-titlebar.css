@@ -13,6 +13,25 @@
   cursor: default;
 }
 
+/* AppKit's semantic materials are less translucent than Windows Acrylic.
+ * Reduce the web-content washes on macOS so the native vibrancy remains
+ * visible through the three full-height application columns. Menus and
+ * dialogs deliberately keep their opaque backgrounds for legibility. */
+html.platform-macos-desktop {
+  --bg-elevated: rgb(var(--rp-surface-rgb) / 0.52);
+  --bg-panel: rgb(var(--rp-surface-rgb) / 0.48);
+  --bg-hover: rgb(var(--rp-overlay-rgb) / 0.56);
+  --hl-low: rgb(var(--rp-hl-low-rgb) / 0.56);
+  --border: rgb(var(--rp-hl-med-rgb) / 0.64);
+  --border-strong: rgb(var(--rp-hl-high-rgb) / 0.74);
+}
+
+/* The workspace declares this pane wash locally, so it needs its own
+ * platform override to avoid turning the right column into an opaque block. */
+html.platform-macos-desktop .side-panel.workspace-panel {
+  --workspace-pane-bg: rgb(var(--rp-base-rgb) / 0.5);
+}
+
 /* Empty strip for native traffic lights (Overlay titlebar). */
 .macos-titlebar-traffic {
   height: 36px;

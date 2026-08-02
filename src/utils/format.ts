@@ -588,6 +588,23 @@ export function describeUpdate(update: unknown): {
         availableCommands: commands,
       };
     }
+    case "FileWritten": {
+      const inner = params as Record<string, unknown>;
+      const path = (inner.path as string) ?? (inner.file_path as string) ?? "";
+      const content = (inner.content as string) ?? "";
+      const previous = (inner.previous_content as string) ?? (inner.previousContent as string) ?? "";
+      const isNew = inner.is_new_file === true || inner.isNewFile === true;
+      const title = isNew ? `Created file: ${path}` : `Modified file: ${path}`;
+      let detail = content || undefined;
+      if (previous) {
+        detail = `Previous:\n${previous}\n\nCurrent:\n${content}`;
+      }
+      return {
+        kind: "event",
+        title,
+        detail,
+      };
+    }
     // Subagent / bg-task lifecycle on session/update or disk hydrate.
     // Same parser as agent-notification; bare update object is enough.
     case "subagent_spawned":

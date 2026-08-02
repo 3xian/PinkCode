@@ -477,9 +477,34 @@ export function useAgentEvents(
           return;
         }
 
+        // Non-lifecycle notifications (e.g. FileWritten for modified files) are parsed centrally in describeUpdate.
+        // This removes duplicated handling and lets the parser own all notification shapes.
+        const desc = describeUpdate({
+          method,
+          params: params as any,
+        });
+        if (desc) {
+          const now = Date.now();
+          scheduleLive((prev) =>
+            reduceAgentUpdate(
+              prev,
+              {
+                handleId,
+                sessionId,
+                description: desc,
+                now,
+                nextId: () => `${now}-${seq.current++}`,
+                sourceEventId: e.payload.eventId,
+              },
+              timelineReducerState,
+            )
+          );
+          return;
+        }
+
         if (!isLifecycleNotificationMethod(method)) return;
-        const desc = describeLifecycleNotification(method, params);
-        if (!desc) return;
+        const desc2 = describeLifecycleNotification(method, params);
+        if (!desc2) return;
         const now = Date.now();
         scheduleLive((prev) =>
           reduceAgentUpdate(
@@ -487,7 +512,7 @@ export function useAgentEvents(
             {
               handleId,
               sessionId,
-              description: desc,
+              description: desc2,
               now,
               nextId: () => `${now}-${seq.current++}`,
               sourceEventId: e.payload.eventId,

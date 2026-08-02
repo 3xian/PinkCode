@@ -42,8 +42,8 @@ interface Props {
    * startup has not yet filled the list — falls back to a built-in set.
    */
   availableModels?: AvailableModelInfo[];
-  /** Change the session model via ACP set_session_model. */
-  onModelChange?: (modelId: string) => void;
+  /** Change the session model or reasoning level via ACP set_session_model. */
+  onModelChange?: (modelId: string, reasoningEffort?: string) => void;
   /** Show Stop when the managed agent process can be terminated. */
   canStop?: boolean;
   onStop?: () => void;
@@ -369,6 +369,17 @@ export function PromptBar({
               disabled={busy || running || awaiting}
               onChange={onSessionModeChange}
             />
+            {modelId && onModelChange && (
+              <ReasoningLevelSelector
+                modelId={modelId}
+                availableModels={availableModels}
+                busy={busy}
+                running={Boolean(running || awaiting)}
+                onChange={(reasoningEffort) =>
+                  onModelChange(modelId, reasoningEffort)
+                }
+              />
+            )}
           </div>
           <div className="prompt-send-group">
             {modelId && (
@@ -473,7 +484,7 @@ function ModelSelector({
 }: {
   current: string;
   availableModels?: AvailableModelInfo[];
-  onChange?: (modelId: string) => void;
+  onChange?: (modelId: string, reasoningEffort?: string) => void;
 }) {
   const options = resolveModelOptions(availableModels, current);
   if (!onChange || options.length <= 1) {
@@ -502,5 +513,45 @@ function ModelSelector({
         </option>
       ))}
     </select>
+  );
+}
+
+function ReasoningLevelSelector({
+  modelId,
+  availableModels,
+  busy,
+  running,
+  onChange,
+}: {
+  modelId: string;
+  availableModels: AvailableModelInfo[];
+  busy: boolean;
+  running: boolean;
+  onChange: (reasoningEffort: string) => void;
+}) {
+  const model = availableModels.find((item) => item.modelId === modelId);
+  const options = model?.reasoningEfforts ?? [];
+  if (!model?.supportsReasoningEffort || options.length === 0) return null;
+
+  const selected = model?.reasoningEffort ??
+    options.find((option) => option.default)?.value ??
+    options[0]!.value;
+  const active = options.find((option) => option.value === selected) ?? options[0]!;
+  return (
+    <PromptChipSelect
+      label="Level"
+      value={active.value}
+      displayLabel={active.label}
+      title={active.description ?? `Reasoning level: ${active.label}`}
+      accent="neutral"
+      glyph="◈"
+      options={options.map((option) => ({
+        value: option.value,
+        label: option.label,
+        hint: option.description ?? "Grok reasoning level",
+      }))}
+      disabled={busy || running}
+      onChange={onChange}
+    />
   );
 }

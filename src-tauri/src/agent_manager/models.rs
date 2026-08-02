@@ -1,7 +1,8 @@
 //! Session model catalog merge + models/update method matching.
 
 use crate::acp::protocol::SessionModelsInfo;
-use crate::agent_types::{AvailableModelInfo, ManagedAgentInfo};
+use crate::agent_types::{AvailableModelInfo, ManagedAgentInfo, ReasoningEffortOption};
+use serde_json::Value;
 
 /// Grok may emit `x.ai/models/update` or a leading-underscore ext form.
 pub(crate) fn is_models_update_method(method: &str) -> bool {
@@ -35,9 +36,62 @@ pub(crate) fn apply_models_info(info: &mut ManagedAgentInfo, models: &SessionMod
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(str::to_string);
+            let meta = m.meta.as_ref().and_then(Value::as_object);
+            let supports_reasoning_effort = meta
+                .and_then(|meta| meta.get("supportsReasoningEffort"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let reasoning_effort = meta
+                .and_then(|meta| meta.get("reasoningEffort"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            let reasoning_efforts = meta
+                .and_then(|meta| meta.get("reasoningEfforts"))
+                .and_then(Value::as_array)
+                .map(|options| {
+                    options
+                        .iter()
+                        .filter_map(|option| {
+                            let value = option
+                                .as_str()
+                                .or_else(|| option.get("value").and_then(Value::as_str))?
+                                .trim();
+                            if value.is_empty() {
+                                return None;
+                            }
+                            let label = option
+                                .get("label")
+                                .and_then(Value::as_str)
+                                .map(str::trim)
+                                .filter(|label| !label.is_empty())
+                                .unwrap_or(value)
+                                .to_string();
+                            Some(ReasoningEffortOption {
+                                value: value.to_string(),
+                                label,
+                                description: option
+                                    .get("description")
+                                    .and_then(Value::as_str)
+                                    .map(str::trim)
+                                    .filter(|description| !description.is_empty())
+                                    .map(str::to_string),
+                                default: option
+                                    .get("default")
+                                    .and_then(Value::as_bool)
+                                    .unwrap_or(false),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
             Some(AvailableModelInfo {
                 model_id: id.to_string(),
                 name,
+                supports_reasoning_effort,
+                reasoning_effort,
+                reasoning_efforts,
             })
         })
         .collect();
@@ -75,6 +129,9 @@ mod tests {
             available_models: vec![AvailableModelInfo {
                 model_id: "grok-4".into(),
                 name: Some("Grok 4".into()),
+                supports_reasoning_effort: true,
+                reasoning_effort: Some("high".into()),
+                reasoning_efforts: vec![],
             }],
             last_error: None,
             title: None,
@@ -99,10 +156,30 @@ mod tests {
                     model_id: "grok-4.5".into(),
                     name: Some("Grok 4.5".into()),
                     description: None,
+                    meta: Some(serde_json::json!({
+                        "supportsReasoningEffort": true,
+                        "reasoningEffort": "medium",
+                        "reasoningEfforts": [
+                            {
+                                "value": "medium",
+                                "label": "Medium",
+                                "description": "Balanced",
+                                "default": true
+                            },
+                            { "value": "low", "label": "Low" },
+                            "high"
+                        ]
+                    })),
                 }],
             },
         );
         assert_eq!(info.available_models.len(), 1);
         assert_eq!(info.available_models[0].model_id, "grok-4.5");
+        assert_eq!(
+            info.available_models[0].reasoning_effort.as_deref(),
+            Some("medium")
+        );
+        assert!(info.available_models[0].supports_reasoning_effort);
+        assert_eq!(info.available_models[0].reasoning_efforts.len(), 3);
     }
 }

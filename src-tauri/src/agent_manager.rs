@@ -222,6 +222,19 @@ impl AgentManager {
             let mut agents = self.inner.agents.lock();
             agents.get_mut(handle_id).map(|agent| {
                 agent.info.model_id = Some(model_id.to_string());
+                let effort = reasoning_effort
+                    .map(str::trim)
+                    .filter(|effort| !effort.is_empty());
+                if let Some(effort) = effort {
+                    if let Some(model) = agent
+                        .info
+                        .available_models
+                        .iter_mut()
+                        .find(|model| model.model_id == model_id)
+                    {
+                        model.reasoning_effort = Some(effort.to_string());
+                    }
+                }
                 agent.info.clone()
             })
         };

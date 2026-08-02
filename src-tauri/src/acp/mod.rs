@@ -802,7 +802,11 @@ mod tests {
             "models": {
                 "currentModelId": "grok-4.5",
                 "availableModels": [
-                    { "modelId": "grok-4.5", "name": "Grok 4.5" },
+                    {
+                        "modelId": "grok-4.5",
+                        "name": "Grok 4.5",
+                        "_meta": { "reasoningEffort": "high" }
+                    },
                     { "modelId": "grok-4", "name": "Grok 4" }
                 ]
             }
@@ -813,6 +817,14 @@ mod tests {
         assert_eq!(models.available_models.len(), 2);
         assert_eq!(models.available_models[0].model_id, "grok-4.5");
         assert_eq!(models.available_models[0].name.as_deref(), Some("Grok 4.5"));
+        assert_eq!(
+            models.available_models[0]
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.get("reasoningEffort"))
+                .and_then(serde_json::Value::as_str),
+            Some("high")
+        );
     }
 
     #[test]

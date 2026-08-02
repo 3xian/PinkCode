@@ -74,8 +74,8 @@ interface Props {
   onCancelSubagent?: (subagentId: string) => void;
   /** Kill a running background task by its id. */
   onKillTask?: (taskId: string) => void;
-  /** Switch session model via ACP set_session_model. */
-  onModelChange?: (modelId: string) => void;
+  /** Switch session model or reasoning level via ACP set_session_model. */
+  onModelChange?: (modelId: string, reasoningEffort?: string) => void;
 }
 
 const TIMELINE_FILTER_LABELS: Record<string, string> = {

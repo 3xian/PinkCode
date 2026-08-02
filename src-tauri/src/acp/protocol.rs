@@ -177,6 +177,9 @@ pub struct AcpModelInfo {
     pub name: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    /// Grok publishes reasoning capability + options in standard ACP metadata.
+    #[serde(default, rename = "_meta")]
+    pub meta: Option<Value>,
 }
 
 /// ACP `SessionModelState` — used by `session/new`|`load` `models` and by

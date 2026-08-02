@@ -750,6 +750,30 @@ function App() {
     }
   }
 
+  async function handleModelChange(
+    modelId: string,
+    reasoningEffort?: string,
+  ) {
+    const managed = managedForSession;
+    if (
+      !managed ||
+      managed.status === "stopped" ||
+      managed.status === "error" ||
+      controlBusy
+    ) {
+      return;
+    }
+    setControlBusy(true);
+    setError(null);
+    try {
+      await setSessionModel(managed.handleId, modelId, reasoningEffort);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setControlBusy(false);
+    }
+  }
+
   function requestStop(sessionId: string) {
     const managed = managedList.find(
       (m) =>
@@ -977,9 +1001,7 @@ function App() {
             managedForSession &&
             managedForSession.status !== "stopped" &&
             managedForSession.status !== "error"
-              ? (modelId: string) => {
-                  void setSessionModel(managedForSession.handleId, modelId);
-                }
+              ? handleModelChange
               : undefined
           }
         />

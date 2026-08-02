@@ -68,6 +68,27 @@ pub struct AvailableModelInfo {
     pub model_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Whether the model accepts a reasoning level, as advertised by Grok ACP.
+    #[serde(default)]
+    pub supports_reasoning_effort: bool,
+    /// Current reasoning level for this model, as advertised by Grok ACP.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    /// Model-specific reasoning levels advertised by Grok ACP.
+    #[serde(default)]
+    pub reasoning_efforts: Vec<ReasoningEffortOption>,
+}
+
+/// One selectable reasoning level from a model's ACP metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReasoningEffortOption {
+    pub value: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub default: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

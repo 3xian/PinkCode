@@ -45,9 +45,19 @@ pub fn list_slash_skills(grok_bin: &str, cwd: &str) -> Result<Vec<AvailableComma
         return Err(format!("Invalid working directory: {}", cwd.display()));
     }
 
-    let output = Command::new(grok_bin)
-        .args(["inspect", "--json"])
-        .current_dir(cwd)
+    let mut command = Command::new(grok_bin);
+    command.args(["inspect", "--json"]).current_dir(cwd);
+
+    // Session selection refreshes this catalog. As a GUI process has no parent
+    // console on Windows, spawning `grok` without this flag briefly flashes one.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = command
         .output()
         .map_err(|error| format!("failed to run grok inspect: {error}"))?;
     if !output.status.success() {

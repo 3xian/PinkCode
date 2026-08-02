@@ -310,9 +310,22 @@ export const SESSION_MODE_OPTIONS: {
 ];
 
 /** One model from agent catalog (`session/new|load` or `x.ai/models/update`). */
+export interface ReasoningEffortOption {
+  value: string;
+  label: string;
+  description?: string | null;
+  default?: boolean;
+}
+
 export interface AvailableModelInfo {
   modelId: string;
   name?: string | null;
+  /** Whether this model accepts a reasoning level, as advertised by Grok ACP. */
+  supportsReasoningEffort?: boolean;
+  /** Current model-specific reasoning level advertised by Grok ACP. */
+  reasoningEffort?: string | null;
+  /** Model-specific supported reasoning levels advertised by Grok ACP. */
+  reasoningEfforts?: ReasoningEffortOption[];
 }
 
 export interface ManagedAgentInfo {

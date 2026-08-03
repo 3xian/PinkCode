@@ -18,12 +18,10 @@ interface Props<T extends string> {
   label: string;
   value: T;
   displayLabel: string;
-  title: string;
+  tooltip: string;
   accent: ChipAccent;
   glyph: string;
   options: readonly ChipOption<T>[];
-  /** Shown to the right of the control (e.g. Shift+Tab). */
-  shortcut?: string;
   disabled?: boolean;
   onChange: (value: T) => void;
 }
@@ -33,11 +31,10 @@ export function PromptChipSelect<T extends string>({
   label,
   value,
   displayLabel,
-  title,
+  tooltip,
   accent,
   glyph,
   options,
-  shortcut,
   disabled,
   onChange,
 }: Props<T>) {
@@ -45,6 +42,7 @@ export function PromptChipSelect<T extends string>({
   const [active, setActive] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId();
+  const tooltipId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -108,17 +106,18 @@ export function PromptChipSelect<T extends string>({
         disabled ? " disabled" : ""
       }`}
       ref={rootRef}
-      title={title}
     >
-      <span className="prompt-chip-label">{label}</span>
+      <span id={tooltipId} className="prompt-chip-tooltip" role="tooltip">
+        {tooltip}
+      </span>
       <button
         type="button"
         className="prompt-chip-trigger"
         disabled={disabled}
         tabIndex={-1}
-        aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
+        aria-describedby={tooltipId}
         aria-label={`${label}: ${displayLabel}`}
         onClick={() => {
           if (!disabled) setOpen((o) => !o);
@@ -133,11 +132,6 @@ export function PromptChipSelect<T extends string>({
           ▾
         </span>
       </button>
-      {shortcut ? (
-        <kbd className="shortcut-hint" aria-hidden>
-          {shortcut}
-        </kbd>
-      ) : null}
       {open && (
         <div
           className="prompt-chip-menu"

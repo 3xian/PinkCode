@@ -361,11 +361,10 @@ export function PromptBar({
               label="Mode"
               value={sessionMode}
               displayLabel={modeMeta.label}
-              title={`${modeMeta.hint} · shift+tab to cycle`}
+              tooltip={`${modeMeta.hint} · Press Shift+Tab to cycle modes`}
               accent={modeMeta.accent}
               glyph={modeGlyph(sessionMode)}
               options={SESSION_MODE_OPTIONS}
-              shortcut="shift+tab"
               disabled={busy || running || awaiting}
               onChange={onSessionModeChange}
             />
@@ -542,7 +541,7 @@ function ReasoningLevelSelector({
       label="Level"
       value={active.value}
       displayLabel={active.label}
-      title={active.description ?? `Reasoning level: ${active.label}`}
+      tooltip={active.description ?? `Reasoning level: ${active.label}`}
       accent="neutral"
       glyph="◈"
       options={options.map((option) => ({

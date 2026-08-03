@@ -916,6 +916,50 @@ button.user-question-option:hover:not(:disabled),
   min-width: 0;
 }
 
+/* Prompt control help; hidden while its menu is open. */
+
+.prompt-chip-tooltip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 7px);
+  z-index: 45;
+  display: block;
+  width: max-content;
+  max-width: min(320px, 70vw);
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--title-selected) 35%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-elevated) 98%, transparent);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(3px);
+  transition:
+    opacity 0.08s ease,
+    transform 0.08s ease,
+    visibility 0s linear 0.08s;
+}
+
+.prompt-chip.open .prompt-chip-tooltip {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(3px);
+  transition: none;
+}
+
+.prompt-chip:not(.open):hover .prompt-chip-tooltip,
+.prompt-chip:not(.open):focus-within .prompt-chip-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition-delay: 0s;
+}
 .prompt-chip.accent-plan {
   --chip-accent: var(--kind-plan);
   --chip-border: color-mix(in srgb, var(--kind-plan) 45%, transparent);
@@ -1033,7 +1077,6 @@ button.user-question-option:hover:not(:disabled),
   transform: translateY(0.5px);
 }
 
-/* Shortcut chip styling lives on global `.shortcut-hint` (base.css). */
 
 .prompt-chip-menu {
   position: absolute;

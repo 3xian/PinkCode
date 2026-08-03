@@ -120,6 +120,28 @@ describe("extractEditDiff", () => {
     expect(diff).toContain(" keep");
   });
 
+  it("accepts the real wire camelCase diff blocks (oldText/newText/_meta)", () => {
+    // Live ACP records serialize Diff blocks as camelCase with snake_case
+    // line numbers inside `_meta` (verified against ~/.grok sessions).
+    const diff = extractEditDiff({
+      kind: "edit",
+      title: "Edit `src/out.txt`",
+      content: [
+        {
+          type: "diff",
+          path: "/abs/src/out.txt",
+          oldText: "line1\nold\n",
+          newText: "line1\nnew\n",
+          _meta: { old_line: 1, new_line: 1 },
+        },
+      ],
+    });
+    expect(diff).toContain("@@ -1,2 +1,2 @@");
+    expect(diff).toContain("-old");
+    expect(diff).toContain("+new");
+    expect(diff).toContain(" line1");
+  });
+
   it("returns undefined for non-edit output", () => {
     expect(
       extractEditDiff({ kind: "Read", rawOutput: { type: "ReadFile" } }),

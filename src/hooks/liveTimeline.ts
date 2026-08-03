@@ -405,10 +405,14 @@ export function reduceAgentUpdate(
         toolBase: merged.baseTitle,
         toolStatus: merged.status,
         toolCallId: description.toolCallId,
-        // `detail` merges as next-wins/fallback-prev; the diff flag must track
-        // the same rule so a status-only update keeps the card flagged while a
-        // completed update with plain detail clears it.
-        isEdit: description.isEdit ?? prev.isEdit,
+        // `detail` merges next-wins/fallback-prev (mergeToolCardParts); the diff
+        // flag follows the same rule: a content-less update (no detail, but an
+        // explicit isEdit=false) must not clear the flag, while an update that
+        // brings plain detail replaces both.
+        isEdit:
+          description.detail != null
+            ? Boolean(description.isEdit)
+            : Boolean(prev.isEdit),
         ts: now,
       };
       next.set(key, list);

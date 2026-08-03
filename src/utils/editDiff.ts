@@ -282,18 +282,20 @@ function diffFromRawOutput(rawOutput: unknown): string | undefined {
 }
 
 /**
- * Strategy 2: ACP `content` Diff blocks `{ type: "diff", old_text, new_text, meta }`.
- * Full-text fallback (pre-execution previews and the write tool).
+ * Strategy 2: ACP `content` Diff blocks. The wire ships camelCase
+ * `{ type: "diff", path, oldText, newText, _meta: {old_line, new_line} }`;
+ * pre-execution previews and disk logs also carry snake_case `old_text` /
+ * `new_text` / `meta`. Accept both spellings.
  */
 function diffFromContent(content: unknown): string | undefined {
   if (!Array.isArray(content)) return undefined;
   for (const block of content) {
     const b = asRecord(block);
     if (!b || b.type !== "diff") continue;
-    const oldText = str(b.old_text);
-    const newText = str(b.new_text);
+    const oldText = str(b.oldText) || str(b.old_text);
+    const newText = str(b.newText) || str(b.new_text);
     if (!oldText && !newText) continue;
-    const meta = asRecord(b.meta);
+    const meta = asRecord(b._meta) ?? asRecord(b.meta);
     const startLine = num(meta?.new_line) ?? 1;
     const hunks = [
       trimHunk(

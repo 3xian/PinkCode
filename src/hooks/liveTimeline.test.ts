@@ -627,6 +627,51 @@ describe("live timeline reducer", () => {
     expect(state.get("session")?.[0].detail).toContain("@@ -4,3 +4,3 @@");
   });
 
+  it("keeps the diff flag when a content-less update carries explicit isEdit=false", () => {
+    // Real wire shape: tool_call_update with title/status but no content sets
+    // detail=undefined, isEdit=false; it must not clear the card's diff flag.
+    const indexes = createTimelineReducerState();
+    let state = reduceAgentUpdate(
+      new Map(),
+      {
+        handleId: "handle",
+        sessionId: "session",
+        description: {
+          kind: "tool",
+          title: "Edit `src/main.ts`",
+          toolCallId: "call-edit-2",
+          toolBase: "Edit `src/main.ts`",
+          detail: "@@ -4,3 +4,3 @@\n let x = 1;\n-let x = 2;\n+let x = 3;",
+          isEdit: true,
+        },
+        now: 1,
+        nextId: () => "one",
+      },
+      indexes,
+    );
+    state = reduceAgentUpdate(
+      state,
+      {
+        handleId: "handle",
+        sessionId: "session",
+        description: {
+          kind: "tool",
+          title: "Edit `src/main.ts` ✓",
+          toolCallId: "call-edit-2",
+          toolBase: "Edit `src/main.ts`",
+          // No content on this update; formatToolCardParts yields no detail.
+          isEdit: false,
+        },
+        now: 2,
+        nextId: () => "two",
+      },
+      indexes,
+    );
+    const item = state.get("session")?.[0];
+    expect(item?.detail).toContain("@@ -4,3 +4,3 @@");
+    expect(item?.isEdit).toBe(true);
+  });
+
   it("merges shell snapshots without regressing output", () => {
     const indexes = createTimelineReducerState();
     let state = reduceShellUpdate(

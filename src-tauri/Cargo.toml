@@ -1,6 +1,6 @@
 [package]
 name = "pinkcode"
-version = "1.0.11"
+version = "1.0.12"
 description = "Desktop control plane for Grok Build multi-task observability"
 authors = ["PinkCode"]
 license = "Apache-2.0"

@@ -53,6 +53,26 @@ const GROK_NO_SCROLLBACK_XAI_UPDATES: Record<string, true> = {
   model_changed: true,
 };
 
+/**
+ * Whether a JSON-RPC method (agent → client extension notification) must never
+ * become a Timeline card. The render allowlist is implicit: anything the
+ * Timeline shows carries an inner `update.sessionUpdate` (subagent/task
+ * lifecycle, pending interactions, session events) that `describeUpdate`
+ * resolves before its default branch, so any `x.ai/*` method still reaching
+ * that branch is control-plane state sync (models/settings/MCP/announcements
+ * catalogs, prompt acks, …) — consumed host-side or dedicated UI, never
+ * conversation content. Mirrors Grok Build's `handle_ext_notification`
+ * dispatch table, whose unlisted methods are dropped.
+ * Accepts both `x.ai/…` and `_x.ai/…` transports (see Rust
+ * `models::is_models_update_method` for the same prefix duality).
+ */
+export function isNoScrollbackExtNotification(
+  method: string | undefined,
+): boolean {
+  if (!method) return false;
+  return method.replace(/^_+/, "").startsWith("x.ai/");
+}
+
 /** Timeline description shape for event-kind session updates. */
 export interface SessionEventDescription {
   kind: "event";

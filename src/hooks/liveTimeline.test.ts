@@ -11,8 +11,10 @@ import {
   reduceShellUpdate,
   settleLifecycleItems,
   settleStreamingItems,
+  shouldDropUpdate,
   type UpdateDescription,
 } from "./liveTimeline";
+import { describeUpdate } from "../utils/format";
 import type { TimelineItem } from "../types";
 
 describe("live timeline reducer", () => {
@@ -748,5 +750,37 @@ describe("live timeline reducer", () => {
       indexes,
     );
     expect(state.get("session")?.[0].shell?.output).toBe("first second");
+  });
+});
+
+describe("control-plane extension notification gate", () => {
+  it("drops x.ai extension notifications end to end", () => {
+    // describeUpdate marks them hidden; the shared gate (live stream and disk
+    // hydrate) turns that into a drop before the reducer ever sees them.
+    for (const method of [
+      "_x.ai/mcp/servers_updated",
+      "_x.ai/models/update",
+      "_x.ai/announcements/update",
+      "x.ai/mcp_initialized",
+    ]) {
+      const desc = describeUpdate({ method, params: {} });
+      expect(desc.hidden, `${method} must be hidden`).toBe(true);
+      expect(shouldDropUpdate(desc), `${method} must be dropped`).toBe(true);
+    }
+  });
+
+  it("keeps lifecycle notifications on the rendered path", () => {
+    const desc = describeUpdate({
+      method: "x.ai/session_notification",
+      params: {
+        sessionId: "parent-1",
+        update: {
+          sessionUpdate: "subagent_spawned",
+          child_session_id: "child-1",
+        },
+      },
+    });
+    expect(desc.hidden).toBeUndefined();
+    expect(shouldDropUpdate(desc)).toBe(false);
   });
 });

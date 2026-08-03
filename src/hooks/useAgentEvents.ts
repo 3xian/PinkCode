@@ -12,9 +12,7 @@ import type {
 import type { LocalSlashItem } from "../utils/localSlash";
 import { describeUpdate, extractUpdateTsMs } from "../utils/format";
 import {
-  describeLifecycleNotification,
   describePendingInteractionNotification,
-  isLifecycleNotificationMethod,
   type LifecycleDescription,
   type PendingInteractionKind,
 } from "../utils/subagentTasks";
@@ -477,35 +475,19 @@ export function useAgentEvents(
           return;
         }
 
-        // Non-lifecycle notifications (x.ai session events, subagent/task
-        // lifecycle) are parsed centrally in describeUpdate — one parser owns
-        // all notification shapes.
+        // Everything else (x.ai session events, subagent/task lifecycle) is
+        // parsed centrally in describeUpdate — one parser owns all shapes.
+        // Lifecycle notifications resolve via their inner update.sessionUpdate,
+        // so describeUpdate never returns null here; hidden control-plane
+        // notifications never become cards (same gate as the session/update
+        // stream).
         const desc = describeUpdate({
           method,
-          params: params as any,
+          params,
         });
-        if (desc) {
-          const now = Date.now();
-          scheduleLive((prev) =>
-            reduceAgentUpdate(
-              prev,
-              {
-                handleId,
-                sessionId,
-                description: desc,
-                now,
-                nextId: () => `${now}-${seq.current++}`,
-                sourceEventId: e.payload.eventId,
-              },
-              timelineReducerState,
-            )
-          );
+        if (shouldDropUpdate(desc)) {
           return;
         }
-
-        if (!isLifecycleNotificationMethod(method)) return;
-        const desc2 = describeLifecycleNotification(method, params);
-        if (!desc2) return;
         const now = Date.now();
         scheduleLive((prev) =>
           reduceAgentUpdate(
@@ -513,7 +495,7 @@ export function useAgentEvents(
             {
               handleId,
               sessionId,
-              description: desc2,
+              description: desc,
               now,
               nextId: () => `${now}-${seq.current++}`,
               sourceEventId: e.payload.eventId,

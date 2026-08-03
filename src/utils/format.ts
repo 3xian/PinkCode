@@ -9,7 +9,10 @@ import {
 } from "./subagentTasks";
 import { extractToolMeta, formatToolCardParts } from "./toolTitle";
 import { extractEditDiff, isEditToolUpdate } from "./editDiff";
-import { describeSessionEvent } from "./sessionEvents";
+import {
+  describeSessionEvent,
+  isNoScrollbackExtNotification,
+} from "./sessionEvents";
 
 export type { ToolCardParts } from "./toolTitle";
 export {
@@ -447,6 +450,13 @@ export function describeUpdate(update: unknown): {
     }
     default: {
       const type = (u.type as string) || sessionUpdate;
+      // Control-plane x.ai extension notifications (models/settings/MCP/
+      // announcements sync, prompt acks, …) are consumed host-side or by
+      // dedicated UI — never Timeline content. Dropped via `hidden`, same as
+      // Grok Build drops unlisted extension methods.
+      if (isNoScrollbackExtNotification(method)) {
+        return { kind: "event", title: type, hidden: true };
+      }
       // Noise phase/events — skip empty ones in the listener
       return {
         kind: "event",

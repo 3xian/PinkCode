@@ -387,4 +387,50 @@ describe("describeUpdate Grok Build scrollback parity", () => {
       ).toBe(true);
     }
   });
+
+  it("drops control-plane x.ai extension notifications", () => {
+    for (const method of [
+      // Both transports: `x.ai/…` and `_x.ai/…`.
+      "_x.ai/mcp/servers_updated",
+      "_x.ai/models/update",
+      "_x.ai/settings/update",
+      "_x.ai/announcements/update",
+      "_x.ai/mcp_initialized",
+      "x.ai/mcp/init_progress",
+      "x.ai/mcp/tools_changed",
+      "x.ai/mcp/servers_updated",
+      "x.ai/sessions/changed",
+      "x.ai/queue/changed",
+      "x.ai/git_head_changed",
+      "x.ai/session/prompt_complete",
+      "x.ai/scheduled_task_created",
+      "x.ai/follow_ups",
+      "x.ai/monitor_event",
+    ]) {
+      expect(
+        describeUpdate({ method, params: {} }).hidden,
+        `${method} must be hidden`,
+      ).toBe(true);
+    }
+  });
+
+  it("keeps rendered extension notifications and non-x.ai unknowns", () => {
+    // Lifecycle notifications resolve via their inner update.sessionUpdate.
+    expect(
+      describeUpdate({
+        method: "x.ai/session_notification",
+        params: {
+          sessionId: "parent-1",
+          update: {
+            sessionUpdate: "subagent_spawned",
+            child_session_id: "child-1",
+          },
+        },
+      }),
+    ).toMatchObject({ kind: "subagent" });
+    // Unknown methods outside the x.ai namespace keep the legacy fallback.
+    expect(
+      describeUpdate({ method: "acme.custom/thing", params: {} }).hidden,
+    ).toBeUndefined();
+  });
 });

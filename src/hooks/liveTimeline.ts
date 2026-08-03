@@ -405,6 +405,10 @@ export function reduceAgentUpdate(
         toolBase: merged.baseTitle,
         toolStatus: merged.status,
         toolCallId: description.toolCallId,
+        // `detail` merges as next-wins/fallback-prev; the diff flag must track
+        // the same rule so a status-only update keeps the card flagged while a
+        // completed update with plain detail clears it.
+        isEdit: description.isEdit ?? prev.isEdit,
         ts: now,
       };
       next.set(key, list);
@@ -508,6 +512,7 @@ export function reduceAgentUpdate(
     toolCallId: description.toolCallId,
     toolBase: description.toolBase,
     toolStatus: description.toolStatus,
+    isEdit: description.isEdit,
     ts: now,
     sourceEventId: sourceEventId ?? undefined,
     streaming: markStreaming,

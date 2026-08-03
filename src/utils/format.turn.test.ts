@@ -315,7 +315,21 @@ describe("describeUpdate Grok Build scrollback parity", () => {
       kind: "tool",
       title: expect.stringContaining("Edit `src/main.ts`"),
       detail: expect.stringContaining("@@ -4,3 +4,3 @@"),
+      isEdit: true,
     });
+  });
+
+  it("flags non-edit tool cards as not diffs", () => {
+    expect(
+      describeUpdate({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "call-read-1",
+        title: "Read `src/a.ts`",
+        kind: "Read",
+        status: "completed",
+        rawOutput: { type: "ReadFile", content: ["no diff here"] },
+      }),
+    ).toMatchObject({ kind: "tool", isEdit: false });
   });
 
   it("parses x.ai updates from the updates.jsonl envelope", () => {

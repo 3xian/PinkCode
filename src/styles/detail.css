@@ -658,6 +658,89 @@
   line-height: 1.6;
 }
 
+/* Edited-file diff snippet (Grok Build Edit block: @@ header + numbered +/- gutters). */
+.tl-diff {
+  margin: 6px 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.tl-diff-hunk {
+  padding: 2px 10px;
+  color: var(--text-muted);
+  background: var(--hl-low);
+  border-bottom: 1px solid var(--border);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.tl-diff-line {
+  display: flex;
+  align-items: baseline;
+  white-space: pre;
+}
+
+.tl-diff-num {
+  flex: 0 0 auto;
+  width: 3.2ch;
+  text-align: right;
+  padding: 0 6px 0 2px;
+  color: var(--text-muted);
+  opacity: 0.72;
+  user-select: none;
+}
+
+.tl-diff-sign {
+  flex: 0 0 auto;
+  width: 1.4ch;
+  text-align: center;
+  user-select: none;
+}
+
+.tl-diff-text {
+  flex: 1 1 auto;
+  padding-left: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tl-diff-insert {
+  background: color-mix(in srgb, var(--add) 10%, transparent);
+}
+
+.tl-diff-insert .tl-diff-text {
+  color: var(--add);
+}
+
+.tl-diff-delete {
+  background: color-mix(in srgb, var(--del) 10%, transparent);
+}
+
+.tl-diff-delete .tl-diff-text {
+  color: var(--del);
+}
+
+.tl-diff-trunc {
+  padding: 2px 10px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Raw-patch fallback when a diff card's detail is not a parseable hunk. */
+.tl-diff-fallback {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Copy: always visible, bottom-right, plain small text (no chrome).
    Absolute — does not reserve layout space or change body line-height. */
 .tl-detail.has-copy {

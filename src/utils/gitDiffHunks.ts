@@ -3,6 +3,14 @@
  * for `git apply --cached` / `--reverse`.
  */
 
+/** One classified hunk content line (prefix stripped). */
+export interface ParsedDiffLine {
+  /** `-`/`+`/` ` content lines; `meta` for `\ No newline at end of file`. */
+  tag: "equal" | "delete" | "insert" | "meta";
+  /** Content without the diff prefix (`meta` lines keep the full text). */
+  text: string;
+}
+
 export interface DiffHunk {
   /** 0-based index among hunks in this file. */
   index: number;
@@ -13,6 +21,12 @@ export interface DiffHunk {
   /** Added / removed line counts (for UI). */
   added: number;
   removed: number;
+  /** Old-file start line from the header (`@@ -a,b …`); defaults to 1. */
+  oldStart: number;
+  /** New-file start line from the header (`@@ … +c,d`); defaults to 1. */
+  newStart: number;
+  /** Classified content lines (excludes the header line). */
+  lines: ParsedDiffLine[];
 }
 
 export interface ParsedFileDiff {
@@ -70,16 +84,33 @@ export function parseUnifiedDiff(diff: string): ParsedFileDiff {
     const body = bodyLines.join("\n");
     let added = 0;
     let removed = 0;
+    const classified: ParsedDiffLine[] = [];
     for (const line of bodyLines.slice(1)) {
-      if (line.startsWith("+") && !line.startsWith("+++")) added++;
-      else if (line.startsWith("-") && !line.startsWith("---")) removed++;
+      const c = line[0];
+      if (c === "+") {
+        // `+++` lines are file headers (defensive: they never reach bodyLines).
+        if (!line.startsWith("+++")) added++;
+        classified.push({ tag: "insert", text: line.slice(1) });
+      } else if (c === "-") {
+        if (!line.startsWith("---")) removed++;
+        classified.push({ tag: "delete", text: line.slice(1) });
+      } else if (c === "\\") {
+        // "\ No newline at end of file" — metadata, not a file line.
+        classified.push({ tag: "meta", text: line });
+      } else {
+        classified.push({ tag: "equal", text: line.slice(1) });
+      }
     }
+    const starts = parseHunkStart(header);
     hunks.push({
       index: hunks.length,
       header,
       body,
       added,
       removed,
+      oldStart: starts.oldStart,
+      newStart: starts.newStart,
+      lines: classified,
     });
   }
 
@@ -96,6 +127,21 @@ export function parseUnifiedDiff(diff: string): ParsedFileDiff {
     fileHeader,
     hunks,
     empty: hunks.length === 0,
+  };
+}
+
+/** Parse `@@ -a[,b] +c[,d] @@` header line numbers; absent ranges default to 1. */
+export function parseHunkStart(header: string): {
+  oldStart: number;
+  newStart: number;
+} {
+  const m = header.match(/^@@\s*-([0-9]+)(?:,[0-9]+)?\s*\+([0-9]+)(?:,[0-9]+)?\s*@@/);
+  if (!m) return { oldStart: 1, newStart: 1 };
+  const oldStart = Number(m[1]);
+  const newStart = Number(m[2]);
+  return {
+    oldStart: Number.isFinite(oldStart) ? oldStart : 1,
+    newStart: Number.isFinite(newStart) ? newStart : 1,
   };
 }
 

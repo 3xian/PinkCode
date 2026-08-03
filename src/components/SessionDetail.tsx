@@ -34,6 +34,7 @@ import type { ResolvePermissionFn } from "../utils/permissionPayload";
 import type { PromptQueueController } from "../hooks/usePromptQueueController";
 import { extractToolPath } from "../utils/paths";
 import { DiffPanel } from "./DiffPanel";
+import { DiffSnippet } from "./DiffSnippet";
 import { FilePathLink } from "./FilePathLink";
 import { Markdown } from "./Markdown";
 import { PermissionGate } from "./PermissionGate";
@@ -794,6 +795,8 @@ const LiveItemRow = memo(function LiveItemRow({
                 <Markdown onOpenFile={onOpenFile}>{item.detail}</Markdown>
               ) : isMdKind ? (
                 <pre className="tl-stream-plain">{item.detail}</pre>
+              ) : item.isEdit && item.detail ? (
+                <DiffSnippet patch={item.detail} />
               ) : toolPath && item.detail === toolPath ? (
                 <FilePathLink
                   path={toolPath}

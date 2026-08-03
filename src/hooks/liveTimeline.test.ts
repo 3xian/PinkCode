@@ -568,6 +568,65 @@ describe("live timeline reducer", () => {
     expect(item?.streaming).toBe(true);
   });
 
+  it("flags tool cards as isEdit once a diff lands and keeps it on status-only updates", () => {
+    const indexes = createTimelineReducerState();
+    const card = (patch?: string) => ({
+      kind: "tool" as const,
+      title: "Edit `src/main.ts`",
+      toolCallId: "call-edit-1",
+      toolBase: "Edit `src/main.ts`",
+      ...(patch ? { detail: patch, isEdit: true } : { toolStatus: "pending" }),
+    });
+    let state = reduceAgentUpdate(
+      new Map(),
+      {
+        handleId: "handle",
+        sessionId: "session",
+        description: card(),
+        now: 1,
+        nextId: () => "one",
+      },
+      indexes,
+    );
+    expect(state.get("session")?.[0].isEdit).toBeUndefined();
+
+    state = reduceAgentUpdate(
+      state,
+      {
+        handleId: "handle",
+        sessionId: "session",
+        description: card("@@ -4,3 +4,3 @@\n let x = 1;\n-let x = 2;\n+let x = 3;"),
+        now: 2,
+        nextId: () => "two",
+      },
+      indexes,
+    );
+    const item = state.get("session")?.[0];
+    expect(item?.isEdit).toBe(true);
+    expect(item?.detail).toContain("@@ -4,3 +4,3 @@");
+
+    // Status-only follow-up (no diff payload) must not clear the flag.
+    state = reduceAgentUpdate(
+      state,
+      {
+        handleId: "handle",
+        sessionId: "session",
+        description: {
+          kind: "tool",
+          title: "Edit `src/main.ts` ✓",
+          toolCallId: "call-edit-1",
+          toolBase: "Edit `src/main.ts`",
+          toolStatus: "completed",
+        },
+        now: 3,
+        nextId: () => "three",
+      },
+      indexes,
+    );
+    expect(state.get("session")?.[0].isEdit).toBe(true);
+    expect(state.get("session")?.[0].detail).toContain("@@ -4,3 +4,3 @@");
+  });
+
   it("merges shell snapshots without regressing output", () => {
     const indexes = createTimelineReducerState();
     let state = reduceShellUpdate(

@@ -490,6 +490,8 @@ export interface TimelineItem {
   toolBase?: string;
   /** Tool card ACP status (pending / completed / …). */
   toolStatus?: string;
+  /** True when `detail` is a unified diff of a modified file (render as snippet). */
+  isEdit?: boolean;
   /** Present when kind is `"shell"`. */
   shell?: TimelineShellPayload;
   /** Present when kind is `"subagent"`. */

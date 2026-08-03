@@ -316,6 +316,8 @@ export function describeUpdate(update: unknown): {
   /** Structured tool title parts when kind is `"tool"`. */
   toolBase?: string;
   toolStatus?: string;
+  /** True when `detail` is a modified-file diff (Grok Build Edit block). */
+  isEdit?: boolean;
   /** True when this update is a shell tool (Live uses agent-shell card only). */
   isShell?: boolean;
   /** Slash commands from `available_commands_update` (not shown as a live card). */
@@ -405,6 +407,7 @@ export function describeUpdate(update: unknown): {
         kind: "tool",
         title: parts.title,
         detail: editDiff ?? parts.detail,
+        isEdit: Boolean(editDiff),
         hidden,
         toolCallId,
         toolBase: parts.baseTitle,

@@ -477,8 +477,9 @@ export function useAgentEvents(
           return;
         }
 
-        // Non-lifecycle notifications (e.g. FileWritten for modified files) are parsed centrally in describeUpdate.
-        // This removes duplicated handling and lets the parser own all notification shapes.
+        // Non-lifecycle notifications (x.ai session events, subagent/task
+        // lifecycle) are parsed centrally in describeUpdate — one parser owns
+        // all notification shapes.
         const desc = describeUpdate({
           method,
           params: params as any,

@@ -26,6 +26,8 @@ export type ShellIndexes = Map<string, Map<string, number>>;
 export interface TimelineReducerState {
   shellIndexes: ShellIndexes;
   suppressedToolIds: Map<string, Set<string>>;
+  /** Goal ids that already emitted their "Goal complete" milestone (Grok just_completed). */
+  completedGoalIds: Set<string>;
 }
 export type TimelineRetention = "live" | "history";
 
@@ -39,6 +41,7 @@ export function createTimelineReducerState(): TimelineReducerState {
   return {
     shellIndexes: new Map(),
     suppressedToolIds: new Map(),
+    completedGoalIds: new Set(),
   };
 }
 
@@ -287,6 +290,15 @@ export function reduceAgentUpdate(
   const markStreaming =
     input.streaming !== undefined ? input.streaming : textUpdate ? true : undefined;
   let listChanged = false;
+
+  // Emit the "Goal complete" milestone once per goal (Grok Build gates on the
+  // just-completed transition; a repeated complete broadcast must not stack).
+  if (description.kind === "event" && description.goalId) {
+    if (reducerState.completedGoalIds.has(description.goalId)) {
+      return previous;
+    }
+    reducerState.completedGoalIds.add(description.goalId);
+  }
 
   if (!textUpdate) {
     for (let index = 0; index < list.length; index++) {

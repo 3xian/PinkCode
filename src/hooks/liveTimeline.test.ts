@@ -11,6 +11,7 @@ import {
   reduceShellUpdate,
   settleLifecycleItems,
   settleStreamingItems,
+  type UpdateDescription,
 } from "./liveTimeline";
 import type { TimelineItem } from "../types";
 
@@ -265,6 +266,43 @@ describe("live timeline reducer", () => {
     const terminal = items.find((i) => i.kind === "event");
     expect(terminal?.title).toBe("Worked for 12.5s");
     expect(terminal?.detail).toBe("1.2k tok");
+  });
+
+  it("emits the goal-complete milestone once per goal id", () => {
+    const shells = createTimelineReducerState();
+    let map = new Map<string, TimelineItem[]>();
+    const complete: UpdateDescription = {
+      kind: "event",
+      title: "Goal complete — 5m end-to-end.",
+      goalId: "g1",
+    };
+    map = reduceAgentUpdate(
+      map,
+      { handleId: "h1", sessionId: "sess-1", description: complete, now: 1, nextId: () => "g1" },
+      shells,
+    );
+    expect(map.get("sess-1")?.length).toBe(1);
+    // A repeated complete broadcast (replay / leader re-emit) must not stack.
+    const same = reduceAgentUpdate(
+      map,
+      { handleId: "h1", sessionId: "sess-1", description: complete, now: 2, nextId: () => "g1b" },
+      shells,
+    );
+    expect(same).toBe(map);
+    expect(same.get("sess-1")?.length).toBe(1);
+    // A different goal still renders.
+    const other = reduceAgentUpdate(
+      map,
+      {
+        handleId: "h1",
+        sessionId: "sess-1",
+        description: { ...complete, goalId: "g2" },
+        now: 3,
+        nextId: () => "g2",
+      },
+      shells,
+    );
+    expect(other.get("sess-1")?.length).toBe(2);
   });
 
   it("timeline elapsed always owns turn_completed title", () => {

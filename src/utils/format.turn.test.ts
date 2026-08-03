@@ -1,55 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-  describeUpdate,
-  formatTurnCompletedTitle,
-  formatTurnElapsed,
-  normalizeStopReason,
-} from "./format";
-
-describe("formatTurnElapsed", () => {
-  it("formats sub-minute durations with one decimal", () => {
-    expect(formatTurnElapsed(1_200)).toBe("1.2s");
-    expect(formatTurnElapsed(9_900)).toBe("9.9s");
-    expect(formatTurnElapsed(12_400)).toBe("12.4s");
-    expect(formatTurnElapsed(59_000)).toBe("59.0s");
-  });
-
-  it("formats minutes and hours", () => {
-    expect(formatTurnElapsed(90_000)).toBe("1m 30s");
-    expect(formatTurnElapsed(120_000)).toBe("2m");
-    expect(formatTurnElapsed(3_600_000)).toBe("1h");
-    expect(formatTurnElapsed(3_720_000)).toBe("1h 2m");
-  });
-});
-
-describe("formatTurnCompletedTitle", () => {
-  it("hides protocol end_turn on the happy path", () => {
-    expect(formatTurnCompletedTitle("end_turn")).toBe("Turn completed");
-    expect(formatTurnCompletedTitle("end_turn", 12_300)).toBe("Worked for 12.3s");
-  });
-
-  it("maps cancelled / error / rate_limit", () => {
-    expect(formatTurnCompletedTitle("cancelled")).toBe("Turn cancelled by user");
-    expect(formatTurnCompletedTitle("cancelled", 5_200)).toBe(
-      "Turn cancelled by user in 5.2s",
-    );
-    expect(formatTurnCompletedTitle("error")).toBe("Turn failed");
-    expect(formatTurnCompletedTitle("error", 3_100)).toBe("Turn failed in 3.1s");
-    expect(formatTurnCompletedTitle("rate_limit")).toBe("Rate limited");
-  });
-
-  it("treats max_tokens like a normal done (no raw enum in title)", () => {
-    expect(formatTurnCompletedTitle("max_tokens")).toBe("Turn completed");
-    expect(formatTurnCompletedTitle("max_tokens", 40_000)).toBe(
-      "Worked for 40.0s",
-    );
-  });
-
-  it("normalizes kebab-case stop reasons", () => {
-    expect(normalizeStopReason("end-turn")).toBe("end_turn");
-    expect(formatTurnCompletedTitle("rate-limit")).toBe("Rate limited");
-  });
-});
+import { describeUpdate } from "./format";
+// Turn-terminal formatter unit tests live in sessionEvents.test.ts (the owning
+// module); format.ts re-exports them for callers.
 
 describe("describeUpdate turn_completed", () => {
   it("does not surface end_turn in the title; leaves elapsed to the reducer", () => {
@@ -178,5 +130,247 @@ describe("describeUpdate Grok Build scrollback parity", () => {
       title: "Context compacted",
       detail: "→ 4.0k tokens",
     });
+  });
+
+  it("renders compaction lifecycle markers with Grok Build wording", () => {
+    expect(
+      describeUpdate({
+        sessionUpdate: "auto_compact_started",
+        percentage: 85,
+      }),
+    ).toMatchObject({ title: "Context 85% full. Compacting…" });
+    expect(
+      describeUpdate({
+        sessionUpdate: "auto_compact_failed",
+        error: "disk full",
+      }),
+    ).toMatchObject({ title: "Compaction failed: disk full" });
+    expect(
+      describeUpdate({ sessionUpdate: "auto_compact_failed", error: "" }),
+    ).toMatchObject({ title: "Compaction failed." });
+    expect(
+      describeUpdate({ sessionUpdate: "auto_compact_cancelled" }),
+    ).toMatchObject({ title: "Compaction cancelled." });
+    // Elapsed rides the Grok Build "…tokens (0.5s)" suffix.
+    expect(
+      describeUpdate({
+        sessionUpdate: "auto_compact_completed",
+        tokens_before: 12_000,
+        tokens_after: 4_000,
+        elapsed_ms: 500,
+      }),
+    ).toMatchObject({
+      title: "Context compacted",
+      detail: "12.0k → 4.0k tokens (0.5s)",
+    });
+  });
+
+  it("maps retry_state outcomes like Grok Build session events", () => {
+    // Retrying is turn-activity state, not a scrollback line.
+    expect(
+      describeUpdate({
+        sessionUpdate: "retry_state",
+        type: "retrying",
+        attempt: 1,
+        max_retries: 3,
+        reason: "connection timeout",
+      }).hidden,
+    ).toBe(true);
+    expect(
+      describeUpdate({
+        sessionUpdate: "retry_state",
+        type: "exhausted",
+        attempts: 3,
+        reason: "connection timeout",
+      }),
+    ).toMatchObject({
+      title: "Retry failed: failed after 3 retries: connection timeout",
+    });
+    expect(
+      describeUpdate({
+        sessionUpdate: "retry_state",
+        type: "exhausted",
+        attempts: 3,
+        reason: "slow down",
+        is_rate_limited: true,
+      }),
+    ).toMatchObject({ title: "Rate limited", detail: "slow down" });
+    expect(
+      describeUpdate({
+        sessionUpdate: "retry_state",
+        type: "failed",
+        error_type: "auth",
+        message: "bad token",
+      }),
+    ).toMatchObject({ title: "Authentication required" });
+    expect(
+      describeUpdate({
+        sessionUpdate: "retry_state",
+        type: "failed",
+        error_type: "context_length",
+        message: "too big",
+      }),
+    ).toMatchObject({ title: "Context too large" });
+    expect(
+      describeUpdate({
+        sessionUpdate: "retry_state",
+        type: "failed",
+        error_type: "api_400",
+        message: "bad request",
+      }),
+    ).toMatchObject({ title: "Retry failed: bad request" });
+  });
+
+  it("renders image / model / goal / hook milestones Grok Build shows", () => {
+    expect(
+      describeUpdate({
+        sessionUpdate: "image_dropped",
+        notes: ["image_2.png (2.1 MB) exceeds the 20 MB limit"],
+      }),
+    ).toMatchObject({
+      title: "image_2.png (2.1 MB) exceeds the 20 MB limit",
+    });
+    expect(
+      describeUpdate({
+        sessionUpdate: "image_dropped",
+        notes: [],
+      }).hidden,
+    ).toBe(true);
+    // Successful compression is invisible; only the re-encode fallback warns.
+    expect(
+      describeUpdate({
+        sessionUpdate: "image_compressed",
+        images: [{ index: 0, original_bytes: 10 }],
+        message: "resized",
+      }).hidden,
+    ).toBe(true);
+    expect(
+      describeUpdate({
+        sessionUpdate: "image_compressed",
+        images: [],
+        message: "Kept original image",
+      }),
+    ).toMatchObject({ title: "Kept original image" });
+    expect(
+      describeUpdate({
+        sessionUpdate: "model_auto_switched",
+        previous_model_id: "grok-4.5",
+        new_model_id: "grok-build",
+        reason: "Model \"grok-4.5\" is no longer available.",
+      }),
+    ).toMatchObject({
+      title: 'Model "grok-4.5" is no longer available. Switched to "grok-build".',
+    });
+    expect(
+      describeUpdate({
+        sessionUpdate: "goal_updated",
+        goal_id: "g1",
+        status: "active",
+        elapsed_ms: 330_000,
+      }).hidden,
+    ).toBe(true);
+    expect(
+      describeUpdate({
+        sessionUpdate: "goal_updated",
+        goal_id: "g1",
+        status: "complete",
+        elapsed_ms: 330_000,
+      }),
+    ).toMatchObject({
+      title: "Goal complete — 5m30s end-to-end.",
+      goalId: "g1",
+    });
+    expect(
+      describeUpdate({ sessionUpdate: "hook_annotation", message: "Running hooks" }),
+    ).toMatchObject({ title: "Running hooks" });
+  });
+
+  it("wires edit-tool diffs into the tool card detail", () => {
+    expect(
+      describeUpdate({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "call-edit-1",
+        title: "Edit `src/main.ts`",
+        kind: "Edit",
+        status: "completed",
+        rawOutput: {
+          type: "SearchReplace",
+          EditsApplied: {
+            edits: {
+              details: [
+                {
+                  old_string: "let x = 1;",
+                  new_string: "let x = 2;",
+                  old_line: 5,
+                  new_line: 5,
+                  context_before: "fn main() {\n",
+                  context_after: "}",
+                },
+              ],
+            },
+          },
+        },
+      }),
+    ).toMatchObject({
+      kind: "tool",
+      title: expect.stringContaining("Edit `src/main.ts`"),
+      detail: expect.stringContaining("@@ -4,3 +4,3 @@"),
+    });
+  });
+
+  it("parses x.ai updates from the updates.jsonl envelope", () => {
+    // Disk lines and live notifications wrap the update in
+    // { params: { session_id, update: { sessionUpdate, … }, _meta } }.
+    const diskLine = (update: unknown) =>
+      describeUpdate({
+        method: "_x.ai/session/update",
+        params: {
+          session_id: "sess-1",
+          update,
+          _meta: { eventId: "evt-1" },
+        },
+      });
+    expect(
+      diskLine({ sessionUpdate: "auto_compact_started", percentage: 71 }),
+    ).toMatchObject({ title: "Context 71% full. Compacting…" });
+    expect(
+      diskLine({
+        sessionUpdate: "model_auto_switched",
+        new_model_id: "grok-build",
+        reason: "Model \"grok-4.5\" is no longer available.",
+      }),
+    ).toMatchObject({
+      title: 'Model "grok-4.5" is no longer available. Switched to "grok-build".',
+    });
+    expect(
+      diskLine({ sessionUpdate: "workflow_updated", status: "running" }).hidden,
+    ).toBe(true);
+  });
+
+  it("hides x.ai updates Grok Build keeps out of scrollback", () => {
+    for (const sessionUpdate of [
+      "current_mode_update",
+      "workflow_updated",
+      "memory_flush_started",
+      "memory_flush_completed",
+      "memory_dream_completed",
+      "memory_session_saved",
+      "scheduled_task_created",
+      "scheduled_task_fired",
+      "scheduled_task_deleted",
+      "monitor_event",
+      "session_recap_unavailable",
+      "auto_continue_completed",
+      "tool_call_delta_chunk",
+      "hook_execution",
+      "model_changed",
+      "auto_recovery_started",
+      "diff_review",
+    ]) {
+      expect(
+        describeUpdate({ sessionUpdate }).hidden,
+        `${sessionUpdate} must be hidden`,
+      ).toBe(true);
+    }
   });
 });

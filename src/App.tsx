@@ -50,6 +50,7 @@ import {
   isLocalSlashCommand,
   runLocalSlash,
 } from "./utils/localSlash";
+import { isLiveManagedStatus } from "./utils/managedStatus";
 import type { UserQuestionResolvePayload } from "./utils/permissionPayload";
 import { joinUnderRoot } from "./utils/paths";
 import {
@@ -168,10 +169,15 @@ function App() {
     onRecentLoaded: onRecentSessionsLoaded,
     onError: setError,
   });
+  // ACP owns the live tail when attached; disk-only sessions re-hydrate on poll.
+  const liveOwnsTail =
+    managedForSession != null &&
+    isLiveManagedStatus(managedForSession.status);
   const timelineHistory = useTimelineHistory(
     selectedId,
     detail,
     hydrateDiskLive,
+    liveOwnsTail,
   );
   const promptQueue = usePromptQueueController(
     selectedId,

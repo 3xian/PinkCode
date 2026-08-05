@@ -536,6 +536,32 @@
   color: var(--text);
   background: transparent;
   box-shadow: none;
+  /*
+   * Skip layout/paint for off-screen rows when the list is fully mounted
+   * (short enough that React windowing is off). Disabled under
+   * .is-virtualized so measureKey / variable heights stay accurate.
+   */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 88px;
+}
+
+.timeline.is-virtualized .tl-row {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
+.tl-row-measure {
+  /* Measure wrapper for virtualized rows; no visual chrome. */
+  display: block;
+}
+
+.timeline.is-virtualized .timeline-panel-end {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
 }
 
 /*

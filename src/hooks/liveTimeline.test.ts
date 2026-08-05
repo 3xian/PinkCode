@@ -2,16 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   DISK_HANDLE_ID,
   LOCAL_HANDLE_ID,
+  MAX_HISTORY_ITEMS,
   capShellOutput,
   createTimelineReducerState,
   hydrateLiveFromDiskUpdates,
   mergeDiskLiveIntoMap,
   mergeTimelineItems,
+  pruneMapByKeys,
   reduceAgentUpdate,
   reduceShellUpdate,
   settleLifecycleItems,
   settleStreamingItems,
   shouldDropUpdate,
+  stabilizeTimelineList,
   type UpdateDescription,
 } from "./liveTimeline";
 import { describeUpdate } from "../utils/format";
@@ -407,6 +410,74 @@ describe("live timeline reducer", () => {
       [disk],
     );
     expect(state.get("sess-1")).toEqual([live]);
+  });
+
+  it("reuses previous item object identity when disk resync content is unchanged", () => {
+    const existing: TimelineItem = {
+      id: "disk-1",
+      handleId: DISK_HANDLE_ID,
+      sessionId: "sess-1",
+      kind: "agent",
+      title: "Agent",
+      detail: "Hello",
+      ts: 100,
+      sourceEventId: "evt-1",
+    };
+    const resynced: TimelineItem = { ...existing };
+    const stabilized = stabilizeTimelineList([existing], [resynced]);
+    expect(stabilized).toHaveLength(1);
+    expect(stabilized[0]).toBe(existing);
+
+    const map = mergeDiskLiveIntoMap(
+      new Map([["sess-1", [existing]]]),
+      "sess-1",
+      [resynced],
+    );
+    expect(map.get("sess-1")?.[0]).toBe(existing);
+  });
+
+  it("pruneMapByKeys drops keys not in the keep set and preserves identity", () => {
+    const map = new Map<string, TimelineItem[]>([
+      ["keep-me", [{ id: "1", handleId: "h", kind: "user", title: "u", ts: 1 }]],
+      ["drop-me", [{ id: "2", handleId: "h", kind: "user", title: "u", ts: 2 }]],
+    ]);
+    const next = pruneMapByKeys(map, new Set(["keep-me"]));
+    expect(next.has("keep-me")).toBe(true);
+    expect(next.has("drop-me")).toBe(false);
+    expect(pruneMapByKeys(map, new Set(["keep-me", "drop-me"]))).toBe(map);
+
+    const cmds = new Map([
+      ["a", ["cmd"]],
+      ["b", ["other"]],
+    ]);
+    expect([...pruneMapByKeys(cmds, new Set(["a"])).keys()]).toEqual(["a"]);
+  });
+
+  it("trims history retention above MAX_HISTORY_ITEMS", () => {
+    const reducer = createTimelineReducerState();
+    let state = new Map<string, TimelineItem[]>();
+    for (let i = 0; i < MAX_HISTORY_ITEMS + 25; i++) {
+      state = reduceAgentUpdate(
+        state,
+        {
+          handleId: DISK_HANDLE_ID,
+          sessionId: "sess-hist",
+          description: {
+            kind: "event",
+            title: `e${i}`,
+            detail: String(i),
+            coalesce: false,
+            hidden: false,
+          } as UpdateDescription,
+          now: i + 1,
+          nextId: () => `id-${i}`,
+          streaming: false,
+        },
+        reducer,
+        "history",
+      );
+    }
+    expect(state.get("sess-hist")?.length).toBe(MAX_HISTORY_ITEMS);
   });
 
   it("deduplicates tool mirrors when an ACP event id is unavailable", () => {

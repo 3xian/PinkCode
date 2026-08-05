@@ -1,16 +1,11 @@
 import {
-  memo,
-  useCallback,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
   type CSSProperties,
 } from "react";
 import type {
   AvailableCommand,
-  TimelineFilterKind,
   TimelineItem,
   MainTab,
   ManagedAgentInfo,
@@ -18,7 +13,6 @@ import type {
   SessionMode,
   SessionDetail as Detail,
 } from "../types";
-import { writeClipboard } from "../utils/clipboard";
 import {
   contextPct,
   formatDuration,
@@ -32,16 +26,11 @@ import {
 } from "../utils/subagentTasks";
 import type { ResolvePermissionFn } from "../utils/permissionPayload";
 import type { PromptQueueController } from "../hooks/usePromptQueueController";
-import { extractToolPath } from "../utils/paths";
 import { DiffPanel } from "./DiffPanel";
-import { DiffSnippet } from "./DiffSnippet";
-import { FilePathLink } from "./FilePathLink";
-import { Markdown } from "./Markdown";
 import { PermissionGate } from "./PermissionGate";
 import { PromptBar } from "./PromptBar";
 import { PromptQueue } from "./PromptQueue";
-import { ShellCard } from "./ShellPanel";
-import { TimelineRowChrome, timelineStackClass } from "./TimelineRow";
+import { TimelinePanel } from "./TimelinePanel";
 import { TurnStatusBar } from "./TurnStatusBar";
 
 interface Props {
@@ -78,32 +67,6 @@ interface Props {
   /** Switch session model or reasoning level via ACP set_session_model. */
   onModelChange?: (modelId: string, reasoningEffort?: string) => void;
 }
-
-const TIMELINE_FILTER_LABELS: Record<string, string> = {
-  all: "All",
-  user: "User",
-  agent: "Agent",
-  thought: "Thought",
-  tool: "Tool",
-  shell: "Shell",
-  subagent: "Subagent",
-  task: "Task",
-  event: "Event",
-  unknown: "Other",
-};
-
-const TIMELINE_FILTER_ORDER: TimelineFilterKind[] = [
-  "all",
-  "user",
-  "agent",
-  "thought",
-  "tool",
-  "shell",
-  "subagent",
-  "task",
-  "event",
-  "unknown",
-];
 
 export function SessionDetailView({
   detail,
@@ -339,261 +302,6 @@ function Metric({
   );
 }
 
-function TimelinePanel({
-  items,
-  managed,
-  pinBottomSeq = 0,
-  onOpenFile,
-  hasMore,
-  loadingOlder,
-  onLoadOlder,
-}: {
-  items: TimelineItem[];
-  managed: ManagedAgentInfo | null;
-  pinBottomSeq?: number;
-  onOpenFile?: (path: string) => void;
-  hasMore: boolean;
-  loadingOlder: boolean;
-  onLoadOlder: () => Promise<void>;
-}) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
-  const stickToBottom = useRef(true);
-  const scrollParentRef = useRef<HTMLElement | null>(null);
-  const filterBarRef = useRef<HTMLDivElement>(null);
-  const [filter, setFilter] = useState<TimelineFilterKind>("all");
-
-  const kindCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of items) {
-      const k = item.kind || "unknown";
-      counts.set(k, (counts.get(k) ?? 0) + 1);
-    }
-    return counts;
-  }, [items]);
-
-  const filterChips = useMemo(() => {
-    const present = TIMELINE_FILTER_ORDER.filter(
-      (k) => k === "all" || (kindCounts.get(k) ?? 0) > 0,
-    );
-    // Any unexpected kinds (not in order list)
-    for (const k of kindCounts.keys()) {
-      if (!present.includes(k as TimelineFilterKind)) {
-        present.push(k as TimelineFilterKind);
-      }
-    }
-    return present;
-  }, [kindCounts]);
-
-  const syncFilterIndicator = useCallback(() => {
-    const bar = filterBarRef.current;
-    const active = bar?.querySelector<HTMLElement>(
-      `[data-filter-kind="${filter}"]`,
-    );
-    if (!bar || !active) return;
-
-    const activeStyle = getComputedStyle(active);
-    bar.style.setProperty("--filter-x", `${active.offsetLeft}px`);
-    bar.style.setProperty("--filter-y", `${active.offsetTop}px`);
-    bar.style.setProperty("--filter-width", `${active.offsetWidth}px`);
-    bar.style.setProperty("--filter-height", `${active.offsetHeight}px`);
-    bar.style.setProperty(
-      "--filter-indicator-bg",
-      activeStyle.getPropertyValue("--chip-bg-active"),
-    );
-    bar.classList.add("is-indicator-ready");
-  }, [filter]);
-
-  useLayoutEffect(() => {
-    syncFilterIndicator();
-    const bar = filterBarRef.current;
-    if (!bar || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(syncFilterIndicator);
-    observer.observe(bar);
-    for (const chip of bar.querySelectorAll(".timeline-filter-chip")) {
-      observer.observe(chip);
-    }
-    return () => observer.disconnect();
-  }, [filterChips, syncFilterIndicator]);
-
-  // If active filter has zero items, fall back to All
-  useEffect(() => {
-    if (filter === "all") return;
-    if ((kindCounts.get(filter) ?? 0) === 0) setFilter("all");
-  }, [filter, kindCounts]);
-
-  const filtered = useMemo(() => {
-    const indexed = items.map((item, sourceIndex) => ({ item, sourceIndex }));
-    if (filter === "all") return indexed;
-    return indexed.filter(
-      ({ item }) => (item.kind || "unknown") === filter,
-    );
-  }, [items, filter]);
-
-  const scrollToEnd = (behavior: ScrollBehavior = "auto") => {
-    const end = endRef.current;
-    const parent = scrollParentRef.current;
-    if (end) {
-      end.scrollIntoView({ block: "end", behavior });
-      return;
-    }
-    if (parent) {
-      parent.scrollTop = parent.scrollHeight;
-    }
-  };
-
-  // Terminal-style: follow the tail unless the user scrolls up
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    let scrollParent: HTMLElement | null = root.parentElement;
-    while (scrollParent) {
-      const { overflowY } = getComputedStyle(scrollParent);
-      if (overflowY === "auto" || overflowY === "scroll") break;
-      scrollParent = scrollParent.parentElement;
-    }
-    if (!scrollParent) return;
-    scrollParentRef.current = scrollParent;
-    const el = scrollParent;
-    let rootTop =
-      root.getBoundingClientRect().top -
-      el.getBoundingClientRect().top +
-      el.scrollTop;
-    const onScroll = () => {
-      const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
-      stickToBottom.current = dist < 64;
-      root.style.setProperty(
-        "--timeline-fade-offset",
-        `${el.scrollTop - rootTop}px`,
-      );
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(() => {
-            rootTop =
-              root.getBoundingClientRect().top -
-              el.getBoundingClientRect().top +
-              el.scrollTop;
-            onScroll();
-          });
-    observer?.observe(el);
-    observer?.observe(root);
-    onScroll();
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      observer?.disconnect();
-    };
-  }, [filtered.length > 0, filterChips.length]);
-
-  useEffect(() => {
-    if (!stickToBottom.current) return;
-    scrollToEnd("auto");
-  }, [filtered]);
-
-  // Connect / spawn: always jump to bottom (even if user had scrolled up earlier).
-  useEffect(() => {
-    if (!pinBottomSeq) return;
-    stickToBottom.current = true;
-    // Wait for tab switch + first paint, then again after stream content may land.
-    const t0 = window.requestAnimationFrame(() => scrollToEnd("smooth"));
-    const t1 = window.setTimeout(() => scrollToEnd("smooth"), 80);
-    const t2 = window.setTimeout(() => scrollToEnd("auto"), 320);
-    return () => {
-      window.cancelAnimationFrame(t0);
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
-    };
-  }, [pinBottomSeq]);
-
-  if (items.length === 0 && !hasMore) {
-    return (
-      <div className="empty-hint">
-        {managed
-          ? "Waiting for ACP stream… send a prompt or wait for the agent."
-          : "No stream yet. Timeline mirrors Grok Build on disk; send a message to connect live."}
-      </div>
-    );
-  }
-
-  // Chronological (oldest → newest), like a terminal tail
-  return (
-    <div className="timeline-panel-wrap">
-      {hasMore && (
-        <div className="timeline-history-control">
-          <button
-            type="button"
-            className="btn"
-            disabled={loadingOlder}
-            onClick={() => {
-              stickToBottom.current = false;
-              void onLoadOlder();
-            }}
-          >
-            {loadingOlder ? "Loading…" : "Load earlier activity"}
-          </button>
-        </div>
-      )}
-      <div
-        ref={filterBarRef}
-        className="timeline-filters"
-        role="toolbar"
-        aria-label="Timeline content filter"
-      >
-        <span className="timeline-filter-indicator" aria-hidden />
-        {filterChips.map((k) => {
-          const count = k === "all" ? items.length : (kindCounts.get(k) ?? 0);
-          const label = TIMELINE_FILTER_LABELS[k] ?? k;
-          return (
-            <button
-              key={k}
-              type="button"
-              data-filter-kind={k}
-              className={`timeline-filter-chip filter-${k}${
-                filter === k ? " active" : ""
-              }`}
-              onClick={() => setFilter(k)}
-              aria-pressed={filter === k}
-            >
-              {label}
-              <span className="timeline-filter-count">{count}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {filtered.length === 0 ? (
-        <div className="empty-hint">
-          No <strong>{TIMELINE_FILTER_LABELS[filter] ?? filter}</strong> items in
-          this stream.
-        </div>
-      ) : (
-        <div
-          className={`timeline stream-timeline${
-            filter === "all" ? "" : " is-filtered"
-          }`}
-          ref={rootRef}
-        >
-          {filtered.map(({ item, sourceIndex }) => (
-            <LiveItemRow
-              key={item.id}
-              item={item}
-              stackClass={timelineStackClass(
-                items[sourceIndex - 1]?.kind,
-                item.kind,
-                items[sourceIndex + 1]?.kind,
-              )}
-              onOpenFile={onOpenFile}
-            />
-          ))}
-          <div ref={endRef} className="timeline-panel-end" aria-hidden />
-        </div>
-      )}
-    </div>
-  );
-}
-
 /**
  * Live chips for running child subagents + background tasks.
  * Mirrors Grok Build's tasks-pane summary without a second full pane.
@@ -704,135 +412,6 @@ function SubagentTaskStrip({
     </div>
   );
 }
-
-/**
- * One Timeline row. Memoized so streaming updates to the tail card do not
- * re-parse Markdown / re-layout every prior item.
- */
-const LiveItemRow = memo(function LiveItemRow({
-  item,
-  stackClass,
-  onOpenFile,
-}: {
-  item: TimelineItem;
-  stackClass: string;
-  onOpenFile?: (path: string) => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  const copyTimer = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (copyTimer.current != null) window.clearTimeout(copyTimer.current);
-    };
-  }, []);
-
-  const isMdKind =
-    item.kind === "agent" || item.kind === "user" || item.kind === "thought";
-  // While chunks are still coalescing, skip react-markdown (O(len) per frame).
-  const useMarkdown = isMdKind && Boolean(item.detail) && !item.streaming;
-  // Tool cards often put a path in detail or backtick-title — open on click.
-  const toolPath =
-    item.kind === "tool" && onOpenFile
-      ? extractToolPath(item.detail, item.title)
-      : null;
-
-  const canCopy =
-    (item.kind === "agent" || item.kind === "user") &&
-    Boolean(item.detail?.trim()) &&
-    !item.streaming;
-  const isConversationBody = item.kind === "user" || item.kind === "agent";
-  const copyAriaLabel =
-    item.kind === "user" ? "Copy user message" : "Copy agent output";
-  // Thought is identified by the kind icon — don't repeat the word "Thought".
-  // Only show a title while streaming with no body yet.
-  const displayTitle =
-    item.kind === "thought"
-      ? item.streaming && !item.detail?.trim()
-        ? "Thinking…"
-        : null
-      : item.title;
-
-  const copyDetail = useCallback(async () => {
-    const text = item.detail?.trim();
-    if (!text) return;
-    try {
-      await writeClipboard(text);
-      setCopied(true);
-      if (copyTimer.current != null) window.clearTimeout(copyTimer.current);
-      copyTimer.current = window.setTimeout(() => setCopied(false), 600);
-    } catch {
-      setCopied(false);
-    }
-  }, [item.detail]);
-
-  return (
-    <TimelineRowChrome kind={item.kind} ts={item.ts} stackClass={stackClass}>
-      {item.kind === "shell" && item.shell ? (
-        <ShellCard shell={item.shell} />
-      ) : (
-        <>
-          {isConversationBody || !displayTitle ? null : toolPath ? (
-            <FilePathLink
-              path={toolPath}
-              onOpen={onOpenFile}
-              className="tl-title"
-            >
-              {displayTitle}
-            </FilePathLink>
-          ) : (
-            <div className="tl-title">{displayTitle}</div>
-          )}
-          {item.detail && (
-            <div
-              className={
-                "tl-detail" +
-                (isConversationBody ? " tl-conversation-body" : "") +
-                (canCopy ? " has-copy" : "")
-              }
-            >
-              {useMarkdown ? (
-                <Markdown onOpenFile={onOpenFile}>{item.detail}</Markdown>
-              ) : isMdKind ? (
-                <pre className="tl-stream-plain">{item.detail}</pre>
-              ) : item.isEdit && item.detail ? (
-                <DiffSnippet patch={item.detail} />
-              ) : toolPath && item.detail === toolPath ? (
-                <FilePathLink
-                  path={toolPath}
-                  onOpen={onOpenFile}
-                  className="tl-detail-path"
-                >
-                  {item.detail}
-                </FilePathLink>
-              ) : (
-                item.detail
-              )}
-              {canCopy && (
-                <div className="tl-detail-footer">
-                  <button
-                    type="button"
-                    className={
-                      "tl-copy-btn" + (copied ? " is-copied" : "")
-                    }
-                    title={copied ? "Copied" : copyAriaLabel}
-                    aria-label={copied ? "Copied" : copyAriaLabel}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void copyDetail();
-                    }}
-                  >
-                    {copied ? "Copied" : "Copy"}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      )}
-    </TimelineRowChrome>
-  );
-});
 
 function RawStream({ detail }: { detail: Detail }) {
   const sample = detail.recentUpdates.slice(-5);

@@ -16,10 +16,20 @@ import {
   formatBgTaskTitle,
   formatSubagentDetail,
   formatSubagentTitle,
-  lifecycleMirrorKey,
   mergeBgTaskPayload,
   mergeSubagentPayload,
 } from "../utils/subagentTasks";
+import {
+  stabilizeTimelineList,
+  timelineMirrorKey,
+} from "./timelineIdentity";
+
+export {
+  pruneMapByKeys,
+  stabilizeTimelineList,
+  timelineItemsContentEqual,
+  timelineMirrorKey,
+} from "./timelineIdentity";
 
 export type UpdateDescription = ReturnType<typeof describeUpdate>;
 export type ShellIndexes = Map<string, Map<string, number>>;
@@ -32,6 +42,11 @@ export interface TimelineReducerState {
 export type TimelineRetention = "live" | "history";
 
 export const MAX_LIVE_ITEMS = 400;
+/**
+ * Hard cap for disk-history retention (load-older + hydrate). Above this the
+ * oldest cards drop; "Load earlier activity" can still refill from disk.
+ */
+export const MAX_HISTORY_ITEMS = 1_200;
 export const MAX_SHELL_OUTPUT_CHARS = 200_000;
 /** Synthetic handle for on-disk Grok Build updates (vs ACP / local slash). */
 export const DISK_HANDLE_ID = "disk";
@@ -138,8 +153,10 @@ export function trimLiveList(
   shellIndexByKey: Map<string, Map<string, number>>,
   retention: TimelineRetention = "live",
 ): void {
-  if (retention === "live" && list.length > MAX_LIVE_ITEMS) {
-    list.splice(0, list.length - MAX_LIVE_ITEMS);
+  const max =
+    retention === "history" ? MAX_HISTORY_ITEMS : MAX_LIVE_ITEMS;
+  if (list.length > max) {
+    list.splice(0, list.length - max);
     shellIndexByKey.delete(key);
   }
 }
@@ -761,6 +778,7 @@ export function reduceShellUpdate(
 /**
  * Replace disk-sourced cards for a session; keep ACP + local slash cards.
  * Returns the previous map reference when nothing changed.
+ * Unchanged cards keep their previous object identity so memoized rows skip work.
  */
 export function mergeDiskLiveIntoMap(
   previous: Map<string, TimelineItem[]>,
@@ -769,9 +787,10 @@ export function mergeDiskLiveIntoMap(
 ): Map<string, TimelineItem[]> {
   const existing = previous.get(sessionId) ?? [];
   const keep = existing.filter((item) => item.handleId !== DISK_HANDLE_ID);
-  const nextList = mergeTimelineItems(diskItems, keep);
+  const merged = mergeTimelineItems(diskItems, keep);
+  const nextList = stabilizeTimelineList(existing, merged);
 
-  if (listsShallowEqual(existing, nextList)) {
+  if (nextList === existing) {
     return previous;
   }
   const next = new Map(previous);
@@ -809,19 +828,6 @@ export function mergeTimelineItems(
   return Array.from(merged.values()).sort((a, b) => a.ts - b.ts);
 }
 
-function timelineMirrorKey(item: TimelineItem): string | null {
-  if (item.kind === "tool" && item.toolCallId) {
-    return `tool:${item.toolCallId}`;
-  }
-  if (item.kind === "shell" && item.shell?.toolCallId) {
-    return `shell:${item.shell.toolCallId}`;
-  }
-  const lifecycle = lifecycleMirrorKey(item);
-  if (lifecycle) return lifecycle;
-  if (item.sourceEventId) return `event:${item.sourceEventId}`;
-  return null;
-}
-
 function preferTimelineItem(
   candidate: TimelineItem,
   current: TimelineItem,
@@ -845,26 +851,4 @@ function preferTimelineItem(
   );
 }
 
-function listsShallowEqual(
-  left: TimelineItem[],
-  right: TimelineItem[],
-): boolean {
-  if (left.length !== right.length) return false;
-  for (let i = 0; i < left.length; i++) {
-    const a = left[i];
-    const b = right[i];
-    if (
-      a.id !== b.id ||
-      a.ts !== b.ts ||
-      a.kind !== b.kind ||
-      a.title !== b.title ||
-      a.detail !== b.detail ||
-      a.handleId !== b.handleId ||
-      a.sourceEventId !== b.sourceEventId ||
-      a.streaming !== b.streaming
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
+

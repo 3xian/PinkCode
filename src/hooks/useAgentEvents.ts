@@ -10,6 +10,7 @@ import type {
   ShellEntry,
 } from "../types";
 import type { LocalSlashItem } from "../utils/localSlash";
+import { isLiveManagedStatus } from "../utils/managedStatus";
 import { describeUpdate, extractUpdateTsMs } from "../utils/format";
 import {
   describePendingInteractionNotification,
@@ -26,6 +27,7 @@ import {
   hydrateLiveFromDiskUpdates,
   mergeDiskLiveIntoMap,
   mergeTimelineItems,
+  pruneMapByKeys,
   reduceAgentUpdate,
   reduceShellUpdate,
   sameManagedAgent,
@@ -40,14 +42,6 @@ export interface TrackedPendingInteraction {
   kind: PendingInteractionKind;
   sessionId: string;
   handleId?: string | null;
-}
-
-function isLiveManagedStatus(status: ManagedAgentInfo["status"]): boolean {
-  return (
-    status === "ready" ||
-    status === "running" ||
-    status === "awaitingPermission"
-  );
 }
 
 function shouldResetLifecycleRefill(
@@ -533,6 +527,25 @@ export function useAgentEvents(
       managedList.find((m) => m.sessionId === selectedSessionId) ?? null
     );
   }, [managedList, selectedSessionId]);
+
+  // Drop timeline buffers for sessions the user left, unless a live agent still
+  // owns that key (sessionId or handleId). Long multi-task sessions otherwise
+  // retain every card until the app restarts.
+  useEffect(() => {
+    const keep = new Set<string>();
+    if (selectedSessionId) keep.add(selectedSessionId);
+    for (const m of managedList) {
+      if (!isLiveManagedStatus(m.status)) continue;
+      keep.add(m.handleId);
+      if (m.sessionId) keep.add(m.sessionId);
+    }
+    setLiveBySession((prev) => {
+      const next = pruneMapByKeys(prev, keep);
+      if (next !== prev) liveRef.current = next;
+      return next;
+    });
+    setCommandsByKey((prev) => pruneMapByKeys(prev, keep));
+  }, [selectedSessionId, managedList]);
 
   const timelineItems = useMemo(() => {
     if (!selectedSessionId) return [] as TimelineItem[];

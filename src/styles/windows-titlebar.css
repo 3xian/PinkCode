@@ -4,7 +4,7 @@
   min-height: 32px;
   display: flex;
   align-items: stretch;
-  background: var(--bg-elevated);
+  background: var(--bg-chrome);
   border-bottom: 1px solid var(--border);
   color: var(--text-muted);
   user-select: none;

@@ -300,6 +300,35 @@ pub struct SessionCancelParams {
     pub reason: String,
 }
 
+// ── session/close ───────────────────────────────────────────────────────────
+
+/// ACP `session/close` — cancel in-flight work, reap children, finalize replica.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionCloseParams {
+    pub session_id: String,
+}
+
+/// `CloseSessionResponse` is empty aside from optional `_meta` (`x.ai/closeOutcome`).
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionCloseResult {
+    #[serde(default, rename = "_meta")]
+    pub meta: Option<Value>,
+}
+
+impl SessionCloseResult {
+    /// Wire outcome: `closed` | `notResident` | `superseded`.
+    pub fn close_outcome(&self) -> Option<&str> {
+        self.meta
+            .as_ref()
+            .and_then(|meta| meta.get("x.ai/closeOutcome"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
+}
+
 // ── x.ai/interject ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize)]

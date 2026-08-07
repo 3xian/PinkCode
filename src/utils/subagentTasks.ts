@@ -141,27 +141,36 @@ export function isBgPlumbingTool(inner: Record<string, unknown>): boolean {
   return false;
 }
 
-function normalizeSubagentStatus(raw?: string | null): SubagentLifecycleStatus {
+/** Map wire/lifecycle status strings onto the host card enum. */
+export function normalizeSubagentStatus(
+  raw?: string | null,
+  fallback: SubagentLifecycleStatus = "running",
+): SubagentLifecycleStatus {
   const s = (raw ?? "").toLowerCase();
   if (s === "completed" || s === "done" || s === "success") return "completed";
   if (s === "failed" || s === "error") return "failed";
   if (s === "cancelled" || s === "canceled" || s === "interrupted") {
     return "cancelled";
   }
-  return "running";
+  if (s === "finished") return "finished";
+  if (s === "running") return "running";
+  return fallback;
 }
 
-function normalizeBgStatus(
+export function normalizeBgStatus(
   raw?: string | null,
   exitCode?: number | null,
+  fallback: BgTaskLifecycleStatus = "running",
 ): BgTaskLifecycleStatus {
   const s = (raw ?? "").toLowerCase();
   if (s === "done" || s === "completed" || s === "success") return "done";
   if (s === "failed" || s === "error" || s === "cancelled" || s === "canceled") {
     return "failed";
   }
+  if (s === "stopped") return "stopped";
   if (exitCode != null) return exitCode === 0 ? "done" : "failed";
-  return "running";
+  if (s === "running") return "running";
+  return fallback;
 }
 
 function formatDurationMs(ms?: number | null): string | undefined {

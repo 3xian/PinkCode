@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { listSubagents, listTasks } from "../api";
+import {
+  cancelSubagent as cancelSubagentApi,
+  killTask as killTaskApi,
+  listSubagents,
+  listTasks,
+} from "../api";
 import type {
   AgentUpdateEvent,
   AvailableCommand,
@@ -21,6 +26,10 @@ import {
   projectNestedLifecycleItems,
   reconcileLifecycleSnapshots,
 } from "../utils/lifecycleState";
+import {
+  applyCancelSubagentOutcome,
+  applyKillTaskOutcome,
+} from "./lifecycleSettle";
 import {
   LOCAL_HANDLE_ID,
   createTimelineReducerState,
@@ -147,6 +156,38 @@ export function useAgentEvents(
       return changed ? next : prev;
     });
   }, []);
+
+  /** Cancel subagent via ACP and settle the lifecycle card from the wire outcome. */
+  const cancelSubagent = useCallback(
+    async (handleId: string, subagentId: string) => {
+      const result = await cancelSubagentApi(handleId, subagentId);
+      setLiveBySession((prev) => {
+        const next = applyCancelSubagentOutcome(
+          prev,
+          handleId,
+          subagentId,
+          result,
+        );
+        if (next !== prev) liveRef.current = next;
+        return next;
+      });
+      return result;
+    },
+    [],
+  );
+
+  /** Kill bg task via ACP and settle the lifecycle card from the wire outcome. */
+  const killTask = useCallback(async (handleId: string, taskId: string) => {
+    const result = await killTaskApi(handleId, taskId);
+    setLiveBySession((prev) => {
+      const next = applyKillTaskOutcome(prev, handleId, taskId, result);
+      if (next !== prev) liveRef.current = next;
+      return next;
+    });
+    return result;
+  }, []);
+
+
 
   const removePermission = useCallback((requestKey: string) => {
     setPermissions((prev) => {
@@ -646,5 +687,7 @@ export function useAgentEvents(
     hydratePermissions,
     appendLocalLive,
     hydrateDiskLive,
+    cancelSubagent,
+    killTask,
   };
 }

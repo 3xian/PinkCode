@@ -33,7 +33,7 @@
 }
 
 .left-rail {
-  background: var(--bg-elevated);
+  background: var(--bg-chrome);
   min-width: 0;
   position: relative;
 }
@@ -53,8 +53,7 @@
 }
 
 .side-panel.workspace-panel {
-  --workspace-pane-bg: rgb(var(--rp-base-rgb) / 0.6);
-  --workspace-bar-bg: var(--bg-elevated);
+  --workspace-pane-bg: rgb(var(--rp-surface-rgb) / 0.6);
   --text-muted: var(--rp-text);
   --muted: var(--rp-subtle);
   display: flex;
@@ -157,7 +156,7 @@
   gap: 0;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
-  background: var(--workspace-bar-bg);
+  background: var(--bg-chrome);
 }
 
 .workspace-tab {
@@ -283,7 +282,7 @@
   border: none;
   border-bottom: none;
   box-sizing: border-box;
-  background: var(--workspace-bar-bg);
+  background: var(--bg-chrome);
 }
 
 .panel-header.file-preview-header .file-preview-title,
@@ -786,7 +785,7 @@
 }
 
 .detail-panel {
-  background: var(--bg-elevated);
+  background: var(--bg-chrome);
   padding: 0;
   overflow: hidden;
   min-width: 0; /* allow title ellipsis inside grid track */
@@ -818,7 +817,7 @@
 }
 
 .list-controls {
-  padding: 0 10px 10px;
+  padding: 0 10px 10px 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -828,7 +827,7 @@
 .search {
   width: 100%;
   padding: 8px 12px;
-  border-radius: 999px;
+  border-radius: 0 999px 999px 0;
   border: none;
   background: var(--bg-elevated);
   outline: none;
@@ -840,7 +839,7 @@
 
 .session-cards {
   overflow: auto;
-  padding: 0 10px 14px;
+  padding: 0 10px 14px 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -882,7 +881,7 @@
   text-align: left;
   border: 1px solid var(--border); /* Highlight Med */
   background: var(--rp-surface); /* Opaque Surface */
-  border-radius: 10px;
+  border-radius: 0 10px 10px 0;
   padding: 0;
   overflow: hidden;
   cursor: pointer;
@@ -912,7 +911,7 @@
   align-items: center;
   gap: 8px;
   min-height: 16px;
-  padding: 1px 10px;
+  padding: 1px 6px 1px 10px;
   overflow: hidden;
   flex-shrink: 0;
   color: var(--card-status-fg);
@@ -1018,7 +1017,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 11px 12px 12px;
+  padding: 11px 6px 12px 12px;
   min-width: 0;
 }
 

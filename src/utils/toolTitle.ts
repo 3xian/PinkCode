@@ -21,6 +21,8 @@ export interface ToolCardParts {
   detail?: string;
   /** Display title: base + status suffix (completed → ✓). */
   title: string;
+  /** From `_meta["x.ai/tool"].read_only` when present. */
+  readOnly?: boolean;
 }
 
 /** Map ACP status to a short title suffix. */
@@ -31,10 +33,15 @@ export function formatToolStatusSuffix(status?: string): string {
   return `· ${st}`;
 }
 
-export function composeToolTitle(baseTitle: string, status?: string): string {
+export function composeToolTitle(
+  baseTitle: string,
+  status?: string,
+  readOnly?: boolean,
+): string {
   const base = baseTitle.trim() || "Tool call";
+  const withRo = readOnly ? `${base} · read-only` : base;
   const suffix = formatToolStatusSuffix(status);
-  return suffix ? `${base} ${suffix}` : base;
+  return suffix ? `${withRo} ${suffix}` : withRo;
 }
 
 /**
@@ -53,11 +60,14 @@ export function mergeToolCardParts(
       : prevBase || nextBase || "Tool call";
   const status = next.status?.trim() || prev.status?.trim() || undefined;
   const detail = next.detail ?? prev.detail;
+  const readOnly =
+    next.readOnly !== undefined ? next.readOnly : prev.readOnly;
   return {
     baseTitle,
     status,
     detail,
-    title: composeToolTitle(baseTitle, status),
+    title: composeToolTitle(baseTitle, status, readOnly),
+    readOnly,
   };
 }
 
@@ -163,6 +173,12 @@ export function formatToolCardParts(
     typeof meta.name === "string" && meta.name.trim()
       ? meta.name.trim()
       : "";
+  const readOnly =
+    typeof meta.read_only === "boolean"
+      ? meta.read_only
+      : typeof meta.readOnly === "boolean"
+        ? meta.readOnly
+        : undefined;
   const target = toolPrimaryTarget(inner);
   const targetShort = target
     ? target.length > 64 || /[/\\]/.test(target)
@@ -195,8 +211,8 @@ export function formatToolCardParts(
     baseTitle = "Tool call";
   }
 
-  const title = composeToolTitle(baseTitle, status);
+  const title = composeToolTitle(baseTitle, status, readOnly);
   const detail =
     targetShort && !title.includes(targetShort) ? targetShort : undefined;
-  return { baseTitle, status, detail, title };
+  return { baseTitle, status, detail, title, readOnly };
 }

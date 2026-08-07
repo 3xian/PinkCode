@@ -38,6 +38,44 @@ describe("friendly tool titles", () => {
     expect(parts.detail).toBeUndefined();
   });
 
+  it("captures read_only from x.ai/tool meta", () => {
+    const parts = formatToolCardParts({
+      sessionUpdate: "tool_call",
+      toolCallId: "call-ro-1",
+      title: "read_file",
+      _meta: {
+        "x.ai/tool": {
+          name: "read_file",
+          label: "Read",
+          kind: "read",
+          read_only: true,
+        },
+      },
+    });
+    expect(parts.readOnly).toBe(true);
+    expect(parts.title).toContain("read-only");
+    const desc = describeUpdate({
+      method: "session/update",
+      params: {
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-ro-1",
+          title: "read_file",
+          _meta: {
+            "x.ai/tool": {
+              name: "read_file",
+              label: "Read",
+              kind: "read",
+              read_only: true,
+            },
+          },
+        },
+      },
+    });
+    expect(desc.toolReadOnly).toBe(true);
+    expect(desc.title).toContain("read-only");
+  });
+
   it("keeps ACP human title on tool_call_update", () => {
     const parts = formatToolCardParts({
       sessionUpdate: "tool_call_update",

@@ -2,11 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   attachAgent,
-  cancelSubagent,
   getLastSpawnPermissionMode,
   getSessionDetail,
   interjectAgent,
-  killTask,
   listManagedAgents,
   listPendingPermissions,
   listTaskPermissionModes,
@@ -136,6 +134,8 @@ function App() {
     hydratePermissions,
     appendLocalLive,
     hydrateDiskLive,
+    cancelSubagent,
+    killTask,
     needsInputSessionIds,
   } = useAgentEvents(selectedId, {
     onCurrentModeUpdate: planMode.onAgentModeUpdate,
@@ -990,7 +990,12 @@ function App() {
             managedForSession.status !== "stopped" &&
             managedForSession.status !== "error"
               ? (subagentId: string) => {
-                  void cancelSubagent(managedForSession.handleId, subagentId);
+                  void cancelSubagent(
+                    managedForSession.handleId,
+                    subagentId,
+                  ).catch((e) => {
+                    setError(e instanceof Error ? e.message : String(e));
+                  });
                 }
               : undefined
           }
@@ -999,7 +1004,11 @@ function App() {
             managedForSession.status !== "stopped" &&
             managedForSession.status !== "error"
               ? (taskId: string) => {
-                  void killTask(managedForSession.handleId, taskId);
+                  void killTask(managedForSession.handleId, taskId).catch(
+                    (e) => {
+                      setError(e instanceof Error ? e.message : String(e));
+                    },
+                  );
                 }
               : undefined
           }

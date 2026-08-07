@@ -484,6 +484,20 @@ impl AcpClient {
         )
     }
 
+    /// ACP `session/close` — cancel turn/subagents/bg tasks and finalize the
+    /// session replica before the host tears down the transport.
+    pub fn session_close(&self, session_id: &str) -> Result<SessionCloseResult> {
+        self.call(
+            "session/close",
+            &SessionCloseParams {
+                session_id: session_id.to_string(),
+            },
+            // Close waits behind prompt intake and drains children; align with
+            // Grok's multi-stage close budget rather than a short notify timeout.
+            Duration::from_secs(30),
+        )
+    }
+
     pub fn kill(&self) -> Result<()> {
         self.gateway.kill()
     }

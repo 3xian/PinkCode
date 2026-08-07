@@ -3,6 +3,8 @@ import {
   DISK_HANDLE_ID,
   LOCAL_HANDLE_ID,
   MAX_HISTORY_ITEMS,
+  applyCancelSubagentOutcome,
+  applyKillTaskOutcome,
   capShellOutput,
   createTimelineReducerState,
   hydrateLiveFromDiskUpdates,
@@ -19,7 +21,6 @@ import {
 } from "./liveTimeline";
 import { describeUpdate } from "../utils/format";
 import type { TimelineItem } from "../types";
-
 describe("live timeline reducer", () => {
   it("settles running lifecycle cards when a managed handle closes", () => {
     const map = new Map<string, TimelineItem[]>([
@@ -62,6 +63,79 @@ describe("live timeline reducer", () => {
     expect(settled[0].subagent?.status).toBe("finished");
     expect(settled[1].task?.status).toBe("stopped");
   });
+
+  it("settles subagent cards from cancel outcomes", () => {
+    const running: TimelineItem = {
+      id: "sub",
+      handleId: "handle",
+      kind: "subagent",
+      title: "running",
+      ts: 1,
+      subagent: {
+        subagentId: "sa",
+        childSessionId: "child",
+        description: "work",
+        subagentType: "explore",
+        isBackground: true,
+        depth: 1,
+        status: "running",
+      },
+    };
+    const map = new Map<string, TimelineItem[]>([["session", [running]]]);
+
+    const cancelled = applyCancelSubagentOutcome(map, "handle", "sa", {
+      cancelled: true,
+      outcome: { kind: "cancelled" },
+    }).get("session")!;
+    expect(cancelled[0].subagent?.status).toBe("cancelled");
+
+    const finished = applyCancelSubagentOutcome(map, "handle", "sa", {
+      cancelled: false,
+      outcome: { kind: "already_finished", status: "completed" },
+    }).get("session")!;
+    expect(finished[0].subagent?.status).toBe("completed");
+
+    const missing = applyCancelSubagentOutcome(map, "handle", "sa", {
+      cancelled: false,
+      outcome: { kind: "not_found" },
+    }).get("session")!;
+    expect(missing[0].subagent?.status).toBe("cancelled");
+    expect(missing[0].subagent?.error).toBe("subagent not found");
+  });
+
+  it("settles task cards from kill outcomes", () => {
+    const running: TimelineItem = {
+      id: "task",
+      handleId: "handle",
+      kind: "task",
+      title: "running",
+      ts: 2,
+      task: {
+        taskId: "task-1",
+        command: "npm test",
+        isMonitor: false,
+        status: "running",
+      },
+    };
+    const map = new Map<string, TimelineItem[]>([["session", [running]]]);
+
+    const killed = applyKillTaskOutcome(map, "handle", "task-1", {
+      outcome: "killed",
+    }).get("session")!;
+    expect(killed[0].task?.status).toBe("stopped");
+
+    const exited = applyKillTaskOutcome(map, "handle", "task-1", {
+      outcome: "already_exited",
+    }).get("session")!;
+    expect(exited[0].task?.status).toBe("done");
+
+    const missing = applyKillTaskOutcome(map, "handle", "task-1", {
+      outcome: "not_found",
+    }).get("session")!;
+    expect(missing[0].task?.status).toBe("stopped");
+    expect(missing[0].task?.error).toBe("task not found");
+  });
+
 
   it("hydrates disk live items via shared reducers and coalesces chunks", () => {
     const updates = [

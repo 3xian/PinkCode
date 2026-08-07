@@ -110,6 +110,7 @@ export function timelineItemsContentEqual(
     a.toolCallId !== b.toolCallId ||
     a.toolBase !== b.toolBase ||
     a.toolStatus !== b.toolStatus ||
+    a.toolReadOnly !== b.toolReadOnly ||
     a.isEdit !== b.isEdit
   ) {
     return false;

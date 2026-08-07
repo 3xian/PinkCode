@@ -63,6 +63,12 @@ export const GROK_SLASH_COMMANDS: SlashCommandDef[] = [
     fulfillment: "agent",
   },
   {
+    name: "undo",
+    description: "Rewind to an earlier turn",
+    fulfillment: "agent",
+    hidden: true,
+  },
+  {
     name: "copy",
     description: "Copy recent response",
     inputHint: "N or file path",

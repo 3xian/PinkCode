@@ -3,6 +3,7 @@ import type {
   ActiveSession,
   AvailableCommand,
   AttachRequest,
+  CancelSubagentResult,
   DashboardStats,
   DirEntry,
   FilePreview,
@@ -10,6 +11,7 @@ import type {
   GitChange,
   GitFileDiff,
   HunkPage,
+  KillTaskResult,
   LiveSessionUsage,
   ListSubagentsResult,
   ListTasksResult,
@@ -395,8 +397,11 @@ export async function rewindExecute(
 export async function cancelSubagent(
   handleId: string,
   subagentId: string,
-): Promise<Record<string, unknown>> {
-  return invoke("cancel_subagent", { handleId, subagentId });
+): Promise<CancelSubagentResult> {
+  return invoke<CancelSubagentResult>("cancel_subagent", {
+    handleId,
+    subagentId,
+  });
 }
 
 /** ACP `x.ai/subagent/list_running` — list running subagents. */
@@ -410,8 +415,8 @@ export async function listSubagents(
 export async function killTask(
   handleId: string,
   taskId: string,
-): Promise<Record<string, unknown>> {
-  return invoke("kill_task", { handleId, taskId });
+): Promise<KillTaskResult> {
+  return invoke<KillTaskResult>("kill_task", { handleId, taskId });
 }
 
 /** ACP `x.ai/task/list` — list background tasks. */

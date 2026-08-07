@@ -18,6 +18,7 @@
  * visible through the three full-height application columns. Menus and
  * dialogs deliberately keep their opaque backgrounds for legibility. */
 html.platform-macos-desktop {
+  --bg-chrome: rgb(var(--spec-rgb) / 0.52);
   --bg-elevated: rgb(var(--rp-surface-rgb) / 0.52);
   --bg-panel: rgb(var(--rp-surface-rgb) / 0.48);
   --bg-hover: rgb(var(--rp-overlay-rgb) / 0.56);
@@ -29,7 +30,7 @@ html.platform-macos-desktop {
 /* The workspace declares this pane wash locally, so it needs its own
  * platform override to avoid turning the right column into an opaque block. */
 html.platform-macos-desktop .side-panel.workspace-panel {
-  --workspace-pane-bg: rgb(var(--rp-base-rgb) / 0.5);
+  --workspace-pane-bg: rgb(var(--rp-surface-rgb) / 0.5);
 }
 
 /* Empty strip for native traffic lights (Overlay titlebar). */

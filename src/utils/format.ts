@@ -319,6 +319,8 @@ export function describeUpdate(update: unknown): {
   /** Structured tool title parts when kind is `"tool"`. */
   toolBase?: string;
   toolStatus?: string;
+  /** From `_meta["x.ai/tool"].read_only` when present. */
+  toolReadOnly?: boolean;
   /** True when `detail` is a modified-file diff (Grok Build Edit block). */
   isEdit?: boolean;
   /** True when this update is a shell tool (Live uses agent-shell card only). */
@@ -415,6 +417,7 @@ export function describeUpdate(update: unknown): {
         toolCallId,
         toolBase: parts.baseTitle,
         toolStatus: parts.status,
+        toolReadOnly: parts.readOnly,
         isShell: isShellToolUpdate({
           ...inner,
           sessionUpdate,

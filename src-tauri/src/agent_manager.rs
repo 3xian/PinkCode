@@ -1590,24 +1590,42 @@ impl AgentManager {
             }
         };
 
-        // Cancellation is asynchronous. Keep the ACP transport alive long
-        // enough for Grok to flush its cancelled turn, hunks and durable
-        // notifications. If graceful cancellation cannot be delivered, fall
-        // back to force-killing the child instead of leaving the task stuck in
-        // Stopping with a dead transport.
-        if let Some(ref sid) = session_id {
-            let cancel_delivered = match client.session_cancel(sid, "user") {
-                Ok(()) => true,
+        // Prefer ACP `session/close`: cancels the turn, all session subagents,
+        // background tasks, and finalizes the replica. Fall back to
+        // `session/cancel` on older agents that lack close.
+        if let Some(sid) = &session_id {
+            let close_delivered = match client.session_close(sid) {
+                Ok(result) => {
+                    if let Some(outcome) = result.close_outcome() {
+                        tracing::info!(
+                            handle_id,
+                            session_id = %sid,
+                            outcome,
+                            "session/close completed"
+                        );
+                    }
+                    true
+                }
                 Err(error) => {
                     tracing::warn!(
                         handle_id,
                         error = %error,
-                        "graceful session cancellation failed; forcing shutdown"
+                        "session/close failed; falling back to session/cancel"
                     );
-                    false
+                    match client.session_cancel(sid, "user") {
+                        Ok(()) => true,
+                        Err(cancel_error) => {
+                            tracing::warn!(
+                                handle_id,
+                                error = %cancel_error,
+                                "graceful session cancellation failed; forcing shutdown"
+                            );
+                            false
+                        }
+                    }
                 }
             };
-            if had_running_turn && cancel_delivered {
+            if had_running_turn && close_delivered {
                 let deadline = Instant::now() + Duration::from_secs(5);
                 let mut settled = false;
                 while Instant::now() < deadline {
@@ -1621,10 +1639,7 @@ impl AgentManager {
                     thread::sleep(Duration::from_millis(50));
                 }
                 if !settled {
-                    tracing::warn!(
-                        handle_id,
-                        "forcing agent shutdown after cancellation grace period"
-                    );
+                    tracing::warn!(handle_id, "forcing agent shutdown after close grace period");
                 }
             }
         }

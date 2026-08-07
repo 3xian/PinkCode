@@ -44,10 +44,16 @@
   --rp-iris-rgb: 144 122 169;
 
   /* ── Glass surfaces ─────────────────────────────────────────
-   * Native Acrylic/Vibrancy supplies the blur; these translucent Dawn
-   * washes preserve the palette while allowing the material through.
+   * Native Acrylic/Vibrancy supplies the blur; translucent washes keep
+   * the material visible. Invariant:
+   *   --bg          shell (transparent; native material shows)
+   *   --bg-chrome   column shells, titlebar, workspace nav bars (white glass)
+   *   --bg-elevated widget fills: chips, queues, compact controls (surface glass)
+   *   pane fills    workspace-local --workspace-pane-bg (surface wash)
+   * Selected cards / menus may stay opaque palette roles on purpose.
    */
   --bg: transparent;
+  --bg-chrome: rgb(var(--spec-rgb) / 0.68);
   --bg-elevated: rgb(var(--rp-surface-rgb) / 0.68);
   --bg-menu: var(--rp-surface);
   --bg-panel: rgb(var(--rp-surface-rgb) / 0.64);

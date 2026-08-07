@@ -490,6 +490,8 @@ export interface TimelineItem {
   toolBase?: string;
   /** Tool card ACP status (pending / completed / …). */
   toolStatus?: string;
+  /** From `_meta["x.ai/tool"].read_only` when present. */
+  toolReadOnly?: boolean;
   /** True when `detail` is a unified diff of a modified file (render as snippet). */
   isEdit?: boolean;
   /** Present when kind is `"shell"`. */
@@ -579,6 +581,22 @@ export interface ListedTask {
 export interface ListTasksResult {
   tasks: ListedTask[];
 }
+
+/** ACP `x.ai/subagent/cancel` result (under ExtMethodResult.result). */
+export interface CancelSubagentResult {
+  subagentId?: string;
+  cancelled?: boolean;
+  /** `{ kind: cancelled|already_finished|not_found, status? }` or legacy raw. */
+  outcome?: unknown;
+}
+
+/** ACP `x.ai/task/kill` result (under ExtMethodResult.result). */
+export interface KillTaskResult {
+  taskId?: string;
+  /** `killed` | `already_exited` | `not_found` (string) or `{ kind }`. */
+  outcome?: unknown;
+}
+
 
 /**
  * ACP `x.ai/recap` is fire-and-forget: `{ ok, disabled? }`.

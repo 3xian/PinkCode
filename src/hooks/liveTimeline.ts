@@ -31,6 +31,12 @@ export {
   timelineMirrorKey,
 } from "./timelineIdentity";
 
+export {
+  applyCancelSubagentOutcome,
+  applyKillTaskOutcome,
+  settleLifecycleItems,
+} from "./lifecycleSettle";
+
 export type UpdateDescription = ReturnType<typeof describeUpdate>;
 export type ShellIndexes = Map<string, Map<string, number>>;
 export interface TimelineReducerState {
@@ -93,53 +99,6 @@ export function settleStreamingItems(
     });
     if (listChanged) {
       next.set(key, output);
-      changed = true;
-    }
-  }
-  return changed ? next : map;
-}
-
-/** Settle running lifecycle cards when their managed ACP handle closes. */
-export function settleLifecycleItems(
-  map: Map<string, TimelineItem[]>,
-  handleId: string,
-): Map<string, TimelineItem[]> {
-  let changed = false;
-  const next = new Map(map);
-  for (const [key, list] of map) {
-    let listChanged = false;
-    const settled = list.map((item) => {
-      if (item.handleId !== handleId) return item;
-      if (item.kind === "subagent" && item.subagent?.status === "running") {
-        listChanged = true;
-        const subagent = {
-          ...item.subagent,
-          status: "finished" as const,
-          activityLabel: null,
-        };
-        return {
-          ...item,
-          subagent,
-          toolStatus: subagent.status,
-          title: formatSubagentTitle(subagent),
-          detail: formatSubagentDetail(subagent),
-        };
-      }
-      if (item.kind === "task" && item.task?.status === "running") {
-        listChanged = true;
-        const task = { ...item.task, status: "stopped" as const };
-        return {
-          ...item,
-          task,
-          toolStatus: task.status,
-          title: formatBgTaskTitle(task),
-          detail: formatBgTaskDetail(task),
-        };
-      }
-      return item;
-    });
-    if (listChanged) {
-      next.set(key, settled);
       changed = true;
     }
   }
@@ -403,12 +362,14 @@ export function reduceAgentUpdate(
           status: prev.toolStatus,
           detail: prev.detail,
           title: prev.title,
+          readOnly: prev.toolReadOnly,
         },
         {
           baseTitle: description.toolBase ?? description.title,
           status: description.toolStatus,
           detail: description.detail,
           title: description.title,
+          readOnly: description.toolReadOnly,
         },
       );
       list[index] = {
@@ -421,6 +382,7 @@ export function reduceAgentUpdate(
         detail: merged.detail,
         toolBase: merged.baseTitle,
         toolStatus: merged.status,
+        toolReadOnly: merged.readOnly,
         toolCallId: description.toolCallId,
         // `detail` merges next-wins/fallback-prev (mergeToolCardParts); the diff
         // flag follows the same rule: a content-less update (no detail, but an
@@ -533,6 +495,7 @@ export function reduceAgentUpdate(
     toolCallId: description.toolCallId,
     toolBase: description.toolBase,
     toolStatus: description.toolStatus,
+    toolReadOnly: description.toolReadOnly,
     isEdit: description.isEdit,
     ts: now,
     sourceEventId: sourceEventId ?? undefined,

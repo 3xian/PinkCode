@@ -58,7 +58,7 @@ export function MacosTitlebarBrand({
           draggable={false}
         />
         <div className="macos-titlebar-copy">
-          <span className="macos-titlebar-name">PinkCode</span>
+          <span className="macos-titlebar-name text-title-gradient">PinkCode</span>
           {statusLine ? (
             <span className="macos-titlebar-version">{statusLine}</span>
           ) : null}

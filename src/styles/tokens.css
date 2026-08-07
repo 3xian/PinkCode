@@ -138,6 +138,13 @@
   --shadow-md: 0 6px 18px rgb(var(--text-rgb) / 0.1);
   --shadow-lg: 0 16px 48px rgb(var(--text-rgb) / 0.16);
   --shadow-text-hairline: 0 1px 0 rgb(var(--text-rgb) / 0.05);
+  /* Rose → iris → foam title fill (detail h1, selected task, brand) */
+  --title-gradient: linear-gradient(
+    90deg,
+    var(--accent) 0%,
+    var(--title-selected) 50%,
+    var(--live) 100%
+  );
   /* Specular white (light-mode glass only; not a palette role) */
   --spec: #ffffff;
   --spec-rgb: 255 255 255;

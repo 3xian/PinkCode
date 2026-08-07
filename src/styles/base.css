@@ -78,6 +78,15 @@ input {
   line-height: inherit;
 }
 
+/* Rose → iris → foam gradient text (see --title-gradient). */
+.text-title-gradient {
+  background: var(--title-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
 code,
 .mono,
 pre {

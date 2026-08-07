@@ -839,7 +839,7 @@
 
 .session-cards {
   overflow: auto;
-  padding: 0 10px 14px 0;
+  padding: 4px 10px 14px 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -864,8 +864,8 @@
 
 /*
  * Task cards — Rosé Pine surfaces:
- *   border: Highlight Med · opaque Surface · hover: opaque Highlight Low
- *   · selected: opaque Base + Foam border
+ *   border: Highlight Med · surface glass · hover: Highlight Low glass
+ *   · selected: opaque Base + elevation shadow (no accent border)
  * Status ribbon only when non-idle.
  */
 .session-card {
@@ -880,10 +880,10 @@
   position: relative;
   text-align: left;
   border: 1px solid var(--border); /* Highlight Med */
-  background: var(--rp-surface); /* Opaque Surface */
+  background: var(--bg-elevated); /* Surface glass */
   border-radius: 0 10px 10px 0;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -895,12 +895,12 @@
   box-sizing: border-box;
   align-self: stretch;
   box-shadow: none;
-  transition: background-color 0.12s ease;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .session-card:hover {
   border-color: var(--border);
-  background: var(--rp-hl-low); /* Opaque Highlight Low */
+  background: var(--hl-low); /* Highlight Low glass */
 }
 
 /* ── Status ribbon (non-idle only): solid on the left → transparent right ── */
@@ -997,20 +997,24 @@
   --card-status-sweep: rgb(var(--spec-rgb) / 0.5);
 }
 
-/* Selected: Base fill + Foam border */
-.session-card.selected {
-  border-color: var(--live); /* Foam */
-  background: var(--rp-base); /* Opaque Base */
-  transition: none;
-}
-
+/* Selected: Base fill + soft elevation (default border kept) */
+.session-card.selected,
 .session-card.selected:hover {
-  border-color: var(--live);
-  background: var(--rp-base); /* keep opaque Base on hover */
+  background: var(--rp-base); /* Opaque Base */
+  box-shadow:
+    var(--shadow-sm),
+    0 4px 16px rgb(var(--live-rgb) / 0.16);
+  z-index: 1;
+  transition: none;
 }
 
 .session-card.selected .card-title {
   font-weight: 650;
+  background: var(--title-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 
 .card-body {

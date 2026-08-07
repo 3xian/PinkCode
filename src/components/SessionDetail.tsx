@@ -157,7 +157,7 @@ export function SessionDetailView({
         <div className="detail-header-main">
           {/* The blank title-row space is a macOS Overlay drag affordance. */}
           <div className="detail-title-row">
-            <h1 title={card.title || undefined}>{card.title}</h1>
+            <h1 className="text-title-gradient" title={card.title || undefined}>{card.title}</h1>
             <div className="detail-title-drag-region" data-tauri-drag-region aria-hidden />
           </div>
           <div className="detail-sub">

@@ -28,7 +28,7 @@ Run multiple [Grok Build](https://x.ai/cli) tasks side by side, follow every tas
 ## Screenshot
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="PinkCode — parallel tasks, live Timeline, usage, workspace" width="100%" />
+  <img src="docs/screenshot.jpg" alt="PinkCode — parallel tasks, live Timeline, usage, workspace" width="100%" />
 </p>
 
 ## Features

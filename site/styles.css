@@ -471,8 +471,8 @@ h1 {
   width: 100%;
   max-width: 100%;
   height: auto;
-  /* Lock ratio to the compressed shot (1400×886). */
-  aspect-ratio: 1400 / 886;
+  /* Lock ratio to the compressed shot (1400×858). */
+  aspect-ratio: 1400 / 858;
   object-fit: contain;
   object-position: center;
 }
@@ -1114,7 +1114,7 @@ footer > div:last-child {
   .product-shot {
     width: 100%;
     height: auto;
-    aspect-ratio: 1400 / 886;
+    aspect-ratio: 1400 / 858;
     object-fit: contain;
   }
 

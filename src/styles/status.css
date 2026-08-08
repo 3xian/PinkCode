@@ -296,7 +296,7 @@
   pointer-events: none;
 }
 
-/* Charge level (remaining %) */
+/* Charge level (remaining %) — the “water” in the bottle */
 .usage-battery-fill {
   position: absolute;
   left: 0;
@@ -305,6 +305,7 @@
   width: 100%;
   height: 0%;
   z-index: 1;
+  overflow: hidden;
   transition: height 0.5s cubic-bezier(0.33, 1, 0.68, 1);
   background: var(--battery-sheen), var(--battery-fill);
   box-shadow:
@@ -312,18 +313,140 @@
     0 0 14px rgb(var(--pine-rgb) / 0.24);
 }
 
+/* Soft surface sheen */
 .usage-battery-fill-sheen {
   position: absolute;
   left: 0;
   right: 0;
   top: 0;
   height: 6px;
+  z-index: 2;
   background: linear-gradient(
     180deg,
     rgb(var(--spec-rgb) / 0.4) 0%,
     transparent 100%
   );
   pointer-events: none;
+  opacity: 0.85;
+}
+
+/*
+ * Dual SVG crests at the water line. Wider than the bottle so horizontal
+ * translation reads as waves rolling through the liquid, not the bottle tilting.
+ * Class .is-waving is toggled imperatively from WeekUsageBar (no JS duration).
+ */
+.usage-battery-wave-layer {
+  position: absolute;
+  left: -60%;
+  top: -1px;
+  width: 220%;
+  height: 12px;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.usage-battery-wave {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.usage-battery-wave-back path {
+  fill: rgb(var(--spec-rgb) / 0.16);
+}
+
+.usage-battery-wave-front path {
+  fill: rgb(var(--spec-rgb) / 0.34);
+}
+
+.week-battery.is-waving .usage-battery-wave-layer {
+  opacity: 1;
+}
+
+.week-battery.is-waving .usage-battery-wave {
+  will-change: transform;
+}
+
+.week-battery.is-waving .usage-battery-wave-front {
+  animation: usage-wave-sway-front 1.55s cubic-bezier(0.37, 0.01, 0.2, 1) both;
+}
+
+.week-battery.is-waving .usage-battery-wave-back {
+  animation: usage-wave-sway-back 1.55s cubic-bezier(0.37, 0.01, 0.2, 1) both;
+}
+
+.week-battery.is-waving .usage-battery-fill-sheen {
+  animation: usage-sheen-sway 1.55s cubic-bezier(0.37, 0.01, 0.2, 1) both;
+}
+
+/* Front crest: longer travel, damps out (onAnimationEnd on this SVG clears .is-waving) */
+@keyframes usage-wave-sway-front {
+  0% {
+    transform: translate3d(-14%, 0.6px, 0);
+  }
+  22% {
+    transform: translate3d(12%, -1px, 0);
+  }
+  44% {
+    transform: translate3d(-10%, 0.7px, 0);
+  }
+  66% {
+    transform: translate3d(6%, -0.4px, 0);
+  }
+  84% {
+    transform: translate3d(-2.5%, 0.2px, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* Back crest: slower counter-phase for depth */
+@keyframes usage-wave-sway-back {
+  0% {
+    transform: translate3d(10%, -0.4px, 0);
+  }
+  24% {
+    transform: translate3d(-11%, 0.9px, 0);
+  }
+  48% {
+    transform: translate3d(9%, -0.5px, 0);
+  }
+  70% {
+    transform: translate3d(-5%, 0.5px, 0);
+  }
+  88% {
+    transform: translate3d(2%, -0.15px, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* Soft highlight rides with the surface */
+@keyframes usage-sheen-sway {
+  0%,
+  100% {
+    transform: translateX(0);
+    opacity: 0.85;
+  }
+  25% {
+    transform: translateX(12%);
+    opacity: 1;
+  }
+  55% {
+    transform: translateX(-10%);
+    opacity: 0.7;
+  }
+  80% {
+    transform: translateX(4%);
+    opacity: 0.9;
+  }
 }
 
 .usage-battery-pct {
@@ -347,6 +470,14 @@
   white-space: nowrap;
   overflow: hidden;
   padding: 0 1px;
+  opacity: 1;
+  transition: opacity 0.28s ease;
+}
+
+/* Hide the % label while surface waves are playing */
+.week-battery.is-waving .usage-battery-pct {
+  opacity: 0;
+  transition-duration: 0.2s;
 }
 
 .usage-battery-pct.muted {
@@ -357,6 +488,24 @@
 @media (prefers-reduced-motion: reduce) {
   .usage-battery-fill {
     transition: none;
+  }
+
+  .usage-battery-pct {
+    transition: none;
+  }
+
+  .week-battery.is-waving .usage-battery-fill-sheen,
+  .week-battery.is-waving .usage-battery-wave-front,
+  .week-battery.is-waving .usage-battery-wave-back {
+    animation: none;
+  }
+
+  .week-battery.is-waving .usage-battery-wave-layer {
+    opacity: 0;
+  }
+
+  .week-battery.is-waving .usage-battery-pct {
+    opacity: 1;
   }
 }
 

@@ -257,33 +257,48 @@ function WeekUsageBar({
   usage: WeekUsage | null;
   onRefresh?: () => void;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const clickable = Boolean(onRefresh);
-  const onClick = clickable
-    ? () => {
-        onRefresh?.();
-      }
-    : undefined;
-  const onKeyDown = clickable
-    ? (e: KeyboardEvent) => {
+
+  /** Imperative class toggle — no React state / duration sync. */
+  const playWave = useCallback(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    el.classList.remove("is-waving");
+    void el.offsetWidth; // reflow so the CSS animation can restart
+    el.classList.add("is-waving");
+  }, []);
+
+  const onWaveEnd = useCallback(() => {
+    rootRef.current?.classList.remove("is-waving");
+  }, []);
+
+  const interactive = (withWave: boolean) => {
+    if (!clickable) return {};
+    const run = () => {
+      if (withWave) playWave();
+      onRefresh?.();
+    };
+    return {
+      role: "button" as const,
+      tabIndex: 0,
+      onClick: run,
+      onKeyDown: (e: KeyboardEvent) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onRefresh?.();
+          run();
         }
-      }
-    : undefined;
-  const interactive = {
-    role: clickable ? ("button" as const) : undefined,
-    tabIndex: clickable ? 0 : undefined,
-    onClick,
-    onKeyDown,
+      },
+    };
   };
 
   if (!usage) {
     return (
       <div
-        className={`week-battery loading ${clickable ? "clickable" : ""}`}
+        className={`week-battery loading${clickable ? " clickable" : ""}`}
         title="Loading week usage… · click to refresh"
-        {...interactive}
+        {...interactive(false)}
       >
         <UsageBattery fill={0} label="…" muted />
       </div>
@@ -294,9 +309,9 @@ function WeekUsageBar({
     const shortErr = summarizeUsageError(usage.error);
     return (
       <div
-        className={`week-battery error ${clickable ? "clickable" : ""}`}
+        className={`week-battery error${clickable ? " clickable" : ""}`}
         title={`${usage.error} · click to retry`}
-        {...interactive}
+        {...interactive(false)}
       >
         <UsageBattery fill={0} label="n/a" muted />
         <span className="week-battery-hint">{shortErr}</span>
@@ -328,16 +343,21 @@ function WeekUsageBar({
     .filter(Boolean)
     .join(" · ");
 
+  // Wave only on success with visible liquid — not loading/error empty bottles.
+  const canWave = remaining > 0;
+
   return (
     <div
-      className={`week-battery level-${level} ${clickable ? "clickable" : ""}`}
+      ref={rootRef}
+      className={`week-battery level-${level}${clickable ? " clickable" : ""}`}
       title={tip}
-      {...interactive}
+      {...interactive(canWave)}
     >
       <UsageBattery
         fill={remaining}
         label={fmtPct(remaining)}
         meterLabel={`${periodLabel} remaining ${fmtPct(remaining)}`}
+        onWaveEnd={canWave ? onWaveEnd : undefined}
       />
     </div>
   );
@@ -349,11 +369,14 @@ function UsageBattery({
   label,
   muted,
   meterLabel,
+  onWaveEnd,
 }: {
   fill: number;
   label: string;
   muted?: boolean;
   meterLabel?: string;
+  /** Fires when the front crest animation finishes (clears .is-waving). */
+  onWaveEnd?: () => void;
 }) {
   const pct = Math.max(0, Math.min(100, fill));
   return (
@@ -375,6 +398,24 @@ function UsageBattery({
               className="usage-battery-fill"
               style={{ height: `${pct}%` }}
             >
+              {/* Dual free-surface crests — sway on click (see .is-waving) */}
+              <div className="usage-battery-wave-layer" aria-hidden>
+                <svg
+                  className="usage-battery-wave usage-battery-wave-back"
+                  viewBox="0 0 240 16"
+                  preserveAspectRatio="none"
+                >
+                  <path d="M0 10 C20 4 40 16 60 10 S100 4 120 10 160 16 180 10 220 4 240 10 V16 H0 Z" />
+                </svg>
+                <svg
+                  className="usage-battery-wave usage-battery-wave-front"
+                  viewBox="0 0 240 16"
+                  preserveAspectRatio="none"
+                  onAnimationEnd={onWaveEnd}
+                >
+                  <path d="M0 9 C15 15 45 3 60 9 S105 15 120 9 165 3 180 9 225 15 240 9 V16 H0 Z" />
+                </svg>
+              </div>
               <div className="usage-battery-fill-sheen" />
             </div>
           </div>

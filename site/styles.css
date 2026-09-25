@@ -1023,17 +1023,24 @@ footer p {
   font-weight: 500;
 }
 
-.sister {
+.sisters {
   display: flex;
-  align-items: baseline;
-  gap: 14px;
+  flex-direction: column;
+  gap: 8px;
   margin-top: 18px;
   padding-top: 16px;
   border-top: 1px solid var(--line);
 }
 
+.sister {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
 .sister strong {
   flex: none;
+  min-width: 6.8rem;
   color: var(--text);
   font-weight: 600;
 }
